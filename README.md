@@ -1,8 +1,5 @@
 # dropp
 
-Here is the full text for `/Users/luckyraj/dropp/README.md`. Select all lines below, copy, and replace everything in your open `README.md` file:
-
-```markdown
 # 🚕 Dropp — Distributed Mobility, Delivery & Commerce Platform
 
 > A production-grade, event-driven distributed system for ride-hailing, food delivery, and logistics. Engineered with a domain-isolated Modular Monolith architecture, real-time geospatial driver matching, multi-layer concurrency defense, and asynchronous RabbitMQ event streaming.

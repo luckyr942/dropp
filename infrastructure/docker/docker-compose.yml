@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: dropp_mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    container_name: dropp_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: dropp_rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: dropp_admin
+      RABBITMQ_DEFAULT_PASS: dropp_password
+    ports:
+      - "5672:5672"   # AMQP port for Node.js
+      - "15672:15672" # Web Dashboard UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+volumes:
+  mongodb_data:
+  redis_data:
+  rabbitmq_data:
