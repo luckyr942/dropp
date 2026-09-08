@@ -7,3 +7,5 @@ node_modules
 .turbo
 .DS_Store
 Thumbs.db
+.env
+apps/backend/.env

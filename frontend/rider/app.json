@@ -1,0 +1,23 @@
+{
+    "expo": {
+        "name": "Dropp Rider",
+        "slug": "dropp-rider",
+        "version": "1.0.0",
+        "orientation": "portrait",
+        "userInterfaceStyle": "dark",
+        "splash": {
+            "backgroundColor": "#0B0E14"
+        },
+        "ios": {
+            "supportsTablet": true
+        },
+        "android": {
+            "adaptiveIcon": {
+                "backgroundColor": "#0B0E14"
+            }
+        },
+        "web": {
+            "favicon": "./assets/favicon.png"
+        }
+    }
+}

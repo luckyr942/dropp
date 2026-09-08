@@ -1,0 +1,26 @@
+{
+    "name": "@dropp/rider-app",
+    "version": "1.0.0",
+    "main": "node_modules/expo/AppEntry.js",
+    "scripts": {
+        "dev": "expo start --web",
+        "start": "expo start",
+        "android": "expo start --android",
+        "ios": "expo start --ios",
+        "web": "expo start --web"
+    },
+    "dependencies": {
+        "@dropp/events": "file:../../packages/events",
+        "@dropp/types": "file:../../packages/types",
+        "axios": "^1.6.7",
+        "expo": "~50.0.0",
+        "expo-status-bar": "~1.11.1",
+        "react": "18.2.0",
+        "react-native": "0.73.4",
+        "zustand": "^4.5.1"
+    },
+    "devDependencies": {
+        "@babel/core": "^7.20.0"
+    },
+    "private": true
+}
