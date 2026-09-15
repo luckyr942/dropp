@@ -1,70 +1,62 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     StyleSheet,
     Text,
     View,
-    Image,
     TouchableOpacity,
     TextInput,
     ScrollView,
     SafeAreaView,
     StatusBar,
 } from 'react-native';
-import { useTheme } from './../theme/themeContext';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../theme/themeContext';
 import { useRideStore } from '../../store/rideStore';
-import HeaderBar from './../components/Header';
-
-const VEHICLE_TIERS = [
-    { id: 'standard', name: 'Standard', time: '3 min', seats: 4, price: 10 },
-    { id: 'comfort', name: 'Comfort', time: '3 min', seats: 4, price: 15 },
-    { id: 'luxury', name: 'Luxury', time: '3 min', seats: 4, price: 25 },
-];
+import HeaderBar from '../components/Header';
+import BottomNavBar from '../components/bottomNavBar';
+import RecentPlaces from '../components/recentplaces';
+import ServiceCategoryGrid from '../components/serviceCard';
 
 export default function HomeScreen({ navigation, onNavigate }) {
     const { theme, isDark, toggleTheme } = useTheme();
+    const [activeTab, setActiveTab] = useState('Home');
+    const [selectedService, setSelectedService] = useState('ride');
+
 
     const {
         pickupLocation,
         destination,
-        fare,
-        selectedVehicleTier,
         serviceType,
-        driver,
-        selectVehicle,
         setServiceType,
         setRideStatus,
         setPickupLocation,
         setDestination,
     } = useRideStore();
 
-    const handleOpenMenu = () => {
-        toggleTheme();
-    };
-
-    const handleOpenNotifications = () => {
+    const handleNavigate = (screen) => {
         if (navigation) {
-            navigation.navigate('Notifications');
+            navigation.navigate(screen);
         } else if (onNavigate) {
-            onNavigate('Notifications');
-        }
-    };
-
-    const handleOpenProfile = () => {
-        if (navigation) {
-            navigation.navigate('Profile');
-        } else if (onNavigate) {
-            onNavigate('Profile');
+            onNavigate(screen);
         }
     };
 
     const handleRequestRide = () => {
         setRideStatus('SEARCHING');
         if (serviceType === 'package') {
-            navigation?.navigate('PackageDetails') || onNavigate?.('PackageDetails');
+            handleNavigate('PackageDetails');
         } else {
-            navigation?.navigate('FindingDriver') || onNavigate?.('FindingDriver');
+            handleNavigate('FindingDriver');
         }
     };
+
+    const handleFindRide = () => {
+        if (selectedService == 'delivery') {
+            navigation?.navigate('PackageDetails');
+        } else {
+            navigation?.navigate('Location Search');
+        }
+    }
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -73,45 +65,25 @@ export default function HomeScreen({ navigation, onNavigate }) {
                 backgroundColor={theme.background}
             />
 
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+            >
                 {/* Top Header */}
                 <HeaderBar
                     userAvatar={null}
-                    onMenuPress={handleOpenMenu}
-                    onNotificationPress={handleOpenNotifications}
-                    onProfilePress={handleOpenProfile}
+                    onMenuPress={toggleTheme}
+                    onNotificationPress={() => handleNavigate('Notifications')}
+                    onProfilePress={() => handleNavigate('Profile')}
                 />
 
-                {/* Headline */}
+                {/* Hero Title */}
                 <Text style={[styles.mainTitle, { color: theme.textPrimary }]}>
                     Where do you{'\n'}want to go?
                 </Text>
 
-                {/* Driver Profile Card */}
-                <View style={[styles.profileCard, { backgroundColor: theme.surface }]}>
-                    <Image
-                        source={{
-                            uri:
-                                driver?.avatar ||
-                                'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
-                        }}
-                        style={styles.profileAvatar}
-                    />
-                    <View style={styles.profileInfo}>
-                        <Text style={[styles.profileName, { color: theme.textPrimary }]}>
-                            {driver?.name || 'Ucok Behel'}
-                        </Text>
-                        <Text style={[styles.profileSub, { color: theme.textSecondary }]}>
-                            {driver?.vehicle || 'Honda CRV'}
-                        </Text>
-                    </View>
-                    <Text style={[styles.stars, { color: theme.starGold }]}>
-                        ★ {driver?.rating || '5.0'}
-                    </Text>
-                </View>
-
-                {/* Location Box */}
-                <View style={[styles.locationBox, { backgroundColor: theme.inputBg }]}>
+                {/* Location Input Box */}
+                <View style={[styles.locationBox, { backgroundColor: theme.surface }]}>
                     <View style={styles.inputRow}>
                         <View style={[styles.pinDot, { backgroundColor: theme.placeholder }]} />
                         <TextInput
@@ -121,8 +93,18 @@ export default function HomeScreen({ navigation, onNavigate }) {
                             placeholder="Add a pick-up location"
                             placeholderTextColor={theme.placeholder}
                         />
+                        <TouchableOpacity
+                            style={[styles.useCurrentBadge, { borderColor: theme.primaryGreen }]}
+                            onPress={() => setPickupLocation('Current Location')}
+                            activeOpacity={0.7}
+                        >
+                            <Ionicons name="navigate-circle-outline" size={12} color={theme.primaryGreen} />
+                            <Text style={[styles.badgeText, { color: theme.primaryGreen }]}>Use current</Text>
+                        </TouchableOpacity>
                     </View>
-                    <View style={[styles.divider, { backgroundColor: theme.inputSeparator }]} />
+
+                    <View style={[styles.divider, { backgroundColor: theme.inputSeparator || '#262A34' }]} />
+
                     <View style={styles.inputRow}>
                         <View style={[styles.pinDot, { backgroundColor: theme.primaryGreen }]} />
                         <TextInput
@@ -135,7 +117,7 @@ export default function HomeScreen({ navigation, onNavigate }) {
                     </View>
                 </View>
 
-                {/* Service Toggle Pills */}
+                {/* Service Switcher */}
                 <View style={[styles.servicePills, { backgroundColor: theme.surface }]}>
                     <TouchableOpacity
                         style={[
@@ -148,7 +130,7 @@ export default function HomeScreen({ navigation, onNavigate }) {
                         <Text
                             style={[
                                 styles.pillText,
-                                { color: serviceType === 'driver' ? '#FFFFFF' : theme.textSecondary },
+                                { color: serviceType === 'driver' ? '#000000' : theme.textSecondary },
                             ]}
                         >
                             🚗 Driver
@@ -166,104 +148,36 @@ export default function HomeScreen({ navigation, onNavigate }) {
                         <Text
                             style={[
                                 styles.pillText,
-                                { color: serviceType === 'package' ? '#FFFFFF' : theme.textSecondary },
+                                { color: serviceType === 'package' ? '#000000' : theme.textSecondary },
                             ]}
                         >
                             📦 Package
                         </Text>
                     </TouchableOpacity>
                 </View>
+                {/* Service Category Grid (Ride, Food, Delivery, Shop) */}
+                <ServiceCategoryGrid
+                    activeService={selectedService}
+                    onSelectService={(srv) => setSelectedService(srv)}
+                />
 
-                {/* Vehicle Carousel */}
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.carouselContainer}
-                    style={styles.carousel}
-                >
-                    {VEHICLE_TIERS.map((tier) => {
-                        const isSelected = selectedVehicleTier === tier.id;
-                        return (
-                            <TouchableOpacity
-                                key={tier.id}
-                                style={[
-                                    styles.vCard,
-                                    {
-                                        backgroundColor: isSelected
-                                            ? theme.tierCardActiveBg
-                                            : theme.tierCardInactiveBg,
-                                        borderColor: isSelected
-                                            ? theme.tierCardActiveBorder
-                                            : theme.tierCardInactiveBorder,
-                                    },
-                                ]}
-                                onPress={() => selectVehicle(tier.id, tier.price)}
-                                activeOpacity={0.8}
-                            >
-                                <View style={styles.vHeader}>
-                                    <Text
-                                        style={[
-                                            styles.vName,
-                                            { color: isSelected ? theme.primaryGreen : theme.textPrimary },
-                                        ]}
-                                    >
-                                        {tier.name}
-                                    </Text>
-                                    <Text style={[styles.vTime, { color: theme.placeholder }]}>
-                                        {tier.time}
-                                    </Text>
-                                </View>
-
-                                <Text style={[styles.vSeats, { color: theme.textSecondary }]}>
-                                    👤 {tier.seats}
-                                </Text>
-
-                                <View style={styles.vFooter}>
-                                    <View
-                                        style={[
-                                            styles.steeringCircle,
-                                            {
-                                                backgroundColor: isSelected
-                                                    ? theme.iconCircleActiveBg
-                                                    : theme.iconCircleInactiveBg,
-                                            },
-                                        ]}
-                                    >
-                                        <Text
-                                            style={[
-                                                styles.steeringText,
-                                                {
-                                                    color: isSelected
-                                                        ? theme.iconCircleActiveColor
-                                                        : theme.iconCircleInactiveColor,
-                                                },
-                                            ]}
-                                        >
-                                            ☸
-                                        </Text>
-                                    </View>
-                                    <Text style={[styles.vPrice, { color: theme.textPrimary }]}>
-                                        ${tier.price}
-                                    </Text>
-                                </View>
-                            </TouchableOpacity>
-                        );
-                    })}
-                </ScrollView>
-
-                {/* Request CTA Button */}
+                {/* Primary Action Button */}
                 <TouchableOpacity
                     style={[styles.ctaButton, { backgroundColor: theme.primaryGreen }]}
-                    onPress={handleRequestRide}
+                    onPress={handleFindRide}
                     activeOpacity={0.8}
                 >
                     <Text style={styles.ctaText}>
-                        {serviceType === 'package'
-                            ? 'Continue to Package Details'
-                            : `Request Dropp Ride ($${fare || 10})`}
+                        {serviceType === 'package' ? 'Continue to Package Details' : 'Find a Ride'}
                     </Text>
                 </TouchableOpacity>
+
+                {/* Recent Places Section */}
+                <RecentPlaces onSelectPlace={(place) => setDestination(place.title || place.address)} />
             </ScrollView>
+
+            {/* Persistent Bottom Bar */}
+            <BottomNavBar activeTab={activeTab} onTabPress={(tab) => setActiveTab(tab)} />
         </SafeAreaView>
     );
 }
@@ -275,7 +189,7 @@ const styles = StyleSheet.create({
     scrollContent: {
         paddingHorizontal: 20,
         paddingTop: 10,
-        paddingBottom: 32,
+        paddingBottom: 100,
     },
     mainTitle: {
         fontSize: 32,
@@ -284,80 +198,55 @@ const styles = StyleSheet.create({
         marginBottom: 20,
         letterSpacing: -0.6,
     },
-    profileCard: {
-        borderRadius: 20,
-        padding: 14,
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 16,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOpacity: 0.04,
-        shadowOffset: { width: 0, height: 2 },
-        shadowRadius: 6,
-    },
-    profileAvatar: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: '#FDE047',
-        marginRight: 12,
-    },
-    profileInfo: {
-        flex: 1,
-    },
-    profileName: {
-        fontWeight: '700',
-        fontSize: 15,
-    },
-    profileSub: {
-        fontSize: 12,
-        marginTop: 2,
-    },
-    stars: {
-        fontSize: 13,
-        fontWeight: '700',
-    },
     locationBox: {
         borderRadius: 20,
-        paddingVertical: 4,
+        paddingVertical: 6,
+        paddingHorizontal: 12,
         marginBottom: 16,
     },
     inputRow: {
         flexDirection: 'row',
         alignItems: 'center',
         height: 48,
-        paddingHorizontal: 16,
     },
     divider: {
         height: 1,
-        marginHorizontal: 16,
+        marginHorizontal: 8,
     },
     pinDot: {
         width: 8,
         height: 8,
         borderRadius: 4,
-        marginRight: 12,
+        marginRight: 10,
     },
     input: {
         flex: 1,
         fontWeight: '500',
         fontSize: 14,
     },
+    useCurrentBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderRadius: 12,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        gap: 4,
+    },
+    badgeText: {
+        fontSize: 11,
+        fontWeight: '700',
+    },
     servicePills: {
         flexDirection: 'row',
-        borderRadius: 18,
-        padding: 6,
-        marginBottom: 18,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOpacity: 0.03,
-        shadowRadius: 6,
+        borderRadius: 16,
+        padding: 4,
+        marginBottom: 16,
     },
     pill: {
         flex: 1,
         paddingVertical: 12,
-        borderRadius: 14,
+        borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -365,68 +254,16 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         fontSize: 14,
     },
-    carousel: {
-        marginBottom: 20,
-    },
-    carouselContainer: {
-        gap: 12,
-        paddingRight: 8,
-    },
-    vCard: {
-        width: 124,
-        borderRadius: 20,
-        padding: 14,
-        borderWidth: 1.5,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOpacity: 0.03,
-        shadowRadius: 6,
-    },
-    vHeader: {
-        marginBottom: 4,
-    },
-    vName: {
-        fontWeight: '700',
-        fontSize: 15,
-    },
-    vTime: {
-        fontSize: 12,
-        marginTop: 2,
-    },
-    vSeats: {
-        fontSize: 13,
-        fontWeight: '600',
-        marginVertical: 12,
-    },
-    vFooter: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    steeringCircle: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    steeringText: {
-        fontSize: 14,
-    },
-    vPrice: {
-        fontWeight: '800',
-        fontSize: 16,
-    },
     ctaButton: {
-        height: 54,
-        borderRadius: 18,
+        height: 52,
+        borderRadius: 16,
         alignItems: 'center',
         justifyContent: 'center',
-        elevation: 2,
+        marginBottom: 24,
     },
     ctaText: {
         color: '#000000',
         fontWeight: '800',
-        fontSize: 16,
+        fontSize: 15,
     },
 });

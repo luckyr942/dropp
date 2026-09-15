@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet } from 'react-native';
 import { ThemeProvider } from './src/theme/themeContext';
@@ -8,7 +9,8 @@ export default function App() {
   const [currentScreen, setCurrentScreen] = useState('Home');
 
   return (
-    <ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
       <View style={styles.container}>
         <StatusBar style="light" />
         {currentScreen === 'Home' && (
@@ -16,6 +18,8 @@ export default function App() {
         )}
       </View>
     </ThemeProvider>
+    </SafeAreaProvider>
+    
   );
 }
 
