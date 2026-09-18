@@ -16,7 +16,7 @@ import HeaderBar from '../components/Header';
 import BottomNavBar from '../components/bottomNavBar';
 import RecentPlaces from '../components/recentplaces';
 import ServiceCategoryGrid from '../components/serviceCard';
-
+import BrandBanner from '../components/brandBanner';
 export default function HomeScreen({ navigation, onNavigate }) {
     const { theme, isDark, toggleTheme } = useTheme();
     const [activeTab, setActiveTab] = useState('Home');
@@ -77,10 +77,11 @@ export default function HomeScreen({ navigation, onNavigate }) {
                     onProfilePress={() => handleNavigate('Profile')}
                 />
 
-                {/* Hero Title */}
-                <Text style={[styles.mainTitle, { color: theme.textPrimary }]}>
-                    Where do you{'\n'}want to go?
-                </Text>
+                {/* Brand Banner */}
+
+                {/* Brand Hero Banner */}
+                <BrandBanner activeService={selectedService} />
+
 
                 {/* Location Input Box */}
                 <View style={[styles.locationBox, { backgroundColor: theme.surface }]}>
@@ -117,48 +118,11 @@ export default function HomeScreen({ navigation, onNavigate }) {
                     </View>
                 </View>
 
-                {/* Service Switcher */}
-                <View style={[styles.servicePills, { backgroundColor: theme.surface }]}>
-                    <TouchableOpacity
-                        style={[
-                            styles.pill,
-                            serviceType === 'driver' && { backgroundColor: theme.primaryGreen },
-                        ]}
-                        onPress={() => setServiceType('driver')}
-                        activeOpacity={0.8}
-                    >
-                        <Text
-                            style={[
-                                styles.pillText,
-                                { color: serviceType === 'driver' ? '#000000' : theme.textSecondary },
-                            ]}
-                        >
-                            🚗 Driver
-                        </Text>
-                    </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={[
-                            styles.pill,
-                            serviceType === 'package' && { backgroundColor: theme.primaryGreen },
-                        ]}
-                        onPress={() => setServiceType('package')}
-                        activeOpacity={0.8}
-                    >
-                        <Text
-                            style={[
-                                styles.pillText,
-                                { color: serviceType === 'package' ? '#000000' : theme.textSecondary },
-                            ]}
-                        >
-                            📦 Package
-                        </Text>
-                    </TouchableOpacity>
-                </View>
                 {/* Service Category Grid (Ride, Food, Delivery, Shop) */}
                 <ServiceCategoryGrid
                     activeService={selectedService}
-                    onSelectService={(srv) => setSelectedService(srv)}
+                    onSelectService={(serv) => setSelectedService(serv)}
                 />
 
                 {/* Primary Action Button */}
