@@ -17,6 +17,7 @@ import BottomNavBar from '../components/bottomNavBar';
 import RecentPlaces from '../components/recentplaces';
 import ServiceCategoryGrid from '../components/serviceCard';
 import BrandBanner from '../components/brandBanner';
+import LocationSearchScreen from './LocationSearchScreen';
 export default function HomeScreen({ navigation, onNavigate }) {
     const { theme, isDark, toggleTheme } = useTheme();
     const [activeTab, setActiveTab] = useState('Home');
