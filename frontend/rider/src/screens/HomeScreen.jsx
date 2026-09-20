@@ -17,7 +17,7 @@ import BottomNavBar from '../components/bottomNavBar';
 import RecentPlaces from '../components/recentplaces';
 import ServiceCategoryGrid from '../components/serviceCard';
 import BrandBanner from '../components/brandBanner';
-import LocationSearchScreen from './LocationSearchScreen';
+// import LocationSearchScreen from './LocationSearchScreen';
 export default function HomeScreen({ navigation, onNavigate }) {
     const { theme, isDark, toggleTheme } = useTheme();
     const [activeTab, setActiveTab] = useState('Home');
@@ -53,11 +53,11 @@ export default function HomeScreen({ navigation, onNavigate }) {
 
     const handleFindRide = () => {
         if (selectedService == 'delivery') {
-            navigation?.navigate('PackageDetails');
+            handleNavigate('PackageDetails');
         } else {
-            navigation?.navigate('Location Search');
+            handleNavigate('Location');
         }
-    }
+    };
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -78,20 +78,22 @@ export default function HomeScreen({ navigation, onNavigate }) {
                     onProfilePress={() => handleNavigate('Profile')}
                 />
 
-                {/* Brand Banner */}
-
                 {/* Brand Hero Banner */}
                 <BrandBanner activeService={selectedService} />
 
-
                 {/* Location Input Box */}
-                <View style={[styles.locationBox, { backgroundColor: theme.surface }]}>
+                <TouchableOpacity
+                    style={[styles.locationBox, { backgroundColor: theme.surface }]}
+                    onPress={() => handleNavigate('Location')}
+                    activeOpacity={0.9}
+                >
                     <View style={styles.inputRow}>
                         <View style={[styles.pinDot, { backgroundColor: theme.placeholder }]} />
                         <TextInput
                             style={[styles.input, { color: theme.textPrimary }]}
                             value={pickupLocation}
                             onChangeText={setPickupLocation}
+                            onFocus={() => handleNavigate('Location')}
                             placeholder="Add a pick-up location"
                             placeholderTextColor={theme.placeholder}
                         />
@@ -113,11 +115,12 @@ export default function HomeScreen({ navigation, onNavigate }) {
                             style={[styles.input, { color: theme.textPrimary }]}
                             value={destination}
                             onChangeText={setDestination}
+                            onFocus={() => handleNavigate('Location')}
                             placeholder="Add your destination"
                             placeholderTextColor={theme.placeholder}
                         />
                     </View>
-                </View>
+                </TouchableOpacity>
 
 
                 {/* Service Category Grid (Ride, Food, Delivery, Shop) */}
