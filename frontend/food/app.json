@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Dropp Food",
+    "slug": "dropp-food",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "../rider/assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "../rider/assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0F17"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dropp.food"
+    }
+  }
+}

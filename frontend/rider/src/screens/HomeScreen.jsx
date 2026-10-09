@@ -10,24 +10,22 @@ import {
     StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../theme/themeContext';
-import { useRideStore } from '../../store/rideStore';
-import HeaderBar from '../components/Header';
-import BottomNavBar from '../components/bottomNavBar';
-import RecentPlaces from '../components/recentplaces';
-import ServiceCategoryGrid from '../components/serviceCard';
-import BrandBanner from '../components/brandBanner';
-// import LocationSearchScreen from './LocationSearchScreen';
+import { useTheme } from '../../../shared/theme/themeContext';
+import { useRideStore } from '../../../shared/store/rideStore';
+import HeaderBar from '../../../shared/components/Header';
+import BottomNavBar from '../../../shared/components/bottomNavBar';
+import RecentPlaces from '../../../shared/components/recentplaces';
+import ServiceCategoryGrid from '../../../shared/components/serviceCard';
+import BrandBanner from '../../../shared/components/brandBanner';
+
 export default function HomeScreen({ navigation, onNavigate }) {
     const { theme, isDark, toggleTheme } = useTheme();
     const [activeTab, setActiveTab] = useState('Home');
     const [selectedService, setSelectedService] = useState('ride');
 
-
     const {
         pickupLocation,
         destination,
-        serviceType,
         setServiceType,
         setRideStatus,
         setPickupLocation,
@@ -42,18 +40,21 @@ export default function HomeScreen({ navigation, onNavigate }) {
         }
     };
 
-    const handleRequestRide = () => {
-        setRideStatus('SEARCHING');
-        if (serviceType === 'package') {
+    const handleServiceSelect = (serv) => {
+        setSelectedService(serv);
+        setServiceType(serv);
+        if (serv === 'food') {
+            handleNavigate('Food');
+        } else if (serv === 'delivery') {
             handleNavigate('PackageDetails');
-        } else {
-            handleNavigate('FindingDriver');
         }
     };
 
-    const handleFindRide = () => {
-        if (selectedService == 'delivery') {
+    const handlePrimaryAction = () => {
+        if (selectedService === 'delivery') {
             handleNavigate('PackageDetails');
+        } else if (selectedService === 'food') {
+            handleNavigate('Food');
         } else {
             handleNavigate('Location');
         }
@@ -122,21 +123,24 @@ export default function HomeScreen({ navigation, onNavigate }) {
                     </View>
                 </TouchableOpacity>
 
-
                 {/* Service Category Grid (Ride, Food, Delivery, Shop) */}
                 <ServiceCategoryGrid
                     activeService={selectedService}
-                    onSelectService={(serv) => setSelectedService(serv)}
+                    onSelectService={handleServiceSelect}
                 />
 
                 {/* Primary Action Button */}
                 <TouchableOpacity
                     style={[styles.ctaButton, { backgroundColor: theme.primaryGreen }]}
-                    onPress={handleFindRide}
+                    onPress={handlePrimaryAction}
                     activeOpacity={0.8}
                 >
                     <Text style={styles.ctaText}>
-                        {serviceType === 'package' ? 'Continue to Package Details' : 'Find a Ride'}
+                        {selectedService === 'delivery'
+                            ? 'Continue to Package Details'
+                            : selectedService === 'food'
+                            ? 'Explore Nearby Restaurants'
+                            : 'Find a Ride'}
                     </Text>
                 </TouchableOpacity>
 
@@ -145,26 +149,17 @@ export default function HomeScreen({ navigation, onNavigate }) {
             </ScrollView>
 
             {/* Persistent Bottom Bar */}
-            <BottomNavBar activeTab={activeTab} onTabPress={(tab) => setActiveTab(tab)} />
+            <BottomNavBar activeTab={activeTab} onTabPress={(tab) => handleNavigate(tab)} />
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
+    container: { flex: 1 },
     scrollContent: {
         paddingHorizontal: 20,
         paddingTop: 10,
         paddingBottom: 100,
-    },
-    mainTitle: {
-        fontSize: 32,
-        fontWeight: '800',
-        lineHeight: 38,
-        marginBottom: 20,
-        letterSpacing: -0.6,
     },
     locationBox: {
         borderRadius: 20,
@@ -204,23 +199,6 @@ const styles = StyleSheet.create({
     badgeText: {
         fontSize: 11,
         fontWeight: '700',
-    },
-    servicePills: {
-        flexDirection: 'row',
-        borderRadius: 16,
-        padding: 4,
-        marginBottom: 16,
-    },
-    pill: {
-        flex: 1,
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    pillText: {
-        fontWeight: '700',
-        fontSize: 14,
     },
     ctaButton: {
         height: 52,
