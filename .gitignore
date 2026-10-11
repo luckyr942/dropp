@@ -9,3 +9,9 @@ node_modules
 Thumbs.db
 .env
 apps/backend/.env
+
+# Expo
+.expo/
+.expo-shared/
+web-build/
+dist/

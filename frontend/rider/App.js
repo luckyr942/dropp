@@ -10,8 +10,8 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <View style={styles.container}>
-          <StatusBar style="light" />
-          <AppNavigator initialScreen="Splash" />
+          <StatusBar style="dark" />
+          <AppNavigator initialScreen="Food" />
         </View>
       </ThemeProvider>
     </SafeAreaProvider>

@@ -15,9 +15,6 @@
             "adaptiveIcon": {
                 "backgroundColor": "#0B0E14"
             }
-        },
-        "web": {
-            "favicon": "./assets/favicon.png"
         }
     }
 }

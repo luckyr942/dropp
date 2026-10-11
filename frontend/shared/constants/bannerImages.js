@@ -50,7 +50,7 @@ export const SERVICE_BANNERS = {
     pillTop: "Move freely",
     pillBottom: "Live smarter",
 
-    image: require("../../../rider/assets/ride.png"),
+    image: require("../../rider/assets/ride.png"),
   },
 
   food: {
@@ -62,7 +62,7 @@ export const SERVICE_BANNERS = {
     pillTop: "Good food",
     pillBottom: "Great days",
 
-    image: require("../../../rider/assets/food.png"),
+    image: require("../../rider/assets/food.png"),
   },
 
   delivery: {
@@ -74,7 +74,7 @@ export const SERVICE_BANNERS = {
     pillTop: "From here",
     pillBottom: "To anywhere",
 
-    image: require("../../../rider/assets/delivery.png"),
+    image: require("../../rider/assets/delivery.png"),
   },
 
   shop: {
@@ -86,6 +86,6 @@ export const SERVICE_BANNERS = {
     pillTop: "Shop your way",
     pillBottom: "Live better",
 
-    image: require("../../../rider/assets/shop.png"),
+    image: require("../../rider/assets/shop.png"),
   },
 };

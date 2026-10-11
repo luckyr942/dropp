@@ -4,12 +4,10 @@
     "slug": "dropp-food",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "../rider/assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "splash": {
-      "image": "../rider/assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0B0F17"
+      "backgroundColor": "#EEF9F1"
     },
     "ios": {
       "supportsTablet": true,

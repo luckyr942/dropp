@@ -12,8 +12,13 @@
   "dependencies": {
     "@dropp/events": "file:../../packages/events",
     "@dropp/types": "file:../../packages/types",
+    "@expo-google-fonts/caveat": "^0.4.2",
+    "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
+    "@expo/vector-icons": "^14.0.2",
     "axios": "^1.6.7",
     "expo": "~50.0.0",
+    "expo-font": "~11.10.3",
+    "expo-linear-gradient": "~12.7.2",
     "expo-status-bar": "~1.11.1",
     "react": "18.2.0",
     "react-native": "0.73.4",
