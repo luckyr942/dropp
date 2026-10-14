@@ -231,7 +231,7 @@ export default function TrendingRestaurants({ onSelect }) {
 
 const styles = StyleSheet.create({
     section: {
-        marginTop: 14,
+        marginTop: 4,
         marginBottom: 6,
     },
 

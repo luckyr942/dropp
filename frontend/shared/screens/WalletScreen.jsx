@@ -128,7 +128,18 @@ export default function WalletScreen({ onNavigate }) {
                 </View>
             </ScrollView>
 
-            <BottomNavBar activeTab="Wallet" onTabPress={(tab) => onNavigate && onNavigate(tab)} />
+            <BottomNavBar
+                preset="wallet"
+                activeTab="Wallet"
+                onTabPress={(tab) => onNavigate && onNavigate(tab)}
+                centerAction={{
+                    icon: 'qrcode-scan',
+                    family: 'MaterialCommunityIcons',
+                    size: 22,
+                    colors: ['#00E57B', '#00AD57'],
+                    onPress: () => alert('Scan & Pay via Dropp Wallet'),
+                }}
+            />
         </SafeAreaView>
     );
 }

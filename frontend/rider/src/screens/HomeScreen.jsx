@@ -149,7 +149,18 @@ export default function HomeScreen({ navigation, onNavigate }) {
             </ScrollView>
 
             {/* Persistent Bottom Bar */}
-            <BottomNavBar activeTab={activeTab} onTabPress={(tab) => handleNavigate(tab)} />
+            <BottomNavBar
+                preset="main"
+                activeTab={activeTab}
+                onTabPress={(tab) => handleNavigate(tab)}
+                centerAction={{
+                    icon: 'microphone-outline',
+                    family: 'MaterialCommunityIcons',
+                    size: 28,
+                    colors: ['#00E57B', '#00AD57'],
+                    onPress: () => alert('Dropp Voice Assistant'),
+                }}
+            />
         </SafeAreaView>
     );
 }

@@ -14,7 +14,7 @@ import HeroBanner from '../components/GenZHeroBanner';
 import CategoriesRow from '../components/CategoriesRow';
 import TrendingRestaurants from '../components/trendingRestaurants';
 import GenZPicks from '../components/GenZPicks';
-import FoodBottomNav from '../components/FoodBottomNav';
+import BottomNavBar from '../../../shared/components/bottomNavBar';
 
 export default function FoodMarketScreen({
     onNavigate,
@@ -91,14 +91,23 @@ export default function FoodMarketScreen({
                 />
             </ScrollView>
 
-            {/* 3. Fixed Bottom Navigation */}
-            <FoodBottomNav
+            {/* 3. Floating Bottom Navigation (Unified Universal Nav) */}
+            <BottomNavBar
+                preset="food"
                 activeTab={activeNavTab}
+                cartBadge={2}
                 onTabPress={(tab) => {
                     setActiveNavTab(tab);
-
-                    if (tab !== 'Home') {
-                        onNavigate?.(tab);
+                    if (tab === 'Home') {
+                        onNavigate?.('Home');
+                    } else if (tab === 'Orders' || tab === 'Activity') {
+                        onNavigate?.('Activity');
+                    } else if (tab === 'Cart') {
+                        onNavigate?.('Cart');
+                    } else if (tab === 'Profile') {
+                        onNavigate?.('Profile');
+                    } else if (tab === 'Wallet') {
+                        onNavigate?.('Wallet');
                     }
                 }}
             />
@@ -107,10 +116,6 @@ export default function FoodMarketScreen({
 }
 
 const styles = StyleSheet.create({
-    // container: {
-    //     flex: 1,
-    //     backgroundColor: '#FFFFFF',
-    // },
     container: {
         flex: 1,
         backgroundColor: '#EEF9F1',
@@ -121,6 +126,6 @@ const styles = StyleSheet.create({
     },
 
     scrollContent: {
-        paddingBottom: 12,
+        paddingBottom: 115,
     },
 });

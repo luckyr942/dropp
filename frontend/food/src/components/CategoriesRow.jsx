@@ -240,9 +240,9 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between', // Spreads the items evenly across the width
         alignItems: 'center',
         paddingHorizontal: 16,
-        paddingTop: 2,
+        paddingTop: 1,
         paddingBottom: 4,
-        paddingVertical: 12,
+        paddingVertical: 10,
     },
     item: {
         alignItems: 'center',

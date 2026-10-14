@@ -33,7 +33,7 @@ import { ThemeProvider } from './shared/theme/themeContext';
 import RoleSelectionScreen from './rider/src/screens/RoleSelectionScreen.jsx';
 
 // ─── Customer Flow (Rider + Food + Delivery + Shop) ──────────────
-import HomeScreen from './rider/src/screens/HomeScreen.jsx';
+import MainHomeScreen from './shared/screens/mainHomeScreen.jsx';
 import LocationSearchScreen from './rider/src/screens/LocationScreen.jsx';
 import PackageDetailsScreen from './rider/src/screens/PackageDetailsScreen.jsx';
 import FindingDriverScreen from './rider/src/screens/FindingDriverScreen.jsx';
@@ -63,7 +63,7 @@ export default function App() {
         Caveat_600SemiBold,
     });
 
-    const [currentScreen, setCurrentScreen] = useState('Splash');
+    const [currentScreen, setCurrentScreen] = useState('Home');
     const [selectedRestaurant, setSelectedRestaurant] = useState(null);
     const [cart, setCart] = useState({});
 
@@ -133,7 +133,7 @@ export default function App() {
                 ════════════════════════════════════════════════ */}
 
                 {currentScreen === 'Home' && (
-                    <HomeScreen onNavigate={navigate} />
+                    <MainHomeScreen onNavigate={navigate} />
                 )}
 
                 {(currentScreen === 'Location' ||

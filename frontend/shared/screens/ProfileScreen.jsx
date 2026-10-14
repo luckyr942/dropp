@@ -147,7 +147,18 @@ export default function ProfileScreen({ onNavigate }) {
                 </TouchableOpacity>
             </ScrollView>
 
-            <BottomNavBar activeTab="Profile" onTabPress={(tab) => onNavigate && onNavigate(tab)} />
+            <BottomNavBar
+                preset="profile"
+                activeTab="Profile"
+                onTabPress={(tab) => onNavigate && onNavigate(tab)}
+                centerAction={{
+                    icon: 'headset',
+                    family: 'MaterialCommunityIcons',
+                    size: 24,
+                    colors: ['#00E57B', '#00AD57'],
+                    onPress: () => alert('24/7 Dropp Customer Support'),
+                }}
+            />
         </SafeAreaView>
     );
 }

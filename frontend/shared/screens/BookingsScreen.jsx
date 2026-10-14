@@ -168,7 +168,18 @@ export default function BookingsScreen({ onNavigate }) {
                 showsVerticalScrollIndicator={false}
             />
 
-            <BottomNavBar activeTab="Activity" onTabPress={(tab) => onNavigate && onNavigate(tab)} />
+            <BottomNavBar
+                preset="activity"
+                activeTab="Activity"
+                onTabPress={(tab) => onNavigate && onNavigate(tab)}
+                centerAction={{
+                    icon: 'car-sports',
+                    family: 'MaterialCommunityIcons',
+                    size: 26,
+                    colors: ['#00E57B', '#00AD57'],
+                    onPress: () => onNavigate && onNavigate('Home'),
+                }}
+            />
         </SafeAreaView>
     );
 }
