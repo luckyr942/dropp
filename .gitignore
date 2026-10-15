@@ -1,14 +1,18 @@
+node_modules/
+**/node_modules/
 node_modules
+**/node_modules
 .pnpm-store
 
 .env
+**/.env
 .env.local
+backend/.env
+apps/backend/.env
 
 .turbo
 .DS_Store
 Thumbs.db
-.env
-apps/backend/.env
 
 # Expo
 .expo/
