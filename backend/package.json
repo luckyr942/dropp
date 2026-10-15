@@ -1,47 +1,22 @@
 {
-<<<<<<< HEAD
-    "name": "@dropp/backend",
-    "version": "1.0.0",
-    "type": "module",
-    "main": "src/main.js",
-    "scripts": {
-        "dev": "node --watch src/main.js",
-        "start": "node src/main.js",
-        "seed": "node src/scripts/seed.js"
-    },
-    "dependencies": {
-        "amqplib": "^0.10.3",
-        "bcryptjs": "^2.4.3",
-        "cors": "^2.8.5",
-        "dotenv": "^16.4.5",
-        "express": "^4.19.2",
-        "ioredis": "^5.3.2",
-        "jsonwebtoken": "^9.0.2",
-        "mongoose": "^8.2.0",
-        "ws": "^8.16.0"
-    }
-}
-=======
-  "name": "dropp-monorepo",
-  "private": true,
+  "name": "@dropp/backend",
+  "version": "1.0.0",
   "type": "module",
+  "main": "src/main.js",
   "scripts": {
-    "dev": "turbo run dev",
-    "format": "prettier --write \"**/*.{js,json,md}\"",
-    "docker:up": "docker-compose -f infrastructure/docker/docker-compose.yml up -d",
-    "docker:down": "docker-compose -f infrastructure/docker/docker-compose.yml down",
-    "docker:logs": "docker-compose -f infrastructure/docker/docker-compose.yml logs -f"
+    "dev": "node --watch src/main.js",
+    "start": "node src/main.js",
+    "seed": "node src/scripts/seed.js"
   },
-  "devDependencies": {
-    "prettier": "^3.2.5",
-    "turbo": "^1.13.0"
-  },
-  "packageManager": "pnpm@9.0.0",
   "dependencies": {
-    "expo-font": "~11.10.3",
-    "expo-linear-gradient": "~12.7.2",
-    "expo-location": "~19.0.8",
-    "react-native-safe-area-context": "~5.6.0"
+    "amqplib": "^0.10.3",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.2.0",
+    "ws": "^8.16.0"
   }
 }
->>>>>>> origin/main
