@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getMenuForRestaurant } from '../data/restaurantMenus';
+import { getMenuByRestaurant } from '../api/foodApi';
 
 export default function RestaurantDetailsScreen({
     restaurant = {
@@ -29,16 +30,33 @@ export default function RestaurantDetailsScreen({
     onAddToCart,
     onRemoveFromCart,
 }) {
-    // 1. Dynamically retrieve menu and categories for whichever restaurant was tapped
-    const restaurantMenu = getMenuForRestaurant(restaurant?.id);
-    const categories = restaurantMenu.categories;
-    const allItems = restaurantMenu.items;
-
-    const [selectedCategory, setSelectedCategory] = useState(categories[0] || 'All');
+    // 1. Initialise with fallback / local menu
+    const initialMenu = getMenuForRestaurant(restaurant?.id);
+    const [categories, setCategories] = useState(initialMenu.categories);
+    const [allItems, setAllItems] = useState(initialMenu.items);
+    const [selectedCategory, setSelectedCategory] = useState(initialMenu.categories[0] || 'All');
     const [isFav, setIsFav] = useState(false);
     const [customiseItem, setCustomiseItem] = useState(null);
     const [selectedSize, setSelectedSize] = useState('Regular');
     const [selectedMilk, setSelectedMilk] = useState('Whole Milk');
+
+    // 2. Fetch live menu from backend if MongoDB restaurant ID exists
+    useEffect(() => {
+        const restId = restaurant?._id || restaurant?.id;
+        if (restId && typeof restId === 'string' && restId.length === 24) {
+            getMenuByRestaurant(restId)
+                .then((menu) => {
+                    if (menu && menu.items && menu.items.length > 0) {
+                        setCategories(menu.categories);
+                        setAllItems(menu.items);
+                        setSelectedCategory(menu.categories[0] || 'All');
+                    }
+                })
+                .catch((err) => {
+                    console.log('[RestaurantDetailsScreen] Fallback menu used:', err?.message);
+                });
+        }
+    }, [restaurant?._id, restaurant?.id]);
 
     const filteredItems =
         selectedCategory === 'All' || selectedCategory === 'Recommended'
@@ -70,8 +88,10 @@ export default function RestaurantDetailsScreen({
         }
     };
 
-    const restaurantCuisines = restaurant.cuisines || restaurant.cuisine || 'Café & Bites';
-    const restaurantEta = restaurant.time || restaurant.eta || '20–30 min';
+    const restaurantCuisines = Array.isArray(restaurant.cuisine)
+        ? restaurant.cuisine.join(' • ')
+        : restaurant.cuisines || restaurant.cuisine || 'Café & Bites';
+    const restaurantEta = restaurant.time || restaurant.eta || (restaurant.deliveryTimeMins ? `${restaurant.deliveryTimeMins} min` : '20–30 min');
     const restaurantOffer = restaurant.offerPrimary || restaurant.badge || '15% OFF';
 
     return (
@@ -79,7 +99,13 @@ export default function RestaurantDetailsScreen({
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
                 {/* 1. Header Hero Banner */}
                 <View style={styles.heroBox}>
-                    <Image source={{ uri: restaurant.image }} style={styles.heroImg} resizeMode="cover" />
+                    <Image
+                        source={{
+                            uri: restaurant.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=700&auto=format&fit=crop&q=85',
+                        }}
+                        style={styles.heroImg}
+                        resizeMode="cover"
+                    />
                     <View style={styles.heroGradient} />
 
                     <View style={styles.topBar}>

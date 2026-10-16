@@ -1,9 +1,10 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     StyleSheet,
     ScrollView,
     StatusBar,
+    RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -15,6 +16,7 @@ import CategoriesRow from '../components/CategoriesRow';
 import TrendingRestaurants from '../components/trendingRestaurants';
 import GenZPicks from '../components/GenZPicks';
 import BottomNavBar from '../../../shared/components/bottomNavBar';
+import { getRestaurants } from '../api/foodApi';
 
 export default function FoodMarketScreen({
     onNavigate,
@@ -23,6 +25,32 @@ export default function FoodMarketScreen({
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [activeNavTab, setActiveNavTab] = useState('Home');
+    const [restaurants, setRestaurants] = useState([]);
+    const [loadingRestaurants, setLoadingRestaurants] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+
+    const loadRestaurants = async () => {
+        try {
+            const data = await getRestaurants();
+            if (data && data.length > 0) {
+                setRestaurants(data);
+            }
+        } catch (err) {
+            console.warn('[FoodMarketScreen] Error loading restaurants:', err?.message);
+        } finally {
+            setLoadingRestaurants(false);
+            setRefreshing(false);
+        }
+    };
+
+    useEffect(() => {
+        loadRestaurants();
+    }, []);
+
+    const onRefresh = () => {
+        setRefreshing(true);
+        loadRestaurants();
+    };
 
     return (
         <SafeAreaView
@@ -49,6 +77,14 @@ export default function FoodMarketScreen({
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={['#00C26F']}
+                        tintColor="#00C26F"
+                    />
+                }
             >
                 <FoodSearchBar
                     value={searchQuery}
@@ -79,6 +115,8 @@ export default function FoodMarketScreen({
                 />
 
                 <TrendingRestaurants
+                    restaurants={restaurants}
+                    loading={loadingRestaurants}
                     onSelect={(restaurant) => {
                         onSelectRestaurant?.(restaurant);
                     }}

@@ -28,6 +28,7 @@ const restaurantSchema = new mongoose.Schema(
             minOrder: { type: Number, default: 99 },
             costForTwo: { type: Number, default: 350 },
         },
+        image: { type: String, default: '' },
     },
     { timestamps: true }
 );
@@ -56,6 +57,7 @@ const menuItemSchema = new mongoose.Schema(
         isVeg: { type: Boolean, default: false },
         isAvailable: { type: Boolean, default: true },
         description: { type: String, default: '' },
+        image: { type: String, default: '' },
     },
     { timestamps: true }
 );

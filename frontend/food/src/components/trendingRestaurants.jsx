@@ -6,85 +6,90 @@ import {
     Image,
     ScrollView,
     StyleSheet,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const RESTAURANTS = [
+// Avatar background colours — cycles through for each restaurant
+const AVATAR_COLORS = [
+    '#0F172A', '#2D3B2D', '#7A1C1C', '#1E3A8A',
+    '#166534', '#44337A', '#7B341E', '#1A365D',
+];
+
+const FALLBACK_RESTAURANTS = [
     {
-        id: 'daily-grind',
-        name: 'The Daily Grind',
-        initials: 'DG',
-        initialsBg: '#0F172A',
-        cuisine: 'Café • Coffee • Snacks',
+        id: 'bawarchee-biryani',
+        name: 'Bawarchee Biryani House',
+        cuisine: ['Mughlai', 'Biryani', 'North Indian'],
+        rating: '4.5',
+        reviews: '1.2K',
+        time: '30–40 min',
+        deliveryTimeMins: 35,
+        minOrder: 149,
+        image: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=700&auto=format&fit=crop&q=85',
+    },
+    {
+        id: 'the-brew-room',
+        name: 'The Brew Room',
+        cuisine: ['GenZ Drinks', 'Coffee', 'Desserts'],
         rating: '4.8',
-        reviews: '2.1K',
-        eta: '15–25 min',
-        badge: '#1 in Cafés',
-        badgeIcon: 'flame',
-        badgeColor: '#F97316',
-        offerPrimary: '15% OFF',
-        offerSecondary: 'Free delivery above ₹149',
-        isDeliveryOffer: true,
-        image:
-            'https://images.unsplash.com/photo-1442512595331-e89e73853f31?w=700&auto=format&fit=crop&q=85',
+        reviews: '950',
+        time: '20–30 min',
+        deliveryTimeMins: 25,
+        minOrder: 99,
+        image: 'https://images.unsplash.com/photo-1442512595331-e89e73853f31?w=700&auto=format&fit=crop&q=85',
     },
     {
-        id: 'brew-bloom',
-        name: 'Brew & Bloom',
-        initials: 'B',
-        initialsBg: '#2D3B2D',
-        cuisine: 'Coffee • Desserts • Healthy',
+        id: 'maa-ka-dhaba',
+        name: 'Maa ka Dhaba',
+        cuisine: ['Thali', 'North Indian', 'Homestyle'],
         rating: '4.6',
-        reviews: '1.3K',
-        eta: '20–30 min',
-        badge: 'Top Rated',
-        badgeIcon: 'trophy',
-        badgeColor: '#FBBF24',
-        offerPrimary: 'Flat ₹50 OFF',
-        offerSecondary: 'Use DROPP50',
-        isDeliveryOffer: false,
-        image:
-            'https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=700&auto=format&fit=crop&q=85',
+        reviews: '2.4K',
+        time: '25–35 min',
+        deliveryTimeMins: 30,
+        minOrder: 120,
+        image: 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=700&auto=format&fit=crop&q=85',
     },
     {
-        id: 'burger-district',
-        name: 'Burger District',
-        initials: 'BD',
-        initialsBg: '#7A1C1C',
-        cuisine: 'Burgers • Truffle Fries',
+        id: 'pizza-palace',
+        name: 'Pizza Palace',
+        cuisine: ['Pizza', 'Italian', 'Fast Food'],
+        rating: '4.4',
+        reviews: '810',
+        time: '25–35 min',
+        deliveryTimeMins: 30,
+        minOrder: 199,
+        image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=700&auto=format&fit=crop&q=85',
+    },
+    {
+        id: 'dosa-king',
+        name: 'Dosa King',
+        cuisine: ['South Indian', 'Tiffin', 'Breakfast'],
         rating: '4.7',
         reviews: '1.8K',
-        eta: '20–30 min',
-        badge: '#3 in Burgers',
-        badgeIcon: 'trending-up',
-        badgeColor: '#34D399',
-        offerPrimary: '20% OFF',
-        offerSecondary: 'Free sides above ₹299',
-        isDeliveryOffer: true,
-        image:
-            'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=700&auto=format&fit=crop&q=85',
+        time: '20–30 min',
+        deliveryTimeMins: 25,
+        minOrder: 99,
+        image: 'https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=700&auto=format&fit=crop&q=85',
     },
     {
-        id: 'roast-room',
-        name: 'The Roast Room',
-        initials: 'RR',
-        initialsBg: '#3B2314',
-        cuisine: 'Coffee • Bakery • Brunch',
-        rating: '4.7',
-        reviews: '890',
-        eta: '20–30 min',
-        badge: 'Local Favourite',
-        badgeIcon: 'heart',
-        badgeColor: '#F43F5E',
-        offerPrimary: '10% OFF',
-        offerSecondary: 'Use ROAST10',
-        isDeliveryOffer: false,
-        image:
-            'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=700&auto=format&fit=crop&q=85',
+        id: 'dragon-wok',
+        name: 'Dragon Wok Express',
+        cuisine: ['Chinese', 'Momos', 'Asian'],
+        rating: '4.3',
+        reviews: '640',
+        time: '30–40 min',
+        deliveryTimeMins: 35,
+        minOrder: 149,
+        image: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=700&auto=format&fit=crop&q=85',
     },
 ];
 
-export default function TrendingRestaurants({ onSelect }) {
+export default function TrendingRestaurants({
+    restaurants,
+    loading = false,
+    onSelect,
+}) {
     const [favorites, setFavorites] = useState({});
 
     const toggleFavorite = (id) => {
@@ -94,9 +99,35 @@ export default function TrendingRestaurants({ onSelect }) {
         }));
     };
 
+    if (loading) {
+        return (
+            <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                    <View style={styles.titleCol}>
+                        <Text style={styles.sectionTitle}>Trending Near You</Text>
+                        <Text style={styles.sectionSubtitle}>Popular cafes, restaurants and more around you</Text>
+                    </View>
+                </View>
+                <View style={styles.loadingRow}>
+                    {[1, 2, 3].map((i) => (
+                        <View key={i} style={styles.skeletonCard}>
+                            <View style={styles.skeletonImg} />
+                            <View style={styles.skeletonLine} />
+                            <View style={[styles.skeletonLine, { width: '60%' }]} />
+                        </View>
+                    ))}
+                </View>
+            </View>
+        );
+    }
+
+    const displayedRestaurants = (restaurants && restaurants.length > 0)
+        ? restaurants
+        : FALLBACK_RESTAURANTS;
+
     return (
         <View style={styles.section}>
-            {/* 1. Header with Title, Subtitle, and See All */}
+            {/* 1. Header */}
             <View style={styles.sectionHeader}>
                 <View style={styles.titleCol}>
                     <Text style={styles.sectionTitle}>Trending Near You</Text>
@@ -104,48 +135,58 @@ export default function TrendingRestaurants({ onSelect }) {
                         Popular cafes, restaurants and more around you
                     </Text>
                 </View>
-
                 <TouchableOpacity activeOpacity={0.7} style={styles.seeAllBtn}>
                     <Text style={styles.seeAll}>See all</Text>
                     <Ionicons name="chevron-forward" size={15} color="#00C26F" />
                 </TouchableOpacity>
             </View>
 
-            {/* 2. Horizontal Cards Carousel */}
+            {/* 2. Horizontal Cards */}
             <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.row}
                 decelerationRate="fast"
             >
-                {RESTAURANTS.map((r) => {
-                    const isFav = !!favorites[r.id];
+                {displayedRestaurants.map((r, idx) => {
+                    const rId = r.id || r._id;
+                    const isFav = !!favorites[rId];
+                    const initials = (r.name || 'R')
+                        .split(' ')
+                        .slice(0, 2)
+                        .map((w) => w[0] || '')
+                        .join('')
+                        .toUpperCase();
+                    const avatarBg = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+                    const cuisineStr = Array.isArray(r.cuisine)
+                        ? r.cuisine.join(' • ')
+                        : r.cuisines || r.cuisine || '';
+                    const coverImg = r.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=700&auto=format&fit=crop&q=85';
 
                     return (
                         <TouchableOpacity
-                            key={r.id}
+                            key={r.id || r._id}
                             style={styles.card}
                             onPress={() => onSelect && onSelect(r)}
                             activeOpacity={0.9}
                         >
-                            {/* Cover Image Area */}
+                            {/* Cover Image */}
                             <View style={styles.coverBox}>
-                                <Image source={{ uri: r.image }} style={styles.cover} resizeMode="cover" />
+                                <Image
+                                    source={{ uri: coverImg }}
+                                    style={styles.cover}
+                                    resizeMode="cover"
+                                />
 
-                                {/* Top Badges (Rank & Heart) */}
+                                {/* Top: Rating pill + Heart */}
                                 <View style={styles.topRow}>
-                                    {/* Rank Pill */}
                                     <View style={styles.rankPill}>
-                                        <Ionicons name={r.badgeIcon} size={11} color={r.badgeColor} />
-                                        <Text style={styles.rankText} numberOfLines={1}>
-                                            {r.badge}
-                                        </Text>
+                                        <Ionicons name="star" size={11} color="#F59E0B" />
+                                        <Text style={styles.rankText}>{r.rating}</Text>
                                     </View>
-
-                                    {/* Heart Button */}
                                     <TouchableOpacity
                                         style={styles.heartBtn}
-                                        onPress={() => toggleFavorite(r.id)}
+                                        onPress={() => toggleFavorite(r.id || r._id)}
                                         activeOpacity={0.8}
                                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                                     >
@@ -157,66 +198,48 @@ export default function TrendingRestaurants({ onSelect }) {
                                     </TouchableOpacity>
                                 </View>
 
-                                {/* Bottom Delivery Time Pill */}
+                                {/* Bottom: ETA */}
                                 <View style={styles.etaBadge}>
                                     <Ionicons name="time-outline" size={12} color="#0F172A" />
-                                    <Text style={styles.etaText}>{r.eta}</Text>
+                                    <Text style={styles.etaText}>
+                                        {r.time || r.eta || `${r.deliveryTimeMins} min`}
+                                    </Text>
                                 </View>
                             </View>
 
-                            {/* Card Body Details */}
+                            {/* Card Body */}
                             <View style={styles.info}>
-                                {/* Avatar + Restaurant Name & Rating */}
                                 <View style={styles.nameRow}>
-                                    <View style={[styles.avatar, { backgroundColor: r.initialsBg }]}>
-                                        <Text style={styles.avatarText}>{r.initials}</Text>
+                                    <View style={[styles.avatar, { backgroundColor: avatarBg }]}>
+                                        <Text style={styles.avatarText}>{initials}</Text>
                                     </View>
-
                                     <View style={styles.nameCol}>
-                                        <Text style={styles.name} numberOfLines={1}>
-                                            {r.name}
-                                        </Text>
+                                        <Text style={styles.name} numberOfLines={1}>{r.name}</Text>
                                         <View style={styles.ratingRow}>
                                             <Ionicons name="star" size={12} color="#F59E0B" />
                                             <Text style={styles.rating}>{r.rating}</Text>
-                                            <Text style={styles.reviews}>({r.reviews})</Text>
+                                            <Text style={styles.reviews}>
+                                                {r.reviews ? `(${r.reviews})` : ''}
+                                            </Text>
                                         </View>
                                     </View>
                                 </View>
 
-                                {/* Cuisines */}
-                                <Text style={styles.cuisine} numberOfLines={1}>
-                                    {r.cuisine}
-                                </Text>
+                                <Text style={styles.cuisine} numberOfLines={1}>{cuisineStr}</Text>
 
-                                {/* Offer Tags Row */}
+                                {/* Min Order tag */}
                                 <View style={styles.tagRow}>
-                                    {/* Primary Offer (Green Pill) */}
                                     <View style={styles.discountTag}>
-                                        <Ionicons name="pricetag" size={10} color="#047857" />
-                                        <Text style={styles.discountText}>{r.offerPrimary}</Text>
+                                        <Ionicons name="bag-outline" size={10} color="#047857" />
+                                        <Text style={styles.discountText}>
+                                            Min ₹{r.minOrder || r.pricing?.minOrder || 99}
+                                        </Text>
                                     </View>
-
-                                    {/* Secondary Offer (Red Delivery or Green Code) */}
-                                    <View
-                                        style={[
-                                            styles.promoTag,
-                                            r.isDeliveryOffer ? styles.promoRedBg : styles.promoGreenBg,
-                                        ]}
-                                    >
-                                        <Ionicons
-                                            name={r.isDeliveryOffer ? 'bicycle-outline' : 'pricetag-outline'}
-                                            size={11}
-                                            color={r.isDeliveryOffer ? '#E11D48' : '#047857'}
-                                        />
-                                        <Text
-                                            style={[
-                                                styles.promoText,
-                                                r.isDeliveryOffer ? styles.promoRedText : styles.promoGreenText,
-                                            ]}
-                                            numberOfLines={1}
-                                        >
-                                            {r.offerSecondary}
+                                    <View style={styles.promoTag}>
+                                        <Ionicons name="bicycle-outline" size={11} color="#047857" />
+                                        <Text style={[styles.promoText, styles.promoGreenText]}
+                                            numberOfLines={1}>
+                                            Free above ₹299
                                         </Text>
                                     </View>
                                 </View>
@@ -486,5 +509,32 @@ const styles = StyleSheet.create({
         flex: 1,
         flexShrink: 1,
         fontSize: 8.5,
+    },
+
+    loadingRow: {
+        flexDirection: 'row',
+        paddingHorizontal: 16,
+        gap: 14,
+    },
+    skeletonCard: {
+        width: 170,
+        borderRadius: 16,
+        backgroundColor: '#FFFFFF',
+        padding: 10,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        gap: 8,
+    },
+    skeletonImg: {
+        width: '100%',
+        height: 100,
+        borderRadius: 12,
+        backgroundColor: '#F1F5F9',
+    },
+    skeletonLine: {
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: '#E2E8F0',
+        width: '85%',
     },
 });
