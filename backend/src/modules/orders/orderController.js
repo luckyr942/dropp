@@ -8,14 +8,15 @@ import {
 
 export async function handleCreateDraft(req, res, next) {
   try {
-    const { restaurantId, sessionId, items } = req.body;
+    const { restaurantId, sessionId, items, customerId } = req.body;
     if (!restaurantId || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
         error: 'restaurantId and items[] are required',
       });
     }
-    const order = await createDraftOrder({ restaurantId, sessionId, items });
+    const realCustomerId = req.user?.id || req.headers['x-customer-id'] || customerId;
+    const order = await createDraftOrder({ restaurantId, sessionId, items, customerId: realCustomerId });
     res.status(201).json({ success: true, data: order });
   } catch (err) {
     next(err);
@@ -24,7 +25,8 @@ export async function handleCreateDraft(req, res, next) {
 
 export async function handleGetOrders(req, res, next) {
   try {
-    const orders = await getOrdersForCustomer('demo_customer_001');
+    const realCustomerId = req.user?.id || req.headers['x-customer-id'] || req.query.customerId;
+    const orders = await getOrdersForCustomer(realCustomerId);
     res.json({ success: true, data: orders });
   } catch (err) {
     next(err);

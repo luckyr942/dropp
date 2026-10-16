@@ -1,23 +1,30 @@
 import { AuraSession } from "./sessionModel.js";
 import { Restaurant, MenuItem } from '../modules/catalog/catalogModel.js';
 import { resolveItemsByName } from '../modules/catalog/catalogService.js';
-import { createDraftOrder, confirmOrder } from '../modules/orders/orderService.js';
+import { createDraftOrder, confirmOrder, cancelOrder } from '../modules/orders/orderService.js';
 import { broadcast } from '../infrastructure/websocket/wsServer.js';
+import { config } from '../config/config.js';
 
+// 1. START the voice Session (supports real customer ID from mobile/JWT auth)
+export async function startSession(sessionId, customerId = null) {
+  let session = await AuraSession.findOne({ sessionId });
+  const effectiveCustomerId = customerId || config.defaultCustomerId;
 
-
-//1.START the voice Session
-export async function startSession(sessionId, customerId){
-    let session = await AuraSession.findOne({ sessionId });
-    if(session) return session.toObject();
-
-    session = await AuraSession.create({
-        sessionId,
-        customerId,
-        status: 'active',
-    });
-
+  if (session) {
+    if (customerId && session.customerId !== customerId) {
+      session.customerId = customerId;
+      await session.save();
+    }
     return session.toObject();
+  }
+
+  session = await AuraSession.create({
+    sessionId,
+    customerId: effectiveCustomerId,
+    status: 'active',
+  });
+
+  return session.toObject();
 }
 
 
@@ -68,20 +75,31 @@ export async function getMenuForSession(sessionId, restaurantId){
 }
 
 
-//4. Build the Draft Cart( live Screen Sync)
-export async function buildDraft(sessionId, requestedItems, restaurantId = null) {
+// 4. Build the Draft Cart (live Screen Sync with real customer ID)
+export async function buildDraft(sessionId, requestedItems, restaurantId = null, customerId = null) {
   let session = await AuraSession.findOne({ sessionId });
+  const effectiveCustomerId = customerId || session?.customerId || config.defaultCustomerId;
 
   if (!session) {
     session = await AuraSession.create({
       sessionId,
-      customerId: 'demo_customer_001',
+      customerId: effectiveCustomerId,
       restaurantId: restaurantId || null,
       status: 'active',
     });
-  } else if (restaurantId && !session.restaurantId) {
-    session.restaurantId = restaurantId;
-    await session.save();
+  } else {
+    let modified = false;
+    if (customerId && session.customerId !== customerId) {
+      session.customerId = customerId;
+      modified = true;
+    }
+    if (restaurantId && !session.restaurantId) {
+      session.restaurantId = restaurantId;
+      modified = true;
+    }
+    if (modified) {
+      await session.save();
+    }
   }
 
   const targetRestaurantId = session.restaurantId || restaurantId;
@@ -90,6 +108,11 @@ export async function buildDraft(sessionId, requestedItems, restaurantId = null)
       new Error('Please select a restaurant first before adding items to cart'),
       { status: 400 }
     );
+  }
+
+  // Cancel any prior unconfirmed draft to prevent abandoned cart clutter
+  if (session.draftOrderId) {
+    await cancelOrder(session.draftOrderId.toString()).catch(() => {});
   }
 
   // Resolve spoken dish names/aliases to verified DB items & real prices
@@ -108,10 +131,10 @@ export async function buildDraft(sessionId, requestedItems, restaurantId = null)
     );
   }
 
-  // Create or update the draft order
+  // Create the draft order with the authenticated/real customer ID
   const order = await createDraftOrder({
     restaurantId: targetRestaurantId,
-    customerId: session.customerId || 'demo_customer_001',
+    customerId: session.customerId || effectiveCustomerId,
     sessionId,
     items: foundItems,
   });

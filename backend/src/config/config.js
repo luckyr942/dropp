@@ -9,4 +9,5 @@ export const config = Object.freeze({
   rabbitmqUrl: process.env.RABBITMQ_URL || 'amqp://dropp_admin:dropp_password@localhost:5672',
   jwtSecret: process.env.JWT_SECRET || 'super_secret_jwt_key_dropp_2026',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  defaultCustomerId: process.env.DEFAULT_CUSTOMER_ID || 'cust_default',
 });

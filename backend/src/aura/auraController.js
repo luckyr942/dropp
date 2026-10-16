@@ -7,18 +7,20 @@ import {
 } from './auraService.js';
 
 //POST /api/aura/session/start
-// Aura ai bolna calls this when the voice session starts
-export async function handleStartSession(req, res, next){
-    try{
-        const { sessionId, customerId } = req.body;
-        if(!sessionId){
-            return res.status(400).json({success: false, error: 'sessionID is required'});
-        }
-        const session = await startSession(sessionId, customerId);
-        res.status(201).json({succes: true, data: session});
-    }catch(err){
-        next(err);
+// POST /api/aura/session/start
+// Aura AI / Bolna calls this when the voice session starts
+export async function handleStartSession(req, res, next) {
+  try {
+    const { sessionId, customerId } = req.body;
+    if (!sessionId) {
+      return res.status(400).json({ success: false, error: 'sessionId is required' });
     }
+    const realCustomerId = req.user?.id || req.headers['x-customer-id'] || customerId;
+    const session = await startSession(sessionId, realCustomerId);
+    res.status(201).json({ success: true, data: session });
+  } catch (err) {
+    next(err);
+  }
 }
 
 
@@ -60,14 +62,15 @@ export async function handleGetMenu(req, res, next) {
 // Bolna calls this when user specifies items (e.g., "2 Biryani and 1 Coke")
 export async function handleBuildDraft(req, res, next) {
   try {
-    const { sessionId, items, restaurantId } = req.body;
+    const { sessionId, items, restaurantId, customerId } = req.body;
     if (!sessionId || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
         error: 'sessionId and items[] are required',
       });
     }
-    const draft = await buildDraft(sessionId, items, restaurantId);
+    const realCustomerId = req.user?.id || req.headers['x-customer-id'] || customerId;
+    const draft = await buildDraft(sessionId, items, restaurantId, realCustomerId);
     res.json({ success: true, data: draft });
   } catch (err) {
     next(err);

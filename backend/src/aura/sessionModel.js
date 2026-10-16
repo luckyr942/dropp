@@ -23,16 +23,11 @@ const sessionSchema = new mongoose.Schema(
             ref: 'Order',
             default: null,
         },
-        draftOrdetId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Order',
-            default: null,
-        },
         status: {
             type: String,
             enum: ['active', 'order_placed', 'abandoned'],
             default: 'active',
-      index: true,
+            index: true,
         },
         // Log of spoken phrases for QA, debugging misunderstandings, and improving speech recognition
         transcript: {
@@ -43,5 +38,7 @@ const sessionSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
+// Auto-expire abandoned/stale sessions after 1 hour (3600 seconds)
+sessionSchema.index({ updatedAt: 1 }, { expireAfterSeconds: 3600 });
 
 export const AuraSession = mongoose.model('AuraSession', sessionSchema);

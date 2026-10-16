@@ -18,18 +18,17 @@ const orderItemSchema = new mongoose.Schema(
 
 const orderSchema = new mongoose.Schema(
     {
-        customerId:{
+        customerId: {
             type: String,
-            required: true,
+            required: [true, 'customerId is required'],
             index: true,
-            default: 'demo_cutomer_001',
         },
         restaurantId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Restaurant',
             required: true,
         },
-        sessionId: {type: String, default: true},
+        sessionId: { type: String, default: null },
         items: {
             type: [orderItemSchema],
             required: true,
@@ -45,9 +44,9 @@ const orderSchema = new mongoose.Schema(
             index: true,
         },
         deliveryAddress: {
-            street: { type: String, default: 'Demo Street, Sector 18' },
-            city: { type: String, default: 'Delhi' },
-            pincode: { type: String, default: '110001' },
+            street: { type: String, default: '' },
+            city: { type: String, default: '' },
+            pincode: { type: String, default: '' },
         },
         paymentMethod: {
             type: String,

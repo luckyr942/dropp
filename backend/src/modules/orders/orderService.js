@@ -1,6 +1,7 @@
 import { Order } from './orderModel.js';
 import { publishDomainEvent } from '../../infrastructure/rabbitmq/index.js';
 import { broadcast } from '../../infrastructure/websocket/wsServer.js';
+import { config } from '../../config/config.js';
 
 const DELIVERY_FEE = 30;
 
@@ -9,9 +10,10 @@ export async function createDraftOrder(payload, customerId) {
   const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
   const deliveryFee = DELIVERY_FEE;
   const totalAmount = subtotal + deliveryFee;
+  const effectiveCustomerId = payload.customerId || customerId || config.defaultCustomerId;
 
   const order = await Order.create({
-    customerId: payload.customerId || customerId || 'demo_customer_001',
+    customerId: effectiveCustomerId,
     restaurantId,
     sessionId: sessionId || null,
     items,
@@ -54,8 +56,9 @@ export async function getOrderById(orderId) {
   return Order.findById(orderId).populate('restaurantId', 'name slug').lean();
 }
 
-export async function getOrdersForCustomer(customerId = 'demo_customer_001') {
-  return Order.find({ customerId })
+export async function getOrdersForCustomer(customerId = null) {
+  const targetCustomerId = customerId || config.defaultCustomerId;
+  return Order.find({ customerId: targetCustomerId })
     .populate('restaurantId', 'name slug')
     .sort({ createdAt: -1 })
     .lean();
