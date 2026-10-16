@@ -46,18 +46,44 @@ app.use(
   })
 );
 
+// Behind Render/Railway/Reverse Proxies, derive real client IP
+app.set('trust proxy', 1);
+
 // Prevent payload exhaustion attacks (e.g. someone sending 50MB of JSON)
 app.use(express.json({ limit: '100kb' }));
 
-// Rate limiting: 100 requests per 15 mins per IP across /api
+// Request Logger: Logs every incoming HTTP request and response status
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const color = res.statusCode >= 400 ? '\x1b[31m' : '\x1b[32m';
+    console.log(`📡 [${req.method}] ${req.originalUrl} - ${color}${res.statusCode}\x1b[0m (${duration}ms)`);
+  });
+  next();
+});
+
+// Tier 1: Loose rate limiter for standard catalog/order API traffic
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
-  standardHeaders: 'draft-8',
+  max: 500,
+  standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many requests, please try again later.' },
 });
+
+// Tier 2: Tight rate limiter specifically guarding LLM quota on /voice-turn (20 turns/min)
+const voiceLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Aura is receiving too many requests. Please slow down a little.' },
+});
+
 app.use('/api', apiLimiter);
+app.use('/api/aura/voice-turn', voiceLimiter);
+
 
 // -------------------------------------------------------------
 // 2. Base & Health Endpoints
@@ -102,6 +128,7 @@ app.use((err, req, res, next) => {
     method: req.method,
     path: req.path,
     message: err.message,
+    stack: err.stack,
   });
 
   const status = Number.isInteger(err.status) ? err.status : 500;
@@ -137,10 +164,13 @@ async function shutdown(signal) {
   shuttingDown = true;
   console.log(`[Dropp] ${signal} received: closing HTTP and WebSocket connections...`);
 
+  if (typeof server.closeAllConnections === 'function') {
+    server.closeAllConnections();
+  }
+
   server.close((err) => {
     if (err) {
       console.error('[Dropp] Error while closing HTTP server:', err);
-      process.exitCode = 1;
     }
     console.log('[Dropp] Cleanup complete. Process exiting gracefully.');
     process.exit(0);

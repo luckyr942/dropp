@@ -6,13 +6,17 @@ import {
   handleBuildDraft,
   handleConfirmOrder,
 } from './auraController.js';
+import { handleVoiceTurn } from './voiceTurnHandler.js';
 
 const router = Router();
 
 // Session lifecycle: start a new voice conversation
 router.post('/session/start', handleStartSession);
 
-// 4 Bolna Voice Tool Endpoints:
+// Main Aura Voice / Text Turn endpoint
+router.post('/voice-turn', handleVoiceTurn);
+
+// Direct tool endpoints (for testing or external integrations)
 router.post('/tools/search-restaurants', handleSearchRestaurants);
 router.post('/tools/get-menu', handleGetMenu);
 router.post('/tools/build-draft', handleBuildDraft);

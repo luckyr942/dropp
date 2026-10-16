@@ -29,6 +29,22 @@ const sessionSchema = new mongoose.Schema(
             default: 'active',
             index: true,
         },
+        // Tracks where we are in the ordering flow
+        // null → no pending action
+        // 'awaiting_confirmation' → draft exists, waiting for "haan"
+        stage: {
+            type: String,
+            enum: [null, 'awaiting_confirmation'],
+            default: null,
+        },
+
+        // Server-side conversation history for Gemini
+        // Each entry: { role: 'user'|'model', parts: [{ text: '...' }] }
+        conversation: {
+            type: [mongoose.Schema.Types.Mixed],
+            default: [],
+        },
+
         // Log of spoken phrases for QA, debugging misunderstandings, and improving speech recognition
         transcript: {
             type: [String],
