@@ -34,7 +34,7 @@ const sessionSchema = new mongoose.Schema(
         // 'awaiting_confirmation' → draft exists, waiting for "haan"
         stage: {
             type: String,
-            enum: [null, 'awaiting_confirmation'],
+            enum: [null, 'awaiting_confirmation', 'awaiting_ride_confirmation'],
             default: null,
         },
 
@@ -43,6 +43,15 @@ const sessionSchema = new mongoose.Schema(
         conversation: {
             type: [mongoose.Schema.Types.Mixed],
             default: [],
+        },
+        activeQuoteId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'RideQuote',
+            default: null,
+        },
+        selectedRideType: {
+            type: String,
+            default: 'cab_economy',
         },
 
         // Log of spoken phrases for QA, debugging misunderstandings, and improving speech recognition

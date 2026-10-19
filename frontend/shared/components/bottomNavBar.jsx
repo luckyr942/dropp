@@ -8,6 +8,7 @@ import {
     FontAwesome5,
     MaterialIcons,
 } from '@expo/vector-icons';
+import useAura from '../voice/useAura';
 
 /**
  * Pre-configured presets for different screens & use cases
@@ -197,6 +198,23 @@ export default function BottomNavBar({
     const resolvedCenterAction =
         centerAction !== undefined ? centerAction : selectedPreset.centerAction;
 
+    let aura = null;
+    try {
+        aura = useAura();
+    } catch (e) {
+        // Safe fallback if BottomNavBar rendered outside AuraProvider
+    }
+
+    const handleCenterPress = () => {
+        if (centerAction && typeof centerAction.onPress === 'function') {
+            centerAction.onPress();
+        } else if (aura?.openAura) {
+            aura.openAura();
+        } else if (resolvedCenterAction?.onPress) {
+            resolvedCenterAction.onPress();
+        }
+    };
+
     // If center placeholder is missing but centerAction exists, insert in middle
     const hasCenterPlaceholder = resolvedTabs.some((t) => t.isCenter);
     if (!hasCenterPlaceholder && resolvedCenterAction) {
@@ -228,7 +246,7 @@ export default function BottomNavBar({
                                     <TouchableOpacity
                                         style={styles.centerFab}
                                         activeOpacity={0.85}
-                                        onPress={resolvedCenterAction.onPress}
+                                        onPress={handleCenterPress}
                                         accessibilityRole="button"
                                         accessibilityLabel="Action button"
                                     >

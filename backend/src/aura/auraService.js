@@ -28,23 +28,50 @@ export async function startSession(sessionId, customerId = null) {
 }
 
 
-//2. Process the speech and extract intent(Restaurant, Items, Qunatity and amany more things)
+//2. Process the speech and extract intent (Restaurant, Items, Quantity)
 export async function searchRestaurant(query){
-    const regex = new RegExp(query, 'i');
-    const restaurants = await Restaurant.find({
-        isOpen: true,
-        $or: [{name: regex}, {cuisine: regex}],
-    })
-    .limit(5)
-    .lean();
+    const cleanQuery = (query || '').trim();
+    const regex = new RegExp(cleanQuery, 'i');
 
-    return restaurants.map((r) => ({
-        id: r._id,
-        name: r.name,
-        cuisine: r.cuisine ? r.cuisine.join(', ') : '',
-        rating: r.rating,
-        deliveryTimeMins: r.deliveryTimeMins,
-        minOrder: r.pricing?.minOrder || 99,
+    // Find restaurants matching name or cuisine
+    const byNameOrCuisine = await Restaurant.find({
+        isOpen: true,
+        $or: [{ name: regex }, { cuisine: regex }],
+    }).limit(5).lean();
+
+    // Also find restaurants offering items matching the dish query
+    const matchingItems = await MenuItem.find({
+        isAvailable: true,
+        name: regex,
+    }).limit(10).select('restaurantId name price isVeg').lean();
+
+    const dishRestIds = matchingItems.map((m) => m.restaurantId.toString());
+    const byDish = dishRestIds.length > 0
+        ? await Restaurant.find({ _id: { $in: dishRestIds }, isOpen: true }).limit(5).lean()
+        : [];
+
+    const map = new Map();
+    for (const r of [...byNameOrCuisine, ...byDish]) {
+        map.set(r._id.toString(), r);
+    }
+    const combined = Array.from(map.values()).slice(0, 5);
+
+    // Attach menu preview so LLM can call build_draft directly without an extra get_menu call
+    return Promise.all(combined.map(async (r) => {
+        const preview = await MenuItem.find({ restaurantId: r._id, isAvailable: true })
+            .limit(4)
+            .select('name price isVeg')
+            .lean();
+
+        return {
+            id: r._id,
+            name: r.name,
+            cuisine: r.cuisine ? r.cuisine.join(', ') : '',
+            rating: r.rating,
+            deliveryTimeMins: r.deliveryTimeMins,
+            minOrder: r.pricing?.minOrder || 99,
+            menuPreview: preview.map((p) => ({ name: p.name, price: p.price })),
+        };
     }));
 }
 

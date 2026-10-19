@@ -1,4 +1,4 @@
-// Entry point for Dropp Backend & Aura AI Engine
+// Entry point for Dropp Backend & Aura AI Engine (Gemini Active)
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -14,6 +14,7 @@ import { setupWebSockets } from './infrastructure/websocket/wsServer.js';
 import catalogRouter from './modules/catalog/catalogRoutes.js';
 import orderRouter from './modules/orders/orderRoutes.js';
 import auraRouter from './aura/auraRoutes.js';
+import rideRouter from './modules/rides/rideRoutes.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -96,6 +97,7 @@ app.get('/', (req, res) => {
       health: '/health',
       catalog: '/api/catalog',
       orders: '/api/orders',
+      rides: '/api/rides',
       aura: '/api/aura',
     },
   });
@@ -110,6 +112,7 @@ app.get('/health', (req, res) => {
 // -------------------------------------------------------------
 app.use('/api/catalog', catalogRouter);
 app.use('/api/orders', orderRouter);
+app.use('/api/rides', rideRouter);
 app.use('/api/aura', auraRouter);
 
 // 404 Handler

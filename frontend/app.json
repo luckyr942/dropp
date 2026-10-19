@@ -1,25 +1,30 @@
 {
-    "expo": {
-        "name": "Dropp",
-        "slug": "dropp",
-        "version": "1.0.0",
-        "orientation": "portrait",
-        "userInterfaceStyle": "dark",
-        "splash": {
-            "backgroundColor": "#080808"
-        },
-        "ios": {
-            "supportsTablet": false,
-            "bundleIdentifier": "com.dropp.app"
-        },
-        "android": {
-            "adaptiveIcon": {
-                "backgroundColor": "#080808"
-            },
-            "package": "com.dropp.app"
-        },
-        "web": {
-            "favicon": "./assets/1.png"
+  "expo": {
+    "name": "Dropp",
+    "slug": "dropp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#080808"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.dropp.app",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
         }
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#080808"
+      },
+      "package": "com.dropp.app"
+    },
+    "web": {
+      "favicon": "./assets/1.png"
     }
+  }
 }

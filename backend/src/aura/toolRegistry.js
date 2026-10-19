@@ -1,57 +1,100 @@
-//Maps the LLM-visible tools to verified backend service function
-import { searchRestaurant, getMenuForSession, buildDraft } from "./auraService.js";
-import { AuraSession } from "./sessionModel.js";
+// Maps the LLM-visible tools to verified backend service functions
+import { searchRestaurant, getMenuForSession, buildDraft } from './auraService.js';
+import { AuraSession } from './sessionModel.js';
+import { estimateRide, bookRide } from '../modules/rides/rideService.js';
 
-export const toolMap ={
-    //search restaurants by cuisine, dish or name
-    search_restaurants: async({ query, sessionId })=>{
-        if(typeof query !== 'string' || !query.trim()){
-            throw new Error("A search query is required");
-        }
-        const items = await searchRestaurant(query.trim());
-        return { items };
-    },
+export const toolMap = {
+  // ── Food Tools ──────────────────────────────────────────────
+  // Search restaurants by cuisine, dish, or name
+  search_restaurants: async ({ query, sessionId }) => {
+    if (typeof query !== 'string' || !query.trim()) {
+      throw new Error('A search query is required');
+    }
+    const items = await searchRestaurant(query.trim());
+    return { items };
+  },
 
-    //fetch menu for specific restaurant
-    get_menu: async({ restaurantId, sessionId }) =>{
-        if(!restaurantId || !sessionId){
-            throw new Error('restaurantId and sessionId are required');
-        }
-        return getMenuForSession(sessionId, restaurantId);
-    },
+  // Fetch menu for a specific restaurant
+  get_menu: async ({ restaurantId, sessionId }) => {
+    if (!restaurantId || !sessionId) {
+      throw new Error('restaurantId and sessionId are required');
+    }
+    return getMenuForSession(sessionId, restaurantId);
+  },
 
-    //building a cart draft with selected items & real DB prices
-    build_draft: async({ restaurantId, items, sessionId }) => {
-        if(!restaurantId){
-            throw new Error('restaurantId is required to add items to cart');
-        }
-        if(!Array.isArray(items) || items.length === 0){
-            throw new Error('At least one item is required');
-        }
+  // Building a cart draft with selected items & real DB prices
+  build_draft: async ({ restaurantId, items, sessionId }) => {
+    if (!restaurantId) {
+      throw new Error('restaurantId is required to add items to cart');
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('At least one item is required');
+    }
 
-        for (const item of items){
-            const qty = Number(item.quantity ?? 1);
-            if (!Number.isInteger(qty) || qty < 1 || qty > 20) {
-                throw new Error(`Invalid quantity for "${item.name}". Must be between 1 and 20.`);
-            }
-            item.quantity = qty;
-        }
+    for (const item of items) {
+      const qty = Number(item.quantity ?? 1);
+      if (!Number.isInteger(qty) || qty < 1 || qty > 20) {
+        throw new Error(`Invalid quantity for "${item.name}". Must be between 1 and 20.`);
+      }
+      item.quantity = qty;
+    }
 
-       const draft = await buildDraft(sessionId, items, restaurantId);
+    const draft = await buildDraft(sessionId, items, restaurantId);
 
-       await AuraSession.findOneAndUpdate(
-        { sessionId },
-        { $set: { stage: 'awaiting_confirmation' } }
-       );
+    await AuraSession.findOneAndUpdate(
+      { sessionId },
+      { $set: { stage: 'awaiting_confirmation' } }
+    );
     return draft;
+  },
+
+  // ── Ride Tools ──────────────────────────────────────────────
+  // Calculate live route road distance, travel duration, and fare options for bike/auto/cab
+  estimate_ride: async ({ pickup, drop, sessionId }) => {
+    if (!pickup || !drop) {
+      throw new Error('Dono pickup aur drop location zaroori hain.');
+    }
+    const quote = await estimateRide({
+      pickup,
+      drop,
+      customerId: sessionId || 'cust_live_001',
+    });
+
+    // 🧠 Production State Locking: Remember this quote on the session!
+    // When the user says "Haan" in the next turn, the fast-path locks this exact fare.
+    await AuraSession.findOneAndUpdate(
+      { sessionId },
+      {
+        $set: {
+          stage: 'awaiting_ride_confirmation',
+          activeQuoteId: quote.quoteId,
+          selectedRideType: 'cab_economy',
+        },
+      }
+    );
+
+    return quote;
+  },
+
+  // Confirm booking for selected vehicle tier
+  book_ride: async ({ quoteId, rideType, pickup, drop, sessionId }) => {
+    const ride = await bookRide({
+      customerId: sessionId || 'cust_live_001',
+      quoteId,
+      rideType: rideType || 'cab_economy',
+      pickup,
+      drop,
+    });
+    return ride;
   },
 };
 
-// what they do, and what arguments to provide
+// Tool schemas for Gemini function calling: names, descriptions, parameters, and required arguments
 export const TOOL_DECLARATIONS = [
+  // ── Food Tool Declarations ──────────────────────────────────
   {
     name: 'search_restaurants',
-    description: 'Search for open restaurants by name, cuisine type, or dish. Call when the user wants food or mentions a craving.',
+    description: 'Search for open restaurants and dishes by name, cuisine, or craving. Returns restaurants with popular menuPreview items and prices. You can call build_draft directly using the returned id and item name without needing get_menu first.',
     parameters: {
       type: 'object',
       properties: {
@@ -94,6 +137,47 @@ export const TOOL_DECLARATIONS = [
         },
       },
       required: ['restaurantId', 'items'],
+    },
+  },
+
+  // ── Ride Tool Declarations ──────────────────────────────────
+  {
+    name: 'estimate_ride',
+    description: 'Calculate live road distance, travel duration, and fare prices for Cab (Dropp Go), Auto, or Bike between pickup and drop locations. Call when the user asks how much a ride costs or wants to go from location A to B.',
+    parameters: {
+      type: 'object',
+      properties: {
+        pickup: {
+          type: 'string',
+          description: 'Pickup landmark or city address (e.g., Cyber Hub, Indiranagar, Bandra)',
+        },
+        drop: {
+          type: 'string',
+          description: 'Destination landmark or address (e.g., Rajiv Chowk, Kempegowda Airport, BKC)',
+        },
+      },
+      required: ['pickup', 'drop'],
+    },
+  },
+  {
+    name: 'book_ride',
+    description: 'Confirm and book a ride with an assigned driver and 4-digit OTP. Call when the user confirms they want to book a cab, auto, or bike.',
+    parameters: {
+      type: 'object',
+      properties: {
+        quoteId: {
+          type: 'string',
+          description: 'The quoteId returned by estimate_ride',
+        },
+        rideType: {
+          type: 'string',
+          enum: ['bike', 'auto', 'cab_economy', 'cab_premium'],
+          description: 'Type of ride: bike, auto, cab_economy (Dropp Go), or cab_premium (Premier)',
+        },
+        pickup: { type: 'string', description: 'Pickup location if quoteId is not present' },
+        drop: { type: 'string', description: 'Drop location if quoteId is not present' },
+      },
+      required: ['rideType'],
     },
   },
 ];

@@ -7,8 +7,22 @@ import {
   handleConfirmOrder,
 } from './auraController.js';
 import { handleVoiceTurn } from './voiceTurnHandler.js';
+import { getAudioBuffer } from './ttsService.js';
 
 const router = Router();
+
+// Stream generated Callirrhoe voice audio
+router.get('/audio/:id', (req, res) => {
+  const buffer = getAudioBuffer(req.params.id);
+  if (!buffer) {
+    return res.status(404).send('Audio not found or expired');
+  }
+  res.setHeader('Content-Type', 'audio/wav');
+  res.setHeader('Content-Length', buffer.length);
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  return res.end(buffer);
+});
 
 // Session lifecycle: start a new voice conversation
 router.post('/session/start', handleStartSession);

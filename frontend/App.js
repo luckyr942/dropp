@@ -25,6 +25,10 @@ import {
 } from '@expo-google-fonts/plus-jakarta-sans';
 import { Caveat_600SemiBold } from '@expo-google-fonts/caveat';
 
+// ─── Aura Voice AI ────────────────────────────────────────────────
+import { AuraProvider } from './shared/voice/AuraContext.js';
+import AuraOverlay from './shared/voice/AuraOverlay.jsx';
+
 // ─── Shared Screens ──────────────────────────────────────────────
 import SplashScreen from './shared/screens/SplashScreen.jsx';
 import { ThemeProvider } from './shared/theme/themeContext';
@@ -34,6 +38,7 @@ import RoleSelectionScreen from './rider/src/screens/RoleSelectionScreen.jsx';
 
 // ─── Customer Flow (Rider + Food + Delivery + Shop) ──────────────
 import MainHomeScreen from './shared/screens/mainHomeScreen.jsx';
+import RiderHomeScreen from './rider/src/screens/HomeScreen.jsx';
 import LocationSearchScreen from './rider/src/screens/LocationScreen.jsx';
 import PackageDetailsScreen from './rider/src/screens/PackageDetailsScreen.jsx';
 import FindingDriverScreen from './rider/src/screens/FindingDriverScreen.jsx';
@@ -109,145 +114,152 @@ export default function App() {
     return (
         <SafeAreaProvider>
             <ThemeProvider>
-                <StatusBar style="light" />
-                <View style={styles.root}>
+                <AuraProvider onNavigate={navigate}>
+                    <StatusBar style="light" />
+                    <View style={styles.root}>
 
-                {/* ── 1. Splash ── */}
-                {currentScreen === 'Splash' && (
-                    <SplashScreen onFinish={() => navigate('RoleSelection')} />
-                )}
+                        {/* ── 1. Splash ── */}
+                        {currentScreen === 'Splash' && (
+                            <SplashScreen onFinish={() => navigate('RoleSelection')} />
+                        )}
 
-                {/* ── 2. Role Selection (You are...) ── */}
-                {currentScreen === 'RoleSelection' && (
-                    <RoleSelectionScreen
-                        onSelectRole={(role) => {
-                            if (role === 'Customer') navigate('Home');
-                            else if (role === 'Captain') navigate('DriverHome');
-                            else alert('Merchant portal coming soon! 🚀');
-                        }}
-                    />
-                )}
+                        {/* ── 2. Role Selection (You are...) ── */}
+                        {currentScreen === 'RoleSelection' && (
+                            <RoleSelectionScreen
+                                onSelectRole={(role) => {
+                                    if (role === 'Customer') navigate('Home');
+                                    else if (role === 'Captain') navigate('DriverHome');
+                                    else alert('Merchant portal coming soon! 🚀');
+                                }}
+                            />
+                        )}
 
-                {/* ════════════════════════════════════════════════
-                    CUSTOMER FLOW
-                ════════════════════════════════════════════════ */}
+                        {/* ════════════════════════════════════════════════
+                            CUSTOMER FLOW
+                        ════════════════════════════════════════════════ */}
 
-                {currentScreen === 'Home' && (
-                    <MainHomeScreen onNavigate={navigate} />
-                )}
+                        {currentScreen === 'Home' && (
+                            <MainHomeScreen onNavigate={navigate} />
+                        )}
 
-                {(currentScreen === 'Location' ||
-                    currentScreen === 'LocationSearch') && (
-                    <LocationSearchScreen
-                        onBack={() => navigate('Home')}
-                        onNavigate={navigate}
-                    />
-                )}
+                        {currentScreen === 'RiderHome' && (
+                            <RiderHomeScreen onNavigate={navigate} />
+                        )}
 
-                {currentScreen === 'PackageDetails' && (
-                    <PackageDetailsScreen
-                        onBack={() => navigate('Home')}
-                        onNavigate={navigate}
-                    />
-                )}
+                        {(currentScreen === 'Location' ||
+                            currentScreen === 'LocationSearch') && (
+                            <LocationSearchScreen
+                                onBack={() => navigate('Home')}
+                                onNavigate={navigate}
+                            />
+                        )}
 
-                {currentScreen === 'FindingDriver' && (
-                    <FindingDriverScreen
-                        onNavigate={navigate}
-                        onCancel={() => navigate('Home')}
-                    />
-                )}
+                        {currentScreen === 'PackageDetails' && (
+                            <PackageDetailsScreen
+                                onBack={() => navigate('Home')}
+                                onNavigate={navigate}
+                            />
+                        )}
 
-                {currentScreen === 'TripTracking' && (
-                    <TripTrackingScreen
-                        onBack={() => navigate('Home')}
-                        onNavigate={navigate}
-                    />
-                )}
+                        {currentScreen === 'FindingDriver' && (
+                            <FindingDriverScreen
+                                onNavigate={navigate}
+                                onCancel={() => navigate('Home')}
+                            />
+                        )}
 
-                {/* ── Food Sub-flow ── */}
-                {currentScreen === 'Food' && (
-                    <FoodMarketScreen
-                        onNavigate={navigate}
-                        onSelectRestaurant={(rest) => {
-                            setSelectedRestaurant(rest);
-                            navigate('RestaurantDetail');
-                        }}
-                    />
-                )}
+                        {currentScreen === 'TripTracking' && (
+                            <TripTrackingScreen
+                                onBack={() => navigate('Home')}
+                                onNavigate={navigate}
+                            />
+                        )}
 
-                {currentScreen === 'RestaurantDetail' && (
-                    <RestaurantDetailsScreen
-                        restaurant={selectedRestaurant}
-                        cart={cart}
-                        onAddToCart={handleAddToCart}
-                        onRemoveFromCart={handleRemoveFromCart}
-                        onBack={() => navigate('Food')}
-                        onViewCart={() => navigate('Cart')}
-                    />
-                )}
+                        {/* ── Food Sub-flow ── */}
+                        {currentScreen === 'Food' && (
+                            <FoodMarketScreen
+                                onNavigate={navigate}
+                                onSelectRestaurant={(rest) => {
+                                    setSelectedRestaurant(rest);
+                                    navigate('RestaurantDetail');
+                                }}
+                            />
+                        )}
 
-                {currentScreen === 'Cart' && (
-                    <CartScreen
-                        cart={cart}
-                        onBack={() =>
-                            navigate(selectedRestaurant ? 'RestaurantDetail' : 'Food')
-                        }
-                        onUpdateQuantity={handleUpdateQuantity}
-                        onPlaceOrder={() => navigate('FoodTracking')}
-                    />
-                )}
+                        {currentScreen === 'RestaurantDetail' && (
+                            <RestaurantDetailsScreen
+                                restaurant={selectedRestaurant}
+                                cart={cart}
+                                onAddToCart={handleAddToCart}
+                                onRemoveFromCart={handleRemoveFromCart}
+                                onBack={() => navigate('Food')}
+                                onViewCart={() => navigate('Cart')}
+                            />
+                        )}
 
-                {currentScreen === 'FoodTracking' && (
-                    <OrderTrackingScreen
-                        order={{
-                            id: '#DRP-84920',
-                            restaurantName: selectedRestaurant?.name || 'The Daily Grind',
-                            etaMinutes: 18,
-                            etaTime: '6:25 PM',
-                            items: Object.values(cart),
-                            totalAmount: Math.max(0, cartTotal + 24 - 50),
-                            deliveryAddress: 'Flat 402, Tower B, Sector 28, Gurugram',
-                        }}
-                        onBack={() => {
-                            setCart({});
-                            navigate('Home');
-                        }}
-                    />
-                )}
+                        {currentScreen === 'Cart' && (
+                            <CartScreen
+                                cart={cart}
+                                onBack={() =>
+                                    navigate(selectedRestaurant ? 'RestaurantDetail' : 'Food')
+                                }
+                                onUpdateQuantity={handleUpdateQuantity}
+                                onPlaceOrder={() => navigate('FoodTracking')}
+                            />
+                        )}
 
-                {/* ── Common ── */}
-                {(currentScreen === 'Activity' ||
-                    currentScreen === 'Bookings' ||
-                    currentScreen === 'Orders') && (
-                    <BookingsScreen onNavigate={navigate} />
-                )}
+                        {currentScreen === 'FoodTracking' && (
+                            <OrderTrackingScreen
+                                order={{
+                                    id: '#DRP-84920',
+                                    restaurantName: selectedRestaurant?.name || 'The Daily Grind',
+                                    etaMinutes: 18,
+                                    etaTime: '6:25 PM',
+                                    items: Object.values(cart),
+                                    totalAmount: Math.max(0, cartTotal + 24 - 50),
+                                    deliveryAddress: 'Flat 402, Tower B, Sector 28, Gurugram',
+                                }}
+                                onBack={() => {
+                                    setCart({});
+                                    navigate('Home');
+                                }}
+                            />
+                        )}
 
-                {currentScreen === 'Wallet' && (
-                    <WalletScreen onNavigate={navigate} />
-                )}
+                        {/* ── Common ── */}
+                        {(currentScreen === 'Activity' ||
+                            currentScreen === 'Bookings' ||
+                            currentScreen === 'Orders') && (
+                            <BookingsScreen onNavigate={navigate} />
+                        )}
 
-                {currentScreen === 'Profile' && (
-                    <ProfileScreen onNavigate={navigate} />
-                )}
+                        {currentScreen === 'Wallet' && (
+                            <WalletScreen onNavigate={navigate} />
+                        )}
 
-                {/* ════════════════════════════════════════════════
-                    CAPTAIN / DRIVER FLOW
-                ════════════════════════════════════════════════ */}
+                        {currentScreen === 'Profile' && (
+                            <ProfileScreen onNavigate={navigate} />
+                        )}
 
-                {currentScreen === 'DriverHome' && (
-                    <DriverHomeScreen onNavigate={navigate} />
-                )}
+                        {/* ════════════════════════════════════════════════
+                            CAPTAIN / DRIVER FLOW
+                        ════════════════════════════════════════════════ */}
 
-                {currentScreen === 'DriverNav' && (
-                    <DriverNavigationScreen onNavigate={navigate} />
-                )}
+                        {currentScreen === 'DriverHome' && (
+                            <DriverHomeScreen onNavigate={navigate} />
+                        )}
 
-                {currentScreen === 'DriverEarnings' && (
-                    <DriverEarningsScreen onNavigate={navigate} />
-                )}
+                        {currentScreen === 'DriverNav' && (
+                            <DriverNavigationScreen onNavigate={navigate} />
+                        )}
 
-            </View>
+                        {currentScreen === 'DriverEarnings' && (
+                            <DriverEarningsScreen onNavigate={navigate} />
+                        )}
+
+                    </View>
+                    <AuraOverlay />
+                </AuraProvider>
             </ThemeProvider>
         </SafeAreaProvider>
     );

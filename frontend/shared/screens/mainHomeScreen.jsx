@@ -167,7 +167,7 @@ export default function MainHomeScreen({ onNavigate }) {
                         <TouchableOpacity
                             style={styles.serviceCard}
                             activeOpacity={0.86}
-                            onPress={() => dispatchTo('Location')}
+                            onPress={() => dispatchTo('RiderHome')}
                         >
                             <Image
                                 source={Images.ride}
