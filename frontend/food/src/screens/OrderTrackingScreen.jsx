@@ -7,6 +7,7 @@ import {
     ScrollView,
     StyleSheet,
     Linking,
+    StatusBar
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -58,6 +59,7 @@ export default function OrderTrackingScreen({
 
     return (
         <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
+            <StatusBar barStyle="dark-content" backgroundColor="#EEF9F1" />
             {/* 1. Header */}
             <View style={styles.header}>
                 <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.8}>

@@ -16,6 +16,10 @@ import orderRouter from './modules/orders/orderRoutes.js';
 import auraRouter from './aura/auraRoutes.js';
 import rideRouter from './modules/rides/rideRoutes.js';
 
+//Map 
+import geocodeRoutes from './modules/geoCode/geoRoutes.js';
+
+
 const app = express();
 const server = http.createServer(app);
 
@@ -114,6 +118,8 @@ app.use('/api/catalog', catalogRouter);
 app.use('/api/orders', orderRouter);
 app.use('/api/rides', rideRouter);
 app.use('/api/aura', auraRouter);
+app.use('/api/geocode', geocodeRoutes);
+
 
 // 404 Handler
 app.use((req, res) => {

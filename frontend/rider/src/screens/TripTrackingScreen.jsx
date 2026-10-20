@@ -1,104 +1,148 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     StyleSheet,
     Text,
     View,
     TouchableOpacity,
     Image,
-    SafeAreaView,
+    Platform,
     StatusBar,
+    Animated,
+    Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../../../shared/theme/themeContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
+import { buildMapboxRouteUrl, extractLocationDetails } from '../../../shared/utils/mapboxHelper';
 
 export default function TripTrackingScreen({ onBack, onNavigate }) {
-    const { theme, isDark } = useTheme();
-    const { driver, pickupLocation, destination, deliveryOtp, resetTripState } = useRideStore();
+    const {
+        driver, pickupLocation, destination, deliveryOtp,
+        routeGeometry, distanceKm, durationMins, resetTripState,
+    } = useRideStore();
+
     const [tripStage, setTripStage] = useState('EN_ROUTE'); // 'EN_ROUTE' | 'ARRIVED' | 'ON_TRIP'
 
+    const pickupDetails = extractLocationDetails(pickupLocation, 'Pickup Location');
+    const dropDetails = extractLocationDetails(destination, 'Destination');
+
+    const mapUrl = buildMapboxRouteUrl(routeGeometry, pickupLocation, destination, {
+        padding: '120,100,280,100',
+    });
+
+    // Driver pin pulse animation
+    const pinPulse = useRef(new Animated.Value(1)).current;
+
+    useEffect(() => {
+        Animated.loop(
+            Animated.sequence([
+                Animated.timing(pinPulse, {
+                    toValue: 1.18,
+                    duration: 1000,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(pinPulse, {
+                    toValue: 1,
+                    duration: 1000,
+                    useNativeDriver: true,
+                }),
+            ])
+        ).start();
+
+        // Simulate driver arriving after 6 seconds
+        const arrivedTimer = setTimeout(() => {
+            setTripStage('ARRIVED');
+        }, 6000);
+
+        return () => clearTimeout(arrivedTimer);
+    }, []);
+
     const handleEndTrip = () => {
-        resetTripState(); // Resets pickup, dropoff, and rideStatus to clean IDLE state
+        resetTripState();
         if (onNavigate) {
             onNavigate('Home');
+        } else if (onBack) {
+            onBack();
         }
     };
 
+    const handleCall = () => {
+        Alert.alert('Calling Driver', `Dialing ${driver?.name || 'Driver'} at ${driver?.phone || '+91 98765 43210'}`);
+    };
+
+    const handleChat = () => {
+        Alert.alert('Driver Chat', `Chat with ${driver?.name || 'Driver'} is active: "I have reached the pickup location!"`);
+    };
+
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-            <StatusBar
-                barStyle={isDark ? 'light-content' : 'dark-content'}
-                backgroundColor={theme.background}
-            />
+        <View style={styles.root}>
+            <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
-            {/* Simulated Live Map Canvas */}
+            {/* Real Mapbox Route Map */}
             <View style={styles.mapCanvas}>
-                {/* Map Grid Pattern simulation */}
-                <View style={styles.mapGrid}>
-                    <View style={[styles.gridRoadHorizontal, { backgroundColor: theme.inputSeparator }]} />
-                    <View style={[styles.gridRoadVertical, { backgroundColor: theme.inputSeparator }]} />
-                </View>
+                {mapUrl ? (
+                    <Image source={{ uri: mapUrl }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                ) : (
+                    <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#EAF5EF' }]} />
+                )}
 
-                {/* Header Floating Bar */}
-                <View style={styles.topMapHeader}>
-                    <TouchableOpacity
-                        style={[styles.mapHeaderIcon, { backgroundColor: theme.surface }]}
-                        onPress={handleEndTrip}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
-                    </TouchableOpacity>
-
-                    <View style={[styles.statusBadge, { backgroundColor: theme.surface }]}>
-                        <View style={[styles.greenPulse, { backgroundColor: theme.primaryGreen }]} />
-                        <Text style={[styles.statusBadgeText, { color: theme.textPrimary }]}>
-                            {tripStage === 'EN_ROUTE' ? 'Driver on the way' : tripStage === 'ARRIVED' ? 'Driver Arrived!' : 'On the Trip'}
-                        </Text>
+                {/* Animated Driver Marker */}
+                <Animated.View style={[styles.driverMarker, { transform: [{ scale: pinPulse }] }]}>
+                    <View style={styles.driverDotOuter}>
+                        <MaterialCommunityIcons name="car-side" size={18} color="#FFF" />
                     </View>
-
-                    <TouchableOpacity
-                        style={[styles.mapHeaderIcon, { backgroundColor: theme.surface }]}
-                        onPress={() => alert('Safety Center & Emergency Contact')}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons name="shield-checkmark" size={20} color={theme.primaryGreen} />
-                    </TouchableOpacity>
-                </View>
-
-                {/* Driver Location Marker */}
-                <View style={[styles.driverMarker, { backgroundColor: theme.primaryGreen }]}>
-                    <Ionicons name="car-sport" size={20} color="#000" />
-                </View>
-
-                {/* Pickup & Destination Pins */}
-                <View style={styles.pickupPin}>
-                    <Ionicons name="location" size={28} color={theme.primaryGreen} />
-                </View>
-
-                <View style={styles.destinationPin}>
-                    <Ionicons name="flag" size={24} color="#EF4444" />
-                </View>
+                </Animated.View>
             </View>
 
+            {/* Floating Top Bar */}
+            <SafeAreaView edges={['top']} style={styles.topMapHeader} pointerEvents="box-none">
+                <TouchableOpacity
+                    style={styles.mapHeaderIcon}
+                    onPress={handleEndTrip}
+                    activeOpacity={0.8}
+                >
+                    <Ionicons name="chevron-back" size={22} color="#111820" />
+                </TouchableOpacity>
+
+                <View style={styles.statusBadge}>
+                    <View style={[styles.greenPulse, tripStage === 'ARRIVED' && { backgroundColor: '#FF9500' }]} />
+                    <Text style={styles.statusBadgeText}>
+                        {tripStage === 'EN_ROUTE' ? 'Driver on the way' : tripStage === 'ARRIVED' ? 'Driver Arrived!' : 'On the Trip'}
+                    </Text>
+                </View>
+
+                <TouchableOpacity
+                    style={styles.mapHeaderIcon}
+                    onPress={() => Alert.alert('Dropp Safety Guard', '24x7 Safety assistance, live GPS sharing & emergency helpline active.')}
+                    activeOpacity={0.8}
+                >
+                    <Ionicons name="shield-checkmark" size={20} color="#00C96B" />
+                </TouchableOpacity>
+            </SafeAreaView>
+
             {/* Bottom Sheet Details Container */}
-            <View style={[styles.bottomCard, { backgroundColor: theme.surface }]}>
+            <View style={styles.bottomCard}>
                 <View style={styles.dragHandle} />
 
                 {/* ETA & OTP Banner */}
                 <View style={styles.etaRow}>
                     <View>
-                        <Text style={[styles.etaTitle, { color: theme.textPrimary }]}>Arriving in {driver.etaMinutes} mins</Text>
-                        <Text style={[styles.etaSub, { color: theme.textSecondary }]}>Distance: 1.8 km away</Text>
+                        <Text style={styles.etaTitle}>
+                            {tripStage === 'ARRIVED' ? 'Driver is waiting' : `Arriving in ${driver.etaMinutes || 4} mins`}
+                        </Text>
+                        <Text style={styles.etaSub}>
+                            {distanceKm ? `${distanceKm} km trip · Road route active` : '1.8 km away'}
+                        </Text>
                     </View>
 
                     {/* Recipient Verification OTP */}
-                    <View style={[styles.otpBadge, { backgroundColor: theme.tierCardActiveBg, borderColor: theme.primaryGreen }]}>
-                        <Text style={[styles.otpLabel, { color: theme.textSecondary }]}>DELIVERY OTP</Text>
-                        <Text style={[styles.otpCode, { color: theme.primaryGreen }]}>{deliveryOtp}</Text>
+                    <View style={styles.otpBadge}>
+                        <Text style={styles.otpLabel}>START OTP</Text>
+                        <Text style={styles.otpCode}>{deliveryOtp || '4821'}</Text>
                     </View>
                 </View>
 
-                <View style={[styles.divider, { backgroundColor: theme.inputSeparator }]} />
+                <View style={styles.divider} />
 
                 {/* Driver Profile & Vehicle */}
                 <View style={styles.driverRow}>
@@ -108,231 +152,247 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
                     />
                     <View style={styles.driverMeta}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={[styles.driverName, { color: theme.textPrimary }]}>{driver.name}</Text>
+                            <Text style={styles.driverName}>{driver.name}</Text>
                             <View style={styles.ratingBadge}>
-                                <Ionicons name="star" size={12} color={theme.starGold} />
+                                <Ionicons name="star" size={11} color="#FFB800" />
                                 <Text style={styles.ratingText}>{driver.rating}</Text>
                             </View>
                         </View>
-                        <Text style={[styles.vehicleText, { color: theme.textSecondary }]}>{driver.vehicle}</Text>
-                        <Text style={[styles.plateBadge, { backgroundColor: theme.inputBg, color: theme.textPrimary }]}>
-                            {driver.plate}
-                        </Text>
+                        <Text style={styles.vehicleText}>{driver.vehicle}</Text>
+                        <Text style={styles.plateBadge}>{driver.plate}</Text>
                     </View>
 
                     {/* Contact Action Buttons */}
                     <View style={styles.actionCol}>
                         <TouchableOpacity
-                            style={[styles.actionCircle, { backgroundColor: theme.primaryGreen }]}
-                            onPress={() => alert(`Calling ${driver.name}...`)}
+                            style={styles.actionCircleGreen}
+                            onPress={handleCall}
                             activeOpacity={0.8}
                         >
-                            <Ionicons name="call" size={18} color="#000" />
+                            <Ionicons name="call" size={18} color="#FFF" />
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={[styles.actionCircle, { backgroundColor: theme.inputBg }]}
-                            onPress={() => alert(`Opening chat with ${driver.name}...`)}
+                            style={styles.actionCircleGrey}
+                            onPress={handleChat}
                             activeOpacity={0.8}
                         >
-                            <Ionicons name="chatbubble-ellipses" size={18} color={theme.textPrimary} />
+                            <Ionicons name="chatbubble-ellipses" size={18} color="#111820" />
                         </TouchableOpacity>
                     </View>
                 </View>
 
-                <View style={[styles.divider, { backgroundColor: theme.inputSeparator }]} />
+                <View style={styles.divider} />
 
                 {/* Ride Address Summary */}
                 <View style={styles.addressBox}>
                     <View style={styles.locRow}>
-                        <Ionicons name="ellipse" size={10} color={theme.primaryGreen} />
-                        <Text style={[styles.addressText, { color: theme.textPrimary }]} numberOfLines={1}>
-                            {pickupLocation || 'Pickup location'}
+                        <View style={styles.pickupDot} />
+                        <Text style={styles.addressText} numberOfLines={1}>
+                            {pickupDetails.label}
                         </Text>
                     </View>
                     <View style={styles.locRow}>
-                        <Ionicons name="location" size={12} color="#EF4444" />
-                        <Text style={[styles.addressText, { color: theme.textPrimary }]} numberOfLines={1}>
-                            {destination || 'Destination'}
+                        <View style={styles.dropDot} />
+                        <Text style={styles.addressText} numberOfLines={1}>
+                            {dropDetails.label}
                         </Text>
                     </View>
                 </View>
 
                 {/* Cancel or Complete Button */}
                 <TouchableOpacity
-                    style={[styles.finishBtn, { backgroundColor: theme.inputBg }]}
+                    style={styles.finishBtn}
                     onPress={handleEndTrip}
-                    activeOpacity={0.8}
+                    activeOpacity={0.85}
                 >
-                    <Text style={[styles.finishBtnText, { color: theme.textPrimary }]}>End / Cancel Ride</Text>
+                    <Text style={styles.finishBtnText}>End / Cancel Ride</Text>
                 </TouchableOpacity>
             </View>
-        </SafeAreaView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    mapCanvas: {
-        flex: 1,
-        position: 'relative',
-        backgroundColor: '#111827',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    mapGrid: {
-        ...StyleSheet.absoluteFillObject,
-        opacity: 0.15,
-    },
-    gridRoadHorizontal: {
-        position: 'absolute',
-        top: '40%',
-        left: 0,
-        right: 0,
-        height: 18,
-    },
-    gridRoadVertical: {
-        position: 'absolute',
-        left: '50%',
-        top: 0,
-        bottom: 0,
-        width: 18,
-    },
+    root: { flex: 1, backgroundColor: '#D8F0E5' },
+    mapCanvas: { flex: 1, position: 'relative' },
+
     topMapHeader: {
         position: 'absolute',
-        top: 16,
-        left: 16,
-        right: 16,
+        top: 0,
+        left: 0,
+        right: 0,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingTop: 10,
         zIndex: 10,
     },
     mapHeaderIcon: {
         width: 42,
         height: 42,
         borderRadius: 21,
+        backgroundColor: '#FFF',
         alignItems: 'center',
         justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.12,
+        shadowRadius: 5,
         elevation: 4,
     },
     statusBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 8,
-        borderRadius: 20,
         gap: 8,
+        backgroundColor: '#FFF',
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 22,
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+        elevation: 3,
     },
-    greenPulse: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-    },
-    statusBadgeText: {
-        fontWeight: '700',
-        fontSize: 13,
-    },
+    greenPulse: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#00C96B' },
+    statusBadgeText: { fontSize: 13, fontWeight: '800', color: '#111820' },
+
     driverMarker: {
         position: 'absolute',
-        top: '45%',
+        top: '40%',
         left: '46%',
-        width: 40,
-        height: 40,
-        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
-        elevation: 6,
     },
-    pickupPin: {
-        position: 'absolute',
-        top: '25%',
-        left: '20%',
+    driverDotOuter: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        backgroundColor: '#00C96B',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 3,
+        borderColor: '#FFF',
+        shadowColor: '#00C96B',
+        shadowOpacity: 0.6,
+        shadowRadius: 8,
+        elevation: 8,
     },
-    destinationPin: {
-        position: 'absolute',
-        bottom: '25%',
-        right: '20%',
-    },
+
     bottomCard: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        padding: 20,
-        paddingBottom: 30,
-        elevation: 12,
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: '#FFF',
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
+        paddingHorizontal: 20,
+        paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.14,
+        shadowRadius: 14,
+        elevation: 18,
     },
     dragHandle: {
-        width: 36,
+        width: 42,
         height: 4,
         borderRadius: 2,
-        backgroundColor: '#475569',
+        backgroundColor: '#D8DDE2',
         alignSelf: 'center',
+        marginTop: 12,
         marginBottom: 14,
     },
+
     etaRow: {
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
+        alignItems: 'center',
     },
-    etaTitle: { fontSize: 18, fontWeight: '800' },
-    etaSub: { fontSize: 12, marginTop: 2 },
+    etaTitle: { fontSize: 18, fontWeight: '900', color: '#111820' },
+    etaSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
     otpBadge: {
-        borderWidth: 1.5,
+        alignItems: 'center',
+        backgroundColor: '#E8F8EF',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
         borderRadius: 12,
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#B7EACD',
     },
-    otpLabel: { fontSize: 9, fontWeight: '800' },
-    otpCode: { fontSize: 16, fontWeight: '900', letterSpacing: 1 },
-    divider: { height: 1, marginVertical: 14 },
-    driverRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    avatar: {
-        width: 52,
-        height: 52,
-        borderRadius: 26,
-        marginRight: 12,
-    },
+    otpLabel: { fontSize: 9.5, fontWeight: '800', color: '#008A45', letterSpacing: 0.5 },
+    otpCode: { fontSize: 18, fontWeight: '900', color: '#008A45', letterSpacing: 2 },
+
+    divider: { height: 1, backgroundColor: '#F0F2F5', marginVertical: 12 },
+
+    driverRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#E5E7EB' },
     driverMeta: { flex: 1 },
-    driverName: { fontSize: 16, fontWeight: '800' },
+    driverName: { fontSize: 15, fontWeight: '800', color: '#111820' },
     ratingBadge: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 3,
-    },
-    ratingText: { color: '#F59E0B', fontWeight: '800', fontSize: 12 },
-    vehicleText: { fontSize: 12, marginTop: 2 },
-    plateBadge: {
-        alignSelf: 'flex-start',
+        backgroundColor: '#FFF9E6',
         paddingHorizontal: 6,
         paddingVertical: 2,
         borderRadius: 6,
+    },
+    ratingText: { fontSize: 11, fontWeight: '800', color: '#B45309' },
+    vehicleText: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+    plateBadge: {
         fontSize: 11,
-        fontWeight: '700',
+        fontWeight: '800',
+        color: '#111820',
+        backgroundColor: '#F3F4F6',
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+        borderRadius: 6,
+        alignSelf: 'flex-start',
         marginTop: 4,
     },
-    actionCol: {
-        flexDirection: 'row',
-        gap: 10,
+
+    actionCol: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    actionCircleGreen: {
+        width: 42,
+        height: 42,
+        borderRadius: 21,
+        backgroundColor: '#00C96B',
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#00C96B',
+        shadowOpacity: 0.35,
+        shadowRadius: 5,
+        elevation: 3,
     },
-    actionCircle: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+    actionCircleGrey: {
+        width: 42,
+        height: 42,
+        borderRadius: 21,
+        backgroundColor: '#F3F4F6',
         alignItems: 'center',
         justifyContent: 'center',
     },
-    addressBox: { gap: 8, marginBottom: 16 },
-    locRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    addressText: { fontSize: 13, fontWeight: '500', flex: 1 },
-    finishBtn: {
-        height: 48,
+
+    addressBox: {
+        backgroundColor: '#F9FAFB',
         borderRadius: 14,
+        padding: 12,
+        gap: 8,
+        marginBottom: 14,
+    },
+    locRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    pickupDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#00C96B' },
+    dropDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF3B30' },
+    addressText: { fontSize: 12.5, fontWeight: '700', color: '#111820', flex: 1 },
+
+    finishBtn: {
+        height: 46,
+        borderRadius: 14,
+        backgroundColor: '#F3F4F6',
         alignItems: 'center',
         justifyContent: 'center',
     },
-    finishBtnText: { fontWeight: '700', fontSize: 14 },
+    finishBtnText: { fontSize: 13.5, fontWeight: '700', color: '#6B7280' },
 });

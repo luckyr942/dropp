@@ -39,6 +39,9 @@ import RoleSelectionScreen from './rider/src/screens/RoleSelectionScreen.jsx';
 // ─── Customer Flow (Rider + Food + Delivery + Shop) ──────────────
 import MainHomeScreen from './shared/screens/mainHomeScreen.jsx';
 import RiderHomeScreen from './rider/src/screens/HomeScreen.jsx';
+import ConfirmLocationScreen from './rider/src/screens/ConfirmLocationScreen.jsx';
+import ChooseRideScreen from './rider/src/screens/ChooseRideScreen.jsx';
+import ReviewBookingScreen from './rider/src/screens/ReviewBookingScreen.jsx';
 import LocationSearchScreen from './rider/src/screens/LocationScreen.jsx';
 import PackageDetailsScreen from './rider/src/screens/PackageDetailsScreen.jsx';
 import FindingDriverScreen from './rider/src/screens/FindingDriverScreen.jsx';
@@ -57,6 +60,8 @@ import ProfileScreen from './shared/screens/ProfileScreen.jsx';
 import DriverHomeScreen from './driver/src/screens/DriverHomeScreen.jsx';
 import DriverNavigationScreen from './driver/src/screens/DriverNavigationScreen.jsx';
 import DriverEarningsScreen from './driver/src/screens/DriverEarningsScreen.jsx';
+
+import * as ExpoSplashScreen from 'expo-splash-screen';
 
 export default function App() {
     const [fontsLoaded] = useFonts({
@@ -111,16 +116,26 @@ export default function App() {
     const cartTotal = Object.values(cart).reduce((s, i) => s + i.price * i.quantity, 0);
     const navigate = (screen) => screen && setCurrentScreen(screen);
 
+    const isDarkScreen =
+        currentScreen === 'Splash' ||
+        currentScreen === 'RoleSelection' ||
+        currentScreen === 'DriverNavigation' ||
+        currentScreen === 'DriverHome' ||
+        currentScreen === 'RestaurantDetail';
+
     return (
         <SafeAreaProvider>
             <ThemeProvider>
                 <AuraProvider onNavigate={navigate}>
-                    <StatusBar style="light" />
+                    <StatusBar
+                        style={isDarkScreen ? 'light' : 'dark'}
+                        animated
+                    />
                     <View style={styles.root}>
 
                         {/* ── 1. Splash ── */}
                         {currentScreen === 'Splash' && (
-                            <SplashScreen onFinish={() => navigate('RoleSelection')} />
+                            <SplashScreen onFinish={() => navigate('Home')} />
                         )}
 
                         {/* ── 2. Role Selection (You are...) ── */}
@@ -149,7 +164,31 @@ export default function App() {
                         {(currentScreen === 'Location' ||
                             currentScreen === 'LocationSearch') && (
                             <LocationSearchScreen
-                                onBack={() => navigate('Home')}
+                                onBack={() => navigate('RiderHome')}
+                                onNavigate={navigate}
+                            />
+                        )}
+
+                        {/* ── Screen 03: Confirm Location on Map ── */}
+                        {currentScreen === 'ConfirmLocation' && (
+                            <ConfirmLocationScreen
+                                onBack={() => navigate('Location')}
+                                onNavigate={navigate}
+                            />
+                        )}
+
+                        {/* ── Screen 04: Choose Ride Tier ── */}
+                        {currentScreen === 'ChooseRide' && (
+                            <ChooseRideScreen
+                                onBack={() => navigate('ConfirmLocation')}
+                                onNavigate={navigate}
+                            />
+                        )}
+
+                        {/* ── Screen 05: Review Booking & Fare Breakdown ── */}
+                        {currentScreen === 'ReviewBooking' && (
+                            <ReviewBookingScreen
+                                onBack={() => navigate('ChooseRide')}
                                 onNavigate={navigate}
                             />
                         )}

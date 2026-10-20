@@ -1,275 +1,150 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     StyleSheet,
-    Text,
     View,
     Animated,
-    Easing,
-    SafeAreaView,
+    Dimensions,
     StatusBar,
-    TouchableOpacity,
+    AccessibilityInfo,
+    Easing,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../theme/themeContext';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as SplashScreen from 'expo-splash-screen';
+import { DROPP_THEME, DROPP_MOTION } from '../theme/droppMotion';
+import CityGridPattern from './splash/CityGridPattern';
+import RoutePathAnimation from './splash/RoutePathAnimation';
+import BrandReveal from './splash/BrandReveal';
+import ServiceGlyphs from './splash/ServiceGlyphs';
 
-export default function SplashScreen({ onFinish }) {
-    const { isDark } = useTheme();
+const { width, height } = Dimensions.get('window');
 
-    // Animation References
-    const logoScale = useRef(new Animated.Value(0.3)).current;
-    const logoOpacity = useRef(new Animated.Value(0)).current;
-    const taglineOpacity = useRef(new Animated.Value(0)).current;
-    const taglineY = useRef(new Animated.Value(15)).current;
+/**
+ * Dropp Premium Animated Splash Screen
+ * Full choreographic sequence:
+ * Scene A (0–320ms): City awakens from near-black
+ * Scene B (250–850ms): Living mint route travels across the screen
+ * Scene C (650–1200ms): Dropp brand mark & tagline emerges with mint bloom
+ * Scene D (900–1400ms): 4 compact services (Rides, Food, Delivery, Shop) revealed
+ * Scene E (1400–1750ms): Settles & seamless opacity transition into the app
+ */
+export default function DroppAnimatedSplash({ onFinish }) {
+    const [reducedMotion, setReducedMotion] = useState(false);
 
-    const pulseRingScale = useRef(new Animated.Value(0.5)).current;
-    const pulseRingOpacity = useRef(new Animated.Value(0.8)).current;
-    const progressWidth = useRef(new Animated.Value(0)).current;
-
-    const startAnimations = () => {
-        logoScale.setValue(0.3);
-        logoOpacity.setValue(0);
-        taglineOpacity.setValue(0);
-        taglineY.setValue(15);
-        pulseRingScale.setValue(0.5);
-        pulseRingOpacity.setValue(0.8);
-        progressWidth.setValue(0);
-
-        // 1. Logo Scale & Fade Spring
-        Animated.parallel([
-            Animated.timing(logoOpacity, {
-                toValue: 1,
-                duration: 600,
-                useNativeDriver: true,
-            }),
-            Animated.spring(logoScale, {
-                toValue: 1,
-                friction: 5,
-                tension: 40,
-                useNativeDriver: true,
-            }),
-        ]).start();
-
-        // 2. Tagline Fade & Slide Up (delayed 300ms)
-        Animated.parallel([
-            Animated.timing(taglineOpacity, {
-                toValue: 1,
-                duration: 500,
-                delay: 300,
-                useNativeDriver: true,
-            }),
-            Animated.timing(taglineY, {
-                toValue: 0,
-                duration: 500,
-                delay: 300,
-                easing: Easing.out(Easing.back(1.5)),
-                useNativeDriver: true,
-            }),
-        ]).start();
-
-        // 3. Continuous Outer Green Pulse Ring
-        Animated.loop(
-            Animated.parallel([
-                Animated.timing(pulseRingScale, {
-                    toValue: 2.2,
-                    duration: 1600,
-                    easing: Easing.out(Easing.ease),
-                    useNativeDriver: true,
-                }),
-                Animated.timing(pulseRingOpacity, {
-                    toValue: 0,
-                    duration: 1600,
-                    easing: Easing.out(Easing.ease),
-                    useNativeDriver: true,
-                }),
-            ])
-        ).start();
-
-        // 4. Progress Loading Bar
-        Animated.timing(progressWidth, {
-            toValue: 1,
-            duration: 3500,
-            easing: Easing.linear,
-            useNativeDriver: false,
-        }).start(() => {
-            if (onFinish) onFinish();
-        });
-    };
+    // Animation Drivers
+    const gridOpacity = useRef(new Animated.Value(0)).current;
+    const logoAnim = useRef(new Animated.Value(0)).current;
+    const serviceAnim = useRef(new Animated.Value(0)).current;
+    const containerOpacity = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
-        startAnimations();
-    }, []);
+        // Detect OS Reduced Motion Preference
+        AccessibilityInfo.isReduceMotionEnabled()
+            .then((enabled) => setReducedMotion(enabled))
+            .catch(() => {});
 
-    const progressInterpolate = progressWidth.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['0%', '100%'],
-    });
+        // Release the static native splash layer immediately now that React Native is rendering
+        SplashScreen.hideAsync().catch(() => {});
+
+        if (reducedMotion) {
+            // Simplified fast transition for accessibility
+            gridOpacity.setValue(1);
+            logoAnim.setValue(1);
+            serviceAnim.setValue(1);
+            const timer = setTimeout(() => {
+                if (onFinish) onFinish();
+            }, 600);
+            return () => clearTimeout(timer);
+        }
+
+        // Scene A: The City Awakens (0–320ms)
+        Animated.timing(gridOpacity, {
+            toValue: 1,
+            duration: DROPP_MOTION.sceneA.gridFadeIn,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+        }).start();
+
+        // Scene C: Logo Reveal (Starts around 450ms while route is mid-flight)
+        const logoTimer = setTimeout(() => {
+            Animated.timing(logoAnim, {
+                toValue: 1,
+                duration: DROPP_MOTION.sceneC.logoFade,
+                easing: Easing.bezier(0.16, 1, 0.3, 1),
+                useNativeDriver: true,
+            }).start();
+        }, 400);
+
+        // Scene D: Connected Services (750ms)
+        const serviceTimer = setTimeout(() => {
+            Animated.timing(serviceAnim, {
+                toValue: 1,
+                duration: DROPP_MOTION.sceneD.serviceFade,
+                easing: Easing.out(Easing.quad),
+                useNativeDriver: true,
+            }).start();
+        }, 750);
+
+        // Scene E: Settle & Exit into Main App (1500–1750ms)
+        const exitTimer = setTimeout(() => {
+            Animated.timing(containerOpacity, {
+                toValue: 0,
+                duration: DROPP_MOTION.sceneE.exitFade,
+                easing: Easing.bezier(0.4, 0, 0.2, 1),
+                useNativeDriver: true,
+            }).start(() => {
+                if (onFinish) onFinish();
+            });
+        }, 1550);
+
+        return () => {
+            clearTimeout(logoTimer);
+            clearTimeout(serviceTimer);
+            clearTimeout(exitTimer);
+        };
+    }, [reducedMotion]);
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="light-content" backgroundColor="#0B0F17" />
+        <Animated.View style={[styles.root, { opacity: containerOpacity }]}>
+            <StatusBar barStyle="light-content" backgroundColor="#07110F" translucent />
 
-            <TouchableOpacity
-                style={styles.centerBox}
-                activeOpacity={1}
-                onPress={startAnimations}
-            >
-                {/* Glowing Pulse Ring Effect */}
-                <Animated.View
-                    style={[
-                        styles.pulseRing,
-                        {
-                            transform: [{ scale: pulseRingScale }],
-                            opacity: pulseRingOpacity,
-                        },
-                    ]}
-                />
+            {/* Rich Radial/Linear Background Depth */}
+            <LinearGradient
+                colors={[DROPP_THEME.bgNearBlack, DROPP_THEME.bgDarkForest, DROPP_THEME.bgNearBlack]}
+                locations={[0, 0.45, 1]}
+                style={StyleSheet.absoluteFillObject}
+            />
 
-                {/* Animated Logo Icon */}
-                <Animated.View
-                    style={[
-                        styles.iconCircle,
-                        {
-                            opacity: logoOpacity,
-                            transform: [{ scale: logoScale }],
-                        },
-                    ]}
-                >
-                    <Ionicons name="navigate" size={44} color="#000000" />
-                </Animated.View>
+            {/* Scene A: Subtle City Grid Artery Pattern */}
+            <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: gridOpacity }]}>
+                <CityGridPattern width={width} height={height} />
+            </Animated.View>
 
-                {/* Brand Name Header */}
-                <Animated.View
-                    style={[
-                        styles.brandRow,
-                        {
-                            opacity: logoOpacity,
-                            transform: [{ scale: logoScale }],
-                        },
-                    ]}
-                >
-                    <Text style={styles.brandTitle}>Dropp</Text>
-                    <View style={styles.greenDot} />
-                </Animated.View>
+            {/* Scene B: The Living Mint Route Trail */}
+            <RoutePathAnimation
+                width={width}
+                height={height}
+                reducedMotion={reducedMotion}
+            />
 
-                {/* Subtitle / Tagline */}
-                <Animated.View
-                    style={{
-                        opacity: taglineOpacity,
-                        transform: [{ translateY: taglineY }],
-                    }}
-                >
-                    <Text style={styles.tagline}>
-                        Rides • Delivery • Logistics
-                    </Text>
-                    <Text style={styles.taglineSub}>Move freely. Live smarter.</Text>
-                </Animated.View>
-            </TouchableOpacity>
+            {/* Scene C: Dropp Logo & Brand Reveal */}
+            <BrandReveal
+                logoAnim={logoAnim}
+                reducedMotion={reducedMotion}
+            />
 
-            {/* Bottom Progress Bar */}
-            <View style={styles.footer}>
-                <View style={styles.progressBarBg}>
-                    <Animated.View
-                        style={[
-                            styles.progressBarFill,
-                            { width: progressInterpolate },
-                        ]}
-                    />
-                </View>
-                <Text style={styles.footerVersion}>Dropp v1.0.0</Text>
-            </View>
-        </SafeAreaView>
+            {/* Scene D: 4 Service Glyphs (Rides, Food, Delivery, Shop) */}
+            <ServiceGlyphs
+                serviceAnim={serviceAnim}
+                reducedMotion={reducedMotion}
+            />
+        </Animated.View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#0B0F17',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: 40,
-    },
-    centerBox: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        position: 'relative',
-        width: '100%',
-    },
-    pulseRing: {
-        position: 'absolute',
-        width: 120,
-        height: 120,
-        borderRadius: 60,
-        backgroundColor: 'rgba(34, 197, 94, 0.25)',
-        borderWidth: 2,
-        borderColor: '#22C55E',
-    },
-    iconCircle: {
-        width: 84,
-        height: 84,
-        borderRadius: 42,
-        backgroundColor: '#22C55E',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 20,
-        elevation: 10,
-        shadowColor: '#22C55E',
-        shadowOpacity: 0.5,
-        shadowRadius: 16,
-    },
-    brandRow: {
-        flexDirection: 'row',
-        alignItems: 'baseline',
-        marginBottom: 8,
-    },
-    brandTitle: {
-        fontSize: 42,
-        fontWeight: '900',
-        color: '#FFFFFF',
-        letterSpacing: -1,
-    },
-    greenDot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        backgroundColor: '#22C55E',
-        marginLeft: 4,
-    },
-    tagline: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#22C55E',
-        textAlign: 'center',
-        letterSpacing: 0.5,
-    },
-    taglineSub: {
-        fontSize: 12,
-        fontWeight: '500',
-        color: '#94A3B8',
-        textAlign: 'center',
-        marginTop: 4,
-    },
-    footer: {
-        width: '70%',
-        alignItems: 'center',
-    },
-    progressBarBg: {
-        width: '100%',
-        height: 4,
-        borderRadius: 2,
-        backgroundColor: '#1E293B',
-        overflow: 'hidden',
-        marginBottom: 12,
-    },
-    progressBarFill: {
-        height: '100%',
-        backgroundColor: '#22C55E',
-        borderRadius: 2,
-    },
-    footerVersion: {
-        fontSize: 11,
-        color: '#475569',
-        fontWeight: '600',
+    root: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: DROPP_THEME.bgNearBlack,
+        zIndex: 999,
     },
 });
