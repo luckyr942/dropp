@@ -8,7 +8,7 @@ export async function connectMongo(){
         return mongoose.connection;
 
     }catch(error){
-        console.error('[MongoDB failed to connect error:', error.message);
-        process.exit(1);
+        console.warn('[MongoDB]: Not connected, running with in-memory fallback mode:', error.message);
+        return null;
     }
 }

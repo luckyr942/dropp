@@ -41,53 +41,88 @@ export const KNOWN_LANDMARKS = {
   'powai': { lat: 19.1176, lng: 72.9060, address: 'Hiranandani Gardens, Powai, Mumbai' },
   'dadar': { lat: 19.0178, lng: 72.8478, address: 'Dadar TT Circle, Mumbai' },
   'mumbai airport': { lat: 19.0896, lng: 72.8656, address: 'Chhatrapati Shivaji Maharaj International Airport T2, Mumbai' },
+  // ─── 4. PUNJAB & NORTH INDIA
+  'lpu': { lat: 31.2536, lng: 75.7037, address: 'Lovely Professional University (LPU), Phagwara' },
+  'lovely professional university': { lat: 31.2536, lng: 75.7037, address: 'LPU, Phagwara, Punjab' },
+  'amritsar': { lat: 31.6340, lng: 74.8723, address: 'Amritsar, Punjab' },
+  'golden temple': { lat: 31.6200, lng: 74.8765, address: 'Golden Temple, Amritsar' },
+  'jalandhar': { lat: 31.3260, lng: 75.5762, address: 'Jalandhar, Punjab' },
+  'phagwara': { lat: 31.2240, lng: 75.7708, address: 'Phagwara, Punjab' },
+  'ludhiana': { lat: 30.9010, lng: 75.8573, address: 'Ludhiana, Punjab' },
+  'chandigarh': { lat: 30.7333, lng: 76.7794, address: 'Chandigarh' },
+  'delhi': { lat: 28.6139, lng: 77.2090, address: 'New Delhi' },
+  'gurgaon': { lat: 28.4595, lng: 77.0266, address: 'Gurugram' },
+  'gurugram': { lat: 28.4595, lng: 77.0266, address: 'Gurugram' },
 };
 
+// 1. Location to GPS (lat, lng) with Live Geocoding
+export async function resolveLocation(point, label = 'Location') {
+  if (!point) {
+    return { lat: 28.4595, lng: 77.0266, address: `${label} (Default)` };
+  }
 
-// 1. Location to Gps (lat , log)
+  // Case A: Mobile GPS sent real coordinates
+  if (typeof point === 'object' && point !== null) {
+    const lat = Number(point.lat);
+    const lng = Number(point.lng);
 
-export function resolveLocation(point, label = 'Location'){
-    if(!point) {
-        return { lat: 28.4595, lng: 77.0266, address: `${label} (Default)` };
+    if (
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      lat >= -90 &&
+      lat <= 90 &&
+      lng >= -180 &&
+      lng <= 180
+    ) {
+      return {
+        lat,
+        lng,
+        address:
+          typeof point.address === 'string' && point.address.trim()
+            ? point.address.trim()
+            : `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+      };
     }
-    
-    //Case A: Mobile GPS sent real coordinates
-    if(typeof point === "object" && point !== null){
-        const lat = Number(point.lat);
-        const lng = Number(point.lng);
+  }
 
-        if(
-            Number.isFinite(lat) &&
-            Number.isFinite(lng) &&
-            lat >= -90 &&
-            lat <= 90 &&
-            lng >= -180 &&
-            lng <= 180    
-        ){
+  // Case B: User spoke or typed an address string
+  if (typeof point === 'string') {
+    const clean = point.toLowerCase().trim();
+
+    // 1. Check known landmark dictionary (0ms)
+    for (const [name, data] of Object.entries(KNOWN_LANDMARKS)) {
+      if (clean.includes(name)) {
+        return { ...data, address: data.address || point };
+      }
+    }
+
+    // 2. Real-time Mapbox Geocoding lookup for ANY place in India
+    const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN;
+    if (mapboxToken) {
+      try {
+        const geoUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(point)}.json?access_token=${mapboxToken}&country=IN&limit=1`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(geoUrl, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const data = await res.json();
+          const feature = data.features?.[0];
+          if (feature?.center) {
             return {
-                lat,
-                lng,
-                address: typeof point.address === 'string' && point.address.trim()
-                    ? point.address.trim()
-                    : `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+              lat: feature.center[1],
+              lng: feature.center[0],
+              address: feature.place_name || point,
             };
+          }
         }
+      } catch (_) {}
     }
 
-
-    // Case B: User spoke or typed an address string
-    if(typeof point === 'string'){
-        const clean = point.toLowerCase().trim();
-        for(const[name, data] of Object.entries(KNOWN_LANDMARKS)){
-            if(clean.includes(name)){
-                return{...data, address:point};
-            }
-        }
-
-        //Fallback if landmark not in dictonary
-        return { lat: 28.4682, lng: 77.0847, address: point };
-    }
-    return { lat: 28.4595, lng: 77.0266, address: label };
+    // Fallback if not resolved
+    return { lat: 28.4682, lng: 77.0847, address: point };
+  }
+  return { lat: 28.4595, lng: 77.0266, address: label };
 }
 
 
@@ -114,8 +149,8 @@ function haversineDistanceKm(lat1, lon1, lat2, lon2) {
 
 export async function getRoute(pickupInput, dropInput) {
     // Step 1: Normalize both pickup and drop inputs
-    const pickup = resolveLocation(pickupInput, 'Pickup');
-    const drop = resolveLocation(dropInput, 'Drop');
+    const pickup = await resolveLocation(pickupInput, 'Pickup');
+    const drop = await resolveLocation(dropInput, 'Drop');
     // Step 2: Try Mapbox first if token is configured in .env
     const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN;
     if (mapboxToken) {

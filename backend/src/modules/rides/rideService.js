@@ -1,4 +1,4 @@
-//calculates the fare for this 
+import mongoose from 'mongoose';
 import { Ride, RideQuote } from './rideModel.js';
 import { getRoute } from './routeService.js';
 import { broadcast } from '../../infrastructure/websocket/wsServer.js';
@@ -69,17 +69,23 @@ export async function estimateRide({ pickup, drop, customerId = 'cust_live_001' 
     distanceKm: route.distanceKm,
     durationMins: route.durationMins,
   });
-  const quote = await RideQuote.create({
-    customerId,
-    pickup: route.pickup,
-    drop: route.drop,
-    distanceKm: route.distanceKm,
-    durationMins: route.durationMins,
-    geometry: route.geometry,
-    fares,
-  });
+  let quoteId = `q_${Date.now()}`;
+  try {
+    if (mongoose.connection?.readyState === 1) {
+      const quote = await RideQuote.create({
+        customerId,
+        pickup: route.pickup,
+        drop: route.drop,
+        distanceKm: route.distanceKm,
+        durationMins: route.durationMins,
+        geometry: route.geometry,
+        fares,
+      });
+      quoteId = quote._id;
+    }
+  } catch (_) {}
   return {
-    quoteId: quote._id,
+    quoteId,
     pickup: route.pickup,
     drop: route.drop,
     distanceKm: route.distanceKm,
@@ -145,15 +151,42 @@ export async function bookRide({
         quoteId,
     });
     try {
+        const offerData = {
+            offerId: ride._id ? ride._id.toString() : 'ride_' + Date.now(),
+            serviceType: 'RIDE',
+            title: `NEW ${String(rideType).toUpperCase()} REQUEST`,
+            fare: `₹${fareAmount}`,
+            fareNumber: fareAmount,
+            distance: `${distKm || 4.5} km • ${durMins || 14} mins`,
+            pickup: pickupLoc || 'Sector 28, Gurugram',
+            destination: dropLoc || 'Cyber Hub Building 10, Gurugram',
+            otp: ride.otp || '4821',
+            vehicleTier: rideType,
+            customerName: 'Rahul Verma',
+            customerRating: '4.9 ★',
+            createdAt: new Date().toISOString(),
+        };
+
+        setLatestDriverOffer(offerData);
+
+        broadcast('driver.incoming_offer', offerData);
         broadcast('ride.driver_assigned', {
-        rideId: ride._id,
-        customerId,
-        status: 'driver_assigned',
-        driver,
-        otp: ride.otp,
+            rideId: ride._id,
+            customerId,
+            status: 'driver_assigned',
+            driver,
+            otp: ride.otp,
         });
     } catch (_) {}
     return ride.toObject();
+    }
+
+    let latestDriverOffer = null;
+    export function setLatestDriverOffer(offer) {
+        latestDriverOffer = offer;
+    }
+    export function getLatestDriverOffer() {
+        return latestDriverOffer;
     }
     export async function getActiveRide(customerId = 'cust_live_001') {
     return Ride.findOne({

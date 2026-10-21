@@ -8,8 +8,24 @@ import {
 } from './auraController.js';
 import { handleVoiceTurn } from './voiceTurnHandler.js';
 import { getAudioBuffer } from './ttsService.js';
+import { transcribeAudio } from './sttService.js';
 
 const router = Router();
+
+// Speech to text transcription using Sarvam AI
+router.post('/transcribe', async (req, res) => {
+  try {
+    const { audioBase64 } = req.body ?? {};
+    if (!audioBase64) {
+      return res.status(400).json({ success: false, error: 'audioBase64 is required' });
+    }
+    const transcript = await transcribeAudio(audioBase64);
+    return res.json({ success: true, transcript });
+  } catch (err) {
+    console.error('[auraRoutes] Transcribe error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // Stream generated Callirrhoe voice audio
 router.get('/audio/:id', (req, res) => {

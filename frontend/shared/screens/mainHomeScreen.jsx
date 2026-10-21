@@ -14,6 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import BottomNavBar from '../components/bottomNavBar';
+import { useAuraContext } from '../voice/AuraContext';
+import AuraOverlay from '../voice/AuraOverlay';
 
 const { width } = Dimensions.get('window');
 
@@ -31,6 +33,7 @@ const Images = {
 
 export default function MainHomeScreen({ onNavigate }) {
     const [activeTab, setActiveTab] = useState('Home');
+    const { openAura } = useAuraContext();
 
     const dispatchTo = (route, params = {}) => {
         if (typeof onNavigate === 'function') {
@@ -318,9 +321,12 @@ export default function MainHomeScreen({ onNavigate }) {
                     family: 'MaterialCommunityIcons',
                     size: 30,
                     colors: ['#00E57B', '#00AD57'],
-                    onPress: () => alert('Dropp Voice Assistant'),
+                    onPress: openAura,
                 }}
             />
+
+            {/* ── Aura Voice Overlay ── */}
+            <AuraOverlay />
         </SafeAreaView>
     );
 }

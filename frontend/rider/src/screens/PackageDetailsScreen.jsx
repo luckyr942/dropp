@@ -71,7 +71,7 @@ const MAIN_SERVICES = [
 const CATEGORIES = [
     { id: 'all', label: 'All', icon: 'grid', color: '#3B82F6', type: 'ionicons' },
     { id: 'grocery', label: 'Grocery', icon: 'carrot', color: '#10B981', type: 'fa5' },
-    { id: 'medicines', label: 'Medicines', icon: 'pill', color: '#EF4444', type: 'fa5' },
+    { id: 'medicines', label: 'Medicines', icon: 'pills', color: '#EF4444', type: 'fa5' },
     { id: 'electronics', label: 'Electronics', icon: 'headset', color: '#374151', type: 'ionicons' },
     { id: 'documents', label: 'Documents', icon: 'document-text', color: '#6B7280', type: 'ionicons' },
     { id: 'gifts', label: 'Gifts', icon: 'gift', color: '#EC4899', type: 'ionicons' },

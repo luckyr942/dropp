@@ -44,8 +44,16 @@ export default function DriverNavigationScreen({ onNavigate }) {
             {/* Turn-by-Turn GPS Banner */}
             <View style={[styles.gpsHeader, { backgroundColor: theme.primaryGreen }]}>
                 <View style={styles.gpsRow}>
-                    <Ionicons name="arrow-turn-sharp-right" size={36} color="#000" />
-                    <View style={{ flex: 1 }}>
+                    <TouchableOpacity
+                        onPress={() => onNavigate && onNavigate('DriverHome')}
+                        style={{ marginRight: 8, padding: 4 }}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons name="chevron-back" size={28} color="#000" />
+                    </TouchableOpacity>
+                    <Ionicons name="return-down-forward" size={32} color="#000" />
+                    <View style={{ flex: 1, marginLeft: 6 }}>
                         <Text style={styles.gpsDistance}>In 200 meters</Text>
                         <Text style={styles.gpsStreet}>Turn right onto MG Road Express</Text>
                     </View>

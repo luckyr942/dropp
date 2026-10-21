@@ -232,7 +232,6 @@ The intelligence layer managing the Gemini tool-calling loop and fallback logic.
 
 ### 6.3 `backend/src/aura/ttsService.js`
 The multi-provider voice synthesis engine.
-
 - `textToSpeech(text, voiceName = 'Callirrhoe')`:
   1. Normalizes text: strips markdown (`*`, `#`), emojis, and converts `₹250` into `"250 rupaye"`.
   2. Checks `contentCache` (memory) and `getDiskCache()` (disk). Returns in **0–1ms** on cache hits.

@@ -9,9 +9,17 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/themeContext';
 
-export default function RideOfferModal({ onAccept, onDecline }) {
+export default function RideOfferModal({ offer, onAccept, onDecline }) {
     const { theme } = useTheme();
-    const [timeLeft, setTimeLeft] = useState(15);
+    const [timeLeft, setTimeLeft] = useState(30);
+
+    const serviceType = offer?.serviceType || 'RIDE';
+    const fare = offer?.fare || '₹361.00';
+    const distance = offer?.distance || '4.2 km • 12 mins';
+    const pickup = offer?.pickup || 'Cyber Hub, Building 10, Gurugram';
+    const destination = offer?.destination || 'Sector 28, Gurugram';
+    const otp = offer?.otp || '4821';
+    const customerName = offer?.customerName || 'Rahul Verma';
 
     useEffect(() => {
         if (timeLeft <= 0) {
@@ -35,18 +43,20 @@ export default function RideOfferModal({ onAccept, onDecline }) {
                             <Ionicons name="timer-outline" size={16} color={theme.primaryGreen} />
                             <Text style={[styles.timerText, { color: theme.primaryGreen }]}>{timeLeft}s to Accept</Text>
                         </View>
-                        <Text style={[styles.serviceType, { color: theme.textSecondary }]}>PACKAGE DELIVERY</Text>
+                        <Text style={[styles.serviceType, { color: theme.primaryGreen }]}>
+                            {serviceType.toUpperCase()}
+                        </Text>
                     </View>
 
                     {/* Earnings Banner */}
                     <View style={styles.earningsRow}>
                         <View>
-                            <Text style={[styles.earningsLabel, { color: theme.textSecondary }]}>Estimated Earnings</Text>
-                            <Text style={[styles.earningsValue, { color: theme.primaryGreen }]}>$24.50</Text>
+                            <Text style={[styles.earningsLabel, { color: theme.textSecondary }]}>Guaranteed Earnings</Text>
+                            <Text style={[styles.earningsValue, { color: theme.primaryGreen }]}>{fare}</Text>
                         </View>
 
                         <View style={styles.metaBadge}>
-                            <Text style={[styles.metaText, { color: theme.textPrimary }]}>4.2 km • 12 mins</Text>
+                            <Text style={[styles.metaText, { color: theme.textPrimary }]}>{distance}</Text>
                         </View>
                     </View>
 
@@ -57,8 +67,10 @@ export default function RideOfferModal({ onAccept, onDecline }) {
                         <View style={styles.locRow}>
                             <Ionicons name="ellipse" size={10} color={theme.primaryGreen} />
                             <View style={{ flex: 1 }}>
-                                <Text style={[styles.locTitle, { color: theme.textSecondary }]}>PICKUP (1.2 km away)</Text>
-                                <Text style={[styles.locText, { color: theme.textPrimary }]}>Cyber Hub, Building 10, Gurugram</Text>
+                                <Text style={[styles.locTitle, { color: theme.textSecondary }]}>PICKUP</Text>
+                                <Text style={[styles.locText, { color: theme.textPrimary }]} numberOfLines={1}>
+                                    {pickup}
+                                </Text>
                             </View>
                         </View>
 
@@ -67,17 +79,19 @@ export default function RideOfferModal({ onAccept, onDecline }) {
                         <View style={styles.locRow}>
                             <Ionicons name="location" size={12} color="#EF4444" />
                             <View style={{ flex: 1 }}>
-                                <Text style={[styles.locTitle, { color: theme.textSecondary }]}>DESTINATION (3.0 km)</Text>
-                                <Text style={[styles.locText, { color: theme.textPrimary }]}>Green Park Main, New Delhi</Text>
+                                <Text style={[styles.locTitle, { color: theme.textSecondary }]}>DESTINATION</Text>
+                                <Text style={[styles.locText, { color: theme.textPrimary }]} numberOfLines={1}>
+                                    {destination}
+                                </Text>
                             </View>
                         </View>
                     </View>
 
-                    {/* Recipient OTP Requirement Note */}
+                    {/* Customer & OTP Requirement Note */}
                     <View style={[styles.otpNote, { backgroundColor: theme.inputBg }]}>
                         <Ionicons name="shield-checkmark" size={16} color={theme.primaryGreen} />
                         <Text style={[styles.otpText, { color: theme.textPrimary }]}>
-                            Requires 4-Digit Recipient OTP verification at drop-off.
+                            Customer: {customerName} • OTP: {otp} required at completion.
                         </Text>
                     </View>
 
@@ -93,10 +107,10 @@ export default function RideOfferModal({ onAccept, onDecline }) {
 
                         <TouchableOpacity
                             style={[styles.acceptBtn, { backgroundColor: theme.primaryGreen }]}
-                            onPress={onAccept}
+                            onPress={() => onAccept(offer)}
                             activeOpacity={0.85}
                         >
-                            <Text style={styles.acceptText}>ACCEPT OFFER (${timeLeft}s)</Text>
+                            <Text style={styles.acceptText}>ACCEPT OFFER ({timeLeft}s)</Text>
                         </TouchableOpacity>
                     </View>
                 </View>

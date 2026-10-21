@@ -55,7 +55,7 @@ app.use(
 app.set('trust proxy', 1);
 
 // Prevent payload exhaustion attacks (e.g. someone sending 50MB of JSON)
-app.use(express.json({ limit: '100kb' }));
+app.use(express.json({ limit: '10mb' }));
 
 // Request Logger: Logs every incoming HTTP request and response status
 app.use((req, res, next) => {

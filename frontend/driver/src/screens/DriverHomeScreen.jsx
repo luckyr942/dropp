@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     StyleSheet,
     Text,
@@ -13,10 +13,132 @@ import { useTheme } from '../theme/themeContext';
 import { useRideStore } from '../../../shared/store/rideStore';
 import RideOfferModal from './RideOfferModal';
 
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
+const WS_URL = API_BASE.replace(/^http/, 'ws');
+
 export default function DriverHomeScreen({ onNavigate }) {
     const { theme, isDark } = useTheme();
     const { isDriverOnline, toggleDriverOnline, driverEarningsToday, driverTripsToday, driverAcceptanceRate } = useRideStore();
     const [showIncomingOffer, setShowIncomingOffer] = useState(false);
+    const [currentOffer, setCurrentOffer] = useState(null);
+    const [wsConnected, setWsConnected] = useState(false);
+    const lastHandledOfferId = useRef(null);
+
+    // ── Live WebSocket & Polling Listener ────────────────────────────
+    useEffect(() => {
+        let ws = null;
+        let pollInterval = null;
+        let isMounted = true;
+
+        function connectWs() {
+            try {
+                ws = new WebSocket(WS_URL);
+                ws.onopen = () => {
+                    if (isMounted) setWsConnected(true);
+                    console.log('[DriverApp] Connected to live dispatch:', WS_URL);
+                };
+                ws.onmessage = (e) => {
+                    try {
+                        const msg = JSON.parse(e.data);
+                        if (
+                            msg.type === 'driver.incoming_offer' ||
+                            msg.type === 'ride.driver_assigned' ||
+                            msg.type === 'ORDER_CONFIRMED' ||
+                            msg.type === 'ORDER_PLACED_VOICE'
+                        ) {
+                            const offer = msg.data || msg;
+                            handleNewIncomingOffer(offer);
+                        }
+                    } catch (err) {
+                        console.warn('[DriverApp] WS parse error:', err.message);
+                    }
+                };
+                ws.onerror = () => {
+                    if (isMounted) setWsConnected(false);
+                };
+                ws.onclose = () => {
+                    if (isMounted) {
+                        setWsConnected(false);
+                        setTimeout(connectWs, 3000);
+                    }
+                };
+            } catch (_) {}
+        }
+
+        connectWs();
+
+        // 2.5s Polling Fallback (ensures no missed dispatches across simulators)
+        pollInterval = setInterval(async () => {
+            if (!isMounted) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/rides/driver/latest-offer`);
+                const json = await res.json();
+                if (json.success && json.data && json.data.offerId !== lastHandledOfferId.current) {
+                    lastHandledOfferId.current = json.data.offerId;
+                    handleNewIncomingOffer(json.data);
+                }
+            } catch (_) {}
+        }, 2500);
+
+        return () => {
+            isMounted = false;
+            if (ws) ws.close();
+            if (pollInterval) clearInterval(pollInterval);
+        };
+    }, []);
+
+    function handleNewIncomingOffer(raw) {
+        if (!raw) return;
+        const formatted = {
+            offerId: raw.offerId || 'offer_' + Date.now(),
+            serviceType: raw.serviceType || (raw.rideType ? 'RIDE' : 'FOOD DELIVERY'),
+            fare: raw.fare || (raw.totalAmount ? `₹${Math.round(raw.totalAmount * 0.25)}` : '₹361.00'),
+            distance: raw.distance || (raw.distanceKm ? `${raw.distanceKm} km • ${raw.estimatedMins || 18} mins` : '15.97 km • 29 mins'),
+            pickup: raw.pickup || raw.pickupLocation || 'Sector 1, Bokaro Steel City',
+            destination: raw.destination || raw.dropLocation || 'Balidih Main Gate',
+            otp: raw.otp || '4821',
+            customerName: raw.customerName || 'Rahul Verma',
+        };
+        setCurrentOffer(formatted);
+        setShowIncomingOffer(true);
+    }
+
+    const triggerTestOffer = (type) => {
+        if (type === 'RIDE') {
+            handleNewIncomingOffer({
+                offerId: 'ride_sim_' + Date.now(),
+                serviceType: 'RIDE',
+                fare: '₹361.00',
+                distance: '15.97 km • 29 mins',
+                pickup: 'Sector 1, Bokaro Steel City',
+                destination: 'Balidih Industrial Area',
+                otp: '4821',
+                customerName: 'Rahul Verma',
+            });
+        } else if (type === 'FOOD') {
+            handleNewIncomingOffer({
+                offerId: 'food_sim_' + Date.now(),
+                serviceType: 'FOOD DELIVERY',
+                fare: '₹249.00',
+                distance: '3.6 km • 16 mins',
+                pickup: 'Bawarchee Biryani House, Sector 28',
+                destination: 'DLF Cyber City, Gurugram',
+                otp: '7192',
+                customerName: 'Priya Sharma',
+            });
+        } else {
+            handleNewIncomingOffer({
+                offerId: 'pkg_sim_' + Date.now(),
+                serviceType: 'PACKAGE DELIVERY',
+                fare: '₹140.00',
+                distance: '5.2 km • 22 mins',
+                pickup: 'Sector 14 Market',
+                destination: 'Balidih Gate 3',
+                otp: '9931',
+                customerName: 'Amit Saxena',
+            });
+        }
+    };
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -64,7 +186,7 @@ export default function DriverHomeScreen({ onNavigate }) {
                             { color: isDriverOnline ? theme.primaryGreen : '#000000' },
                         ]}
                     >
-                        {isDriverOnline ? 'YOU ARE ONLINE • READY FOR RIDES' : 'GO ONLINE'}
+                        {isDriverOnline ? 'YOU ARE ONLINE • READY FOR DISPATCH' : 'GO ONLINE'}
                     </Text>
                     <Text
                         style={[
@@ -72,7 +194,7 @@ export default function DriverHomeScreen({ onNavigate }) {
                             { color: isDriverOnline ? theme.textSecondary : 'rgba(0,0,0,0.7)' },
                         ]}
                     >
-                        {isDriverOnline ? 'Tap to go offline and stop receiving offers' : 'Tap to start accepting ride & parcel requests'}
+                        {isDriverOnline ? 'Live dispatch connected • Listening for customer orders' : 'Tap to start accepting ride & parcel requests'}
                     </Text>
                 </TouchableOpacity>
 
@@ -104,8 +226,8 @@ export default function DriverHomeScreen({ onNavigate }) {
                     </View>
                 </View>
 
-                {/* Demand Map & Surge */}
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary, marginTop: 24 }]}>High Demand Surge Zones</Text>
+                {/* Demand Map & Live Simulation Test */}
+                <Text style={[styles.sectionTitle, { color: theme.textPrimary, marginTop: 24 }]}>Live Dispatch & Test Offers</Text>
                 <View style={[styles.surgeMap, { backgroundColor: theme.surface }]}>
                     <View style={styles.surgeOverlay}>
                         <View style={[styles.surgeChip, { backgroundColor: '#EF4444' }]}>
@@ -116,14 +238,32 @@ export default function DriverHomeScreen({ onNavigate }) {
                         </View>
                     </View>
 
-                    <TouchableOpacity
-                        style={[styles.simOfferBtn, { backgroundColor: theme.primaryGreen }]}
-                        onPress={() => setShowIncomingOffer(true)}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons name="notifications" size={18} color="#000" />
-                        <Text style={styles.simOfferText}>Simulate Incoming Ride Request</Text>
-                    </TouchableOpacity>
+                    {/* Instant Test Buttons */}
+                    <View style={{ flexDirection: 'row', gap: 6, marginTop: 12 }}>
+                        <TouchableOpacity
+                            style={[styles.simOfferBtn, { flex: 1, backgroundColor: theme.primaryGreen }]}
+                            onPress={() => triggerTestOffer('RIDE')}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={styles.simOfferText}>🚖 Ride (₹361)</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.simOfferBtn, { flex: 1, backgroundColor: '#F59E0B' }]}
+                            onPress={() => triggerTestOffer('FOOD')}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={[styles.simOfferText, { color: '#FFF' }]}>🍛 Food (₹249)</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.simOfferBtn, { flex: 1, backgroundColor: '#3B82F6' }]}
+                            onPress={() => triggerTestOffer('PKG')}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={[styles.simOfferText, { color: '#FFF' }]}>📦 Parcel (₹140)</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* Driver Navigation shortcuts */}
@@ -151,7 +291,8 @@ export default function DriverHomeScreen({ onNavigate }) {
             {/* Incoming Offer Modal */}
             {showIncomingOffer && (
                 <RideOfferModal
-                    onAccept={() => {
+                    offer={currentOffer}
+                    onAccept={(accepted) => {
                         setShowIncomingOffer(false);
                         if (onNavigate) onNavigate('DriverNav');
                     }}

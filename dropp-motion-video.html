@@ -1,0 +1,1532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dropp — Super-App Cinematic Launch Film</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --brand-green: #00C96B;
+    --brand-dark-green: #00875A;
+    --brand-mint-light: #EBF8F2;
+    --brand-mint-glow: rgba(0, 201, 107, 0.28);
+    --brand-black: #0F172A;
+    --brand-slate: #475569;
+    --brand-white: #FFFFFF;
+    --surface-card: #FFFFFF;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* NORMAL, CLEAN LIGHT STUDIO THEME */
+  body {
+    background: radial-gradient(circle at 50% 28%, #FFFFFF 0%, #F5FBF7 45%, #E8F6EE 100%);
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: #0F172A;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #viewport-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* AMBIENT SOFT STUDIO GLOWS */
+  .ambient-glow {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(100px);
+    pointer-events: none;
+    z-index: 1;
+    opacity: 0.55;
+    animation: pulseAmbient 9s ease-in-out infinite alternate;
+  }
+  .glow-1 {
+    width: 550px;
+    height: 550px;
+    background: radial-gradient(circle, rgba(0, 201, 107, 0.22) 0%, rgba(85, 239, 196, 0) 70%);
+    top: -120px;
+    right: 5%;
+  }
+  .glow-2 {
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(56, 189, 248, 0.15) 0%, rgba(0, 201, 107, 0) 70%);
+    bottom: -150px;
+    left: 5%;
+    animation-delay: -4.5s;
+  }
+  @keyframes pulseAmbient {
+    0% { transform: scale(0.95) translate(0, 0); opacity: 0.4; }
+    100% { transform: scale(1.12) translate(20px, -20px); opacity: 0.65; }
+  }
+
+  /* CINEMATIC STAGE */
+  #stage {
+    position: relative;
+    background: #FFFFFF;
+    box-shadow: 
+      0 30px 80px -15px rgba(0, 50, 25, 0.12),
+      0 10px 30px -8px rgba(0, 0, 0, 0.05),
+      0 0 0 1px rgba(0, 201, 107, 0.12);
+    border-radius: 36px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1), height 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 10;
+  }
+
+  /* 9:16 Shorts Mode (Default) */
+  .aspect-shorts {
+    width: 440px;
+    height: 780px;
+  }
+
+  /* 16:9 Landscape Mode */
+  .aspect-landscape {
+    width: 1080px;
+    height: 620px;
+  }
+
+  /* ==========================================================
+     TOP KINETIC HUD & SCENE CAPTION
+     ========================================================== */
+  #kinetic-hud {
+    position: absolute;
+    top: 24px;
+    left: 20px;
+    right: 20px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  .voice-badge-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 14px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(0, 201, 107, 0.3);
+    border-radius: 30px;
+    box-shadow: 0 4px 12px rgba(0, 201, 107, 0.12);
+    margin-bottom: 6px;
+  }
+  .voice-wave-anim {
+    display: flex;
+    align-items: center;
+    gap: 2.5px;
+    height: 11px;
+  }
+  .wave-bar {
+    width: 2.5px;
+    height: 100%;
+    background: var(--brand-green);
+    border-radius: 2px;
+    animation: soundWave 0.8s ease-in-out infinite alternate;
+  }
+  .wave-bar:nth-child(2) { animation-delay: 0.2s; height: 70%; }
+  .wave-bar:nth-child(3) { animation-delay: 0.4s; height: 40%; }
+  @keyframes soundWave {
+    0% { height: 25%; }
+    100% { height: 100%; }
+  }
+  .voice-badge-tag span {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    color: #00875A;
+    text-transform: uppercase;
+  }
+
+  .kinetic-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 19px;
+    font-weight: 800;
+    color: #0F172A;
+    letter-spacing: -0.4px;
+    line-height: 1.2;
+    margin-bottom: 4px;
+  }
+
+  .karaoke-subtitles {
+    font-size: 12px;
+    font-weight: 600;
+    color: #334155;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(12px);
+    padding: 6px 16px;
+    border-radius: 20px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.05);
+    max-width: 380px;
+    line-height: 1.35;
+    border: 1px solid rgba(0, 201, 107, 0.2);
+  }
+
+  /* ==========================================================
+     SCENE 01: 3D CITY MAP CANVAS
+     ========================================================== */
+  #city-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.6s ease, transform 0.8s ease;
+  }
+  #city-layer.active {
+    opacity: 1;
+  }
+  .city-bg-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .city-svg-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  #city-spark-logo {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    width: 84px;
+    height: 84px;
+    border-radius: 28px;
+    background: white;
+    box-shadow: 0 20px 45px rgba(0, 201, 107, 0.35), 0 0 0 3px var(--brand-green);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 30;
+    transition: transform 0.5s cubic-bezier(0.3, 1.4, 0.3, 1), opacity 0.4s ease;
+    opacity: 0;
+  }
+  #city-spark-logo.visible {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  .dropp-d-icon {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 44px;
+    font-weight: 800;
+    color: var(--brand-green);
+    line-height: 1;
+    margin-top: -3px;
+  }
+
+  /* ==========================================================
+     NORMAL, CRISP IPHONE HARDWARE CHASSIS
+     ========================================================== */
+  #phone-chassis {
+    position: relative;
+    width: 320px;
+    height: 640px;
+    margin-top: 48px;
+    background: #000000;
+    border-radius: 46px;
+    box-shadow: 
+      0 35px 70px -15px rgba(0, 60, 30, 0.22),
+      0 15px 35px -8px rgba(0, 0, 0, 0.08),
+      0 0 0 1px rgba(255, 255, 255, 0.9),
+      0 0 0 5px #D6E4DC,
+      0 0 0 7px rgba(0, 201, 107, 0.2);
+    transition: transform 0.4s ease, opacity 0.4s ease;
+    z-index: 30;
+    opacity: 0;
+  }
+  #phone-chassis.active {
+    opacity: 1;
+  }
+
+  /* INNER SCREEN DISPLAY */
+  #phone-screen {
+    position: absolute;
+    inset: 6px;
+    background: #F8FCFA;
+    border-radius: 40px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* DYNAMIC ISLAND */
+  .dynamic-island {
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 92px;
+    height: 24px;
+    background: #090E11;
+    border-radius: 16px;
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  }
+  .island-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #00FF88;
+    box-shadow: 0 0 6px #00FF88;
+    animation: islandPulse 1.6s infinite alternate;
+  }
+  .island-wave {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+  }
+  .island-bar {
+    width: 2px;
+    height: 8px;
+    background: #55EFC4;
+    border-radius: 2px;
+    animation: barBounce 0.7s ease-in-out infinite alternate;
+  }
+  .island-bar:nth-child(2) { animation-delay: 0.2s; height: 11px; }
+  .island-bar:nth-child(3) { animation-delay: 0.4s; height: 5px; }
+  @keyframes islandPulse {
+    0% { transform: scale(0.8); opacity: 0.6; }
+    100% { transform: scale(1.15); opacity: 1; }
+  }
+  @keyframes barBounce {
+    0% { height: 3px; }
+    100% { height: 12px; }
+  }
+
+  #screen-content {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* NORMAL SMOOTH APP SCREEN VIEWS */
+  .app-view {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
+    z-index: 10;
+  }
+  .app-view.active {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: all;
+    z-index: 20;
+  }
+
+  .app-screenshot {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top center;
+  }
+
+  /* TACTILE TOUCH TAP INDICATOR */
+  #touch-pointer {
+    position: absolute;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(0, 201, 107, 0.35);
+    border: 2px solid #00C96B;
+    box-shadow: 0 0 16px rgba(0, 201, 107, 0.6);
+    pointer-events: none;
+    z-index: 95;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+  #touch-pointer.visible {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    animation: touchPulse 1.2s infinite;
+  }
+  @keyframes touchPulse {
+    0% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.8; }
+    50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.4; }
+    100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.8; }
+  }
+
+  /* CLEAN IN-SCREEN AURA ORB OVERLAY */
+  #aura-orb-element {
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #55EFC4 0%, #00C96B 50%, #00875A 100%);
+    box-shadow: 
+      0 0 30px rgba(0, 201, 107, 0.6),
+      0 0 60px rgba(85, 239, 196, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 85;
+    opacity: 0;
+    transition: transform 0.5s cubic-bezier(0.3, 1.4, 0.3, 1), opacity 0.4s ease;
+  }
+  #aura-orb-element.visible {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    animation: orbBreath 3s ease-in-out infinite alternate;
+  }
+  @keyframes orbBreath {
+    0% { transform: translate(-50%, -50%) scale(0.95); box-shadow: 0 0 25px rgba(0, 201, 107, 0.5); }
+    100% { transform: translate(-50%, -50%) scale(1.08); box-shadow: 0 0 45px rgba(85, 239, 196, 0.7); }
+  }
+
+  /* GLASS GLARE */
+  #glass-glare {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 40%, rgba(255,255,255,0.08) 80%);
+    pointer-events: none;
+    z-index: 92;
+    border-radius: 40px;
+  }
+
+  /* ==========================================================
+     CLEAN OVERVIEW CARD ROW (SCENE 08: SERVICES SHOWCASE)
+     ========================================================== */
+  #services-row {
+    position: absolute;
+    bottom: 25px;
+    left: 15px;
+    right: 15px;
+    display: flex;
+    gap: 8px;
+    z-index: 45;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    pointer-events: none;
+  }
+  #services-row.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .service-mini-card {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 14px;
+    padding: 8px 6px;
+    text-align: center;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+    border: 1px solid rgba(0, 201, 107, 0.2);
+  }
+  .service-mini-card .icon {
+    font-size: 16px;
+    margin-bottom: 2px;
+  }
+  .service-mini-card .label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #1E293B;
+  }
+
+  /* ==========================================================
+     SCENE 09: GRAND FINALE
+     ========================================================== */
+  #finale-overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    z-index: 500;
+    opacity: 0;
+    pointer-events: none;
+    background: radial-gradient(circle at 50% 45%, #FFFFFF 0%, #F0FAF4 60%, #E2F4EA 100%);
+    padding: 30px;
+    transition: opacity 0.5s ease;
+  }
+  #finale-overlay.visible {
+    display: flex;
+    opacity: 1;
+    pointer-events: all;
+  }
+  .finale-logo-wrap {
+    width: 76px;
+    height: 76px;
+    border-radius: 26px;
+    background: linear-gradient(135deg, #00C96B 0%, #00875A 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 38px;
+    font-weight: 800;
+    margin-bottom: 16px;
+    box-shadow: 0 16px 36px rgba(0, 201, 107, 0.35);
+    font-family: 'Space Grotesk', sans-serif;
+  }
+  .finale-brand-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 34px;
+    font-weight: 800;
+    color: #0F172A;
+    letter-spacing: -0.8px;
+    margin-bottom: 8px;
+  }
+  .finale-tagline {
+    font-size: 16px;
+    font-weight: 700;
+    color: #00875A;
+    margin-bottom: 18px;
+  }
+  .finale-pills {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+  .finale-pill {
+    padding: 7px 16px;
+    background: white;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+    border: 1px solid rgba(0, 201, 107, 0.25);
+  }
+
+  /* ==========================================================
+     START OVERLAY (Solves Browser Autoplay Sound Block)
+     ========================================================== */
+  #start-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(14px);
+    z-index: 600;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    transition: opacity 0.4s ease, visibility 0.4s;
+  }
+  #start-overlay.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .start-big-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 34px;
+    background: linear-gradient(135deg, #00C96B 0%, #00A855 100%);
+    color: white;
+    font-size: 16px;
+    font-weight: 800;
+    border: none;
+    border-radius: 36px;
+    cursor: pointer;
+    box-shadow: 0 12px 28px rgba(0, 201, 107, 0.4);
+    transition: transform 0.2s, box-shadow 0.2s;
+    margin-top: 18px;
+  }
+  .start-big-btn:hover {
+    transform: scale(1.04);
+    box-shadow: 0 16px 36px rgba(0, 201, 107, 0.5);
+  }
+
+  /* ==========================================================
+     BOTTOM CONTROL BAR
+     ========================================================== */
+  #controls-container {
+    width: 100%;
+    max-width: 960px;
+    padding: 14px 20px;
+    margin-top: 14px;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .timeline-bar-wrapper {
+    position: relative;
+    width: 100%;
+    height: 6px;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .timeline-bar-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0%;
+    background: linear-gradient(90deg, #00C96B 0%, #00FF88 100%);
+    border-radius: 4px;
+    box-shadow: 0 0 10px rgba(0, 201, 107, 0.5);
+  }
+  .timeline-handle {
+    position: absolute;
+    top: 50%;
+    left: 0%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 14px;
+    background: #FFFFFF;
+    border: 3px solid #00C96B;
+    border-radius: 50%;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+
+  .controls-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .controls-left, .controls-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn {
+    padding: 7px 14px;
+    background: #FFFFFF;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    color: #0F172A;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+    transition: all 0.2s;
+  }
+  .btn:hover {
+    background: #F8FAF9;
+    border-color: #00C96B;
+  }
+  .btn-primary {
+    background: #00C96B;
+    color: white;
+    border: none;
+  }
+  .btn-primary:hover {
+    background: #00A855;
+  }
+
+  .scene-pill-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: #FFFFFF;
+    padding: 3px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,0.08);
+  }
+  .scene-dot-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    font-size: 11px;
+    font-weight: 800;
+    color: #64748B;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .scene-dot-btn.active {
+    background: #00C96B;
+    color: white;
+  }
+  .timecode {
+    font-family: 'Space Grotesk', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+  }
+</style>
+</head>
+
+<body>
+
+<div id="viewport-wrapper">
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- MAIN CINEMATIC STAGE -->
+  <div id="stage" class="aspect-shorts">
+    
+    <!-- START / UNLOCK AUDIO MODAL -->
+    <div id="start-overlay">
+      <div class="finale-logo-wrap">d</div>
+      <h2 style="font-family:'Space Grotesk',sans-serif; font-size:24px; font-weight:800; color:#0F172A; margin-bottom:6px;">
+        Dropp Launch Film
+      </h2>
+      <p style="font-size:13px; color:#475569; max-width:280px; line-height:1.4;">
+        68-second smooth product film with Sarvam Ishita voice, real React Native app flows & sound design.
+      </p>
+      <button class="start-big-btn" id="start-film-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+        Play Launch Film
+      </button>
+    </div>
+
+    <!-- KINETIC HUD CAPTION -->
+    <div id="kinetic-hud">
+      <div class="voice-badge-tag">
+        <div class="voice-wave-anim">
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+        </div>
+        <span id="hud-tag">01 // A CITY IN MOTION</span>
+      </div>
+      <div class="kinetic-title" id="hud-title">Every Street Connected.</div>
+      <div class="karaoke-subtitles" id="hud-karaoke">
+        “Fine mint route lines draw themselves across the city. Flowing into Dropp.”
+      </div>
+    </div>
+
+    <!-- SCENE 01: ABSTRACT 3D ARCHITECTURAL CITY LAYER -->
+    <div id="city-layer" class="active">
+      <img src="./assets/motion/city_tiltshift_map.png" alt="City in Motion" class="city-bg-image" onerror="this.src='/Users/luckyraj/.gemini/antigravity-ide/brain/20190d2d-0b8a-4d82-b5a0-8579d39ac832/.user_uploaded/media_1792582839064.png'">
+      <svg class="city-svg-overlay" viewBox="0 0 440 780">
+        <path id="city-pulse-path" d="M -20,700 C 120,620 180,480 220,390 C 240,340 230,280 220,240 C 210,200 240,160 300,120" 
+              fill="none" stroke="#00C96B" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="800" stroke-dashoffset="800"
+              style="filter: drop-shadow(0 0 10px rgba(0, 201, 107, 0.8));"/>
+      </svg>
+      <div id="city-spark-logo">
+        <span class="dropp-d-icon">d</span>
+      </div>
+    </div>
+
+    <!-- NORMAL IPHONE HARDWARE -->
+    <div id="phone-chassis">
+      <!-- DYNAMIC ISLAND -->
+      <div class="dynamic-island">
+        <div class="island-dot"></div>
+        <div class="island-wave">
+          <div class="island-bar"></div>
+          <div class="island-bar"></div>
+          <div class="island-bar"></div>
+        </div>
+      </div>
+
+      <!-- TOUCH INDICATOR -->
+      <div id="touch-pointer"></div>
+
+      <!-- AURA ORB -->
+      <div id="aura-orb-element">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="white">
+          <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+          <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+        </svg>
+      </div>
+
+      <div id="glass-glare"></div>
+
+      <!-- SCREEN CONTENT -->
+      <div id="phone-screen">
+        <div id="screen-content">
+          <!-- VIEW 1: CLEAN HOME SCREEN -->
+          <div class="app-view active" id="view-home">
+            <img src="./assets/motion/clean_phone_home.png" alt="Dropp Home App" class="app-screenshot" onerror="this.src='/Users/luckyraj/.gemini/antigravity-ide/brain/20190d2d-0b8a-4d82-b5a0-8579d39ac832/.user_uploaded/media_1792582755859.png'">
+          </div>
+
+          <!-- VIEW 2: REAL CAB & RIDE SELECTION -->
+          <div class="app-view" id="view-rides">
+            <img src="./assets/simulator_shots/shot_chooseride.png" alt="Dropp Ride Selection" class="app-screenshot">
+          </div>
+
+          <!-- VIEW 3: FOOD MENU -->
+          <div class="app-view" id="view-food-menu">
+            <img src="./assets/simulator_shots/shot_food_detail.png" alt="Bawarchee Biryani House" class="app-screenshot">
+          </div>
+
+          <!-- VIEW 4: CART REVIEW WITH DROPP50 -->
+          <div class="app-view" id="view-food-cart">
+            <img src="./assets/simulator_shots/shot_cart.png" alt="Review Order Cart" class="app-screenshot">
+          </div>
+
+          <!-- VIEW 5: COURIER DELIVERY -->
+          <div class="app-view" id="view-delivery-pkg">
+            <img src="./assets/simulator_shots/shot_package.png" alt="Instant Delivery Package" class="app-screenshot">
+          </div>
+
+          <!-- VIEW 6: LIVE GPS TRACKER -->
+          <div class="app-view" id="view-delivery-track">
+            <img src="./assets/simulator_shots/shot_tracking.png" alt="Live GPS Order Tracker" class="app-screenshot">
+          </div>
+
+          <!-- VIEW 7: AURA VOICE MODAL -->
+          <div class="app-view" id="view-aura">
+            <img src="./assets/simulator_shots/shot_aura.png" alt="Dropp Aura Voice Modal" class="app-screenshot">
+          </div>
+        </div>
+      </div>
+
+      <!-- SCENE 08 MINI SERVICE PILLS -->
+      <div id="services-row">
+        <div class="service-mini-card">
+          <div class="icon">🚗</div>
+          <div class="label">Rides</div>
+        </div>
+        <div class="service-mini-card">
+          <div class="icon">🍛</div>
+          <div class="label">Food</div>
+        </div>
+        <div class="service-mini-card">
+          <div class="icon">📦</div>
+          <div class="label">Delivery</div>
+        </div>
+        <div class="service-mini-card">
+          <div class="icon">🛍️</div>
+          <div class="label">Shop</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCENE 09: FINALE OVERLAY -->
+    <div id="finale-overlay">
+      <div class="finale-logo-wrap">d</div>
+      <div class="finale-brand-title">dropp</div>
+      <div class="finale-tagline">“Your city. Your services. One Dropp.”</div>
+      <div class="finale-pills">
+        <div class="finale-pill">🚖 Rides in Minutes</div>
+        <div class="finale-pill">🍛 Dining & Groceries</div>
+        <div class="finale-pill">📦 Express Parcels</div>
+        <div class="finale-pill">🎙️ Aura Voice OS</div>
+      </div>
+      <div style="font-size:13px; font-weight:800; color:#0F172A; letter-spacing:0.5px;">
+        DON’T TYPE. JUST DROPP IT.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- BOTTOM CONTROL BAR -->
+  <div id="controls-container">
+    <div class="timeline-bar-wrapper" id="timeline-bar">
+      <div class="timeline-bar-fill" id="timeline-fill"></div>
+      <div class="timeline-handle" id="timeline-handle"></div>
+    </div>
+
+    <div class="controls-row">
+      <div class="controls-left">
+        <button class="btn btn-primary" id="play-pause-btn">▶ Play</button>
+        <button class="btn" id="restart-btn">⏮ Restart</button>
+
+        <div class="scene-pill-group">
+          <button class="scene-dot-btn active" data-scene="0">1</button>
+          <button class="scene-dot-btn" data-scene="1">2</button>
+          <button class="scene-dot-btn" data-scene="2">3</button>
+          <button class="scene-dot-btn" data-scene="3">4</button>
+          <button class="scene-dot-btn" data-scene="4">5</button>
+          <button class="scene-dot-btn" data-scene="5">6</button>
+          <button class="scene-dot-btn" data-scene="6">7</button>
+          <button class="scene-dot-btn" data-scene="7">8</button>
+          <button class="scene-dot-btn" data-scene="8">9</button>
+        </div>
+
+        <button class="btn" id="aspect-toggle-btn">📱 9:16 Shorts</button>
+      </div>
+
+      <div class="controls-right">
+        <button class="btn" id="sound-btn">🔊 Sound: On</button>
+        <span class="timecode" id="timecode-display">00:00 / 01:08</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ==========================================================
+     TIMELINE SCRIPT & NATURAL FLOW DIRECTOR
+     ========================================================== */
+  const DURATION = 68;
+  let currentTime = 0;
+  let isPlaying = false;
+  let lastTimestamp = null;
+  let soundEnabled = true;
+
+  // DOM Elements
+  const stage = document.getElementById('stage');
+  const cityLayer = document.getElementById('city-layer');
+  const cityPath = document.getElementById('city-pulse-path');
+  const citySpark = document.getElementById('city-spark-logo');
+  const phone = document.getElementById('phone-chassis');
+  const touchPointer = document.getElementById('touch-pointer');
+  const auraOrb = document.getElementById('aura-orb-element');
+  const servicesRow = document.getElementById('services-row');
+  const finaleOverlay = document.getElementById('finale-overlay');
+  const startOverlay = document.getElementById('start-overlay');
+  const startBtn = document.getElementById('start-film-btn');
+
+  const hud = document.getElementById('kinetic-hud');
+  const hudTag = document.getElementById('hud-tag');
+  const hudTitle = document.getElementById('hud-title');
+  const hudKaraoke = document.getElementById('hud-karaoke');
+
+  const timelineFill = document.getElementById('timeline-fill');
+  const timelineHandle = document.getElementById('timeline-handle');
+  const timecodeDisplay = document.getElementById('timecode-display');
+  const playPauseBtn = document.getElementById('play-pause-btn');
+  const restartBtn = document.getElementById('restart-btn');
+  const soundBtn = document.getElementById('sound-btn');
+  const aspectBtn = document.getElementById('aspect-toggle-btn');
+  const sceneBtns = document.querySelectorAll('.scene-dot-btn');
+
+  // App Views
+  const viewHome = document.getElementById('view-home');
+  const viewRides = document.getElementById('view-rides');
+  const viewFoodMenu = document.getElementById('view-food-menu');
+  const viewFoodCart = document.getElementById('view-food-cart');
+  const viewDeliveryPkg = document.getElementById('view-delivery-pkg');
+  const viewDeliveryTrack = document.getElementById('view-delivery-track');
+  const viewAura = document.getElementById('view-aura');
+
+  function switchAppView(targetView) {
+    [viewHome, viewRides, viewFoodMenu, viewFoodCart, viewDeliveryPkg, viewDeliveryTrack, viewAura].forEach(v => {
+      if (v === targetView) v.classList.add('active');
+      else v.classList.remove('active');
+    });
+  }
+
+  /* ==========================================================
+     PROCEDURAL SOUND SYNTHESIZER
+     ========================================================== */
+  let audioCtx = null;
+  let ambientOsc1 = null, ambientOsc2 = null, ambientGain = null;
+
+  function initAudioEngine() {
+    if (audioCtx) return;
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      
+      ambientOsc1 = audioCtx.createOscillator();
+      ambientOsc2 = audioCtx.createOscillator();
+      const filter = audioCtx.createBiquadFilter();
+      ambientGain = audioCtx.createGain();
+
+      ambientOsc1.type = 'sine';
+      ambientOsc1.frequency.value = 155.56; // Eb3 warm pad
+      ambientOsc2.type = 'triangle';
+      ambientOsc2.frequency.value = 233.08; // Bb3
+
+      filter.type = 'lowpass';
+      filter.frequency.value = 320;
+
+      ambientGain.gain.value = 0.035;
+
+      ambientOsc1.connect(filter);
+      ambientOsc2.connect(filter);
+      filter.connect(ambientGain);
+      ambientGain.connect(audioCtx.destination);
+
+      ambientOsc1.start();
+      ambientOsc2.start();
+    } catch(e) {}
+  }
+
+  function playWhoosh() {
+    if (!soundEnabled || !audioCtx) return;
+    try {
+      const bufferSize = audioCtx.sampleRate * 0.3;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const output = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+      const whiteNoise = audioCtx.createBufferSource();
+      whiteNoise.buffer = buffer;
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(450, audioCtx.currentTime);
+      filter.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.12);
+      filter.frequency.exponentialRampToValueAtTime(220, audioCtx.currentTime + 0.3);
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+      whiteNoise.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
+      whiteNoise.start();
+    } catch(e) {}
+  }
+
+  function playTap() {
+    if (!soundEnabled || !audioCtx) return;
+    try {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.04);
+      gain.gain.setValueAtTime(0.07, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.05);
+    } catch(e) {}
+  }
+
+  function playChime() {
+    if (!soundEnabled || !audioCtx) return;
+    try {
+      const now = audioCtx.currentTime;
+      [880, 1174.66, 1760].forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + i * 0.06);
+        gain.gain.setValueAtTime(0.09, now + i * 0.06);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now + i * 0.06);
+        osc.stop(now + 1.3);
+      });
+    } catch(e) {}
+  }
+
+  /* ==========================================================
+     VOICEOVER: AUDIO CLIPS & WEB SPEECH SYNTHESIS ENGINE
+     ========================================================== */
+  const voiceClips = {
+    s1: new Audio('./assets/motion_audio/seg1_intro.wav'),
+    s2: new Audio('./assets/motion_audio/seg2_aura.wav'),
+    s3: new Audio('./assets/motion_audio/seg3_rides.wav'),
+    s4: new Audio('./assets/motion_audio/seg4_food.wav'),
+    s5: new Audio('./assets/motion_audio/seg5_tracking.wav'),
+    s6: new Audio('./assets/motion_audio/seg6_outro.wav')
+  };
+
+  const narrationLines = {
+    s1: "Meet Dropp. One app for all your city services.",
+    s2: "Aura, ek veg biryani aur ek cab book kar do.",
+    s3: "Real-time Mapbox routing and instant cab tiers.",
+    s4: "Tactile menus and automated discount coupons.",
+    s5: "Express parcels and live GPS delivery tracking.",
+    s6: "Don't type. Just Dropp it."
+  };
+
+  function stopAllVoice() {
+    Object.values(voiceClips).forEach(a => {
+      try { a.pause(); a.currentTime = 0; } catch(e) {}
+    });
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  }
+
+  function playVoice(key) {
+    if (!soundEnabled) return;
+    initAudioEngine();
+    stopAllVoice();
+
+    let played = false;
+    const a = voiceClips[key];
+    if (a) {
+      try {
+        a.currentTime = 0;
+        const p = a.play();
+        if (p && p.then) {
+          p.then(() => { played = true; }).catch(() => {
+            speakFallback(narrationLines[key]);
+          });
+        }
+      } catch(e) {
+        speakFallback(narrationLines[key]);
+      }
+    } else {
+      speakFallback(narrationLines[key]);
+    }
+  }
+
+  function speakFallback(text) {
+    if (!soundEnabled || !window.speechSynthesis || !text) return;
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 0.95;
+      u.pitch = 1.05;
+      const voices = window.speechSynthesis.getVoices();
+      const inVoice = voices.find(v => v.lang.includes('IN') || v.name.includes('India') || v.lang.includes('hi'));
+      if (inVoice) u.voice = inVoice;
+      window.speechSynthesis.speak(u);
+    } catch(e) {}
+  }
+
+  /* ==========================================================
+     CINEMATIC DIRECTOR (0s - 68s NORMAL TIMELINE)
+     ========================================================== */
+  let lastSceneTriggered = -1;
+
+  function updateCinematics(t) {
+    // ────────────────────────────────────────────────────────
+    // SCENE 01: A City in Motion (0s – 5s)
+    // ────────────────────────────────────────────────────────
+    if (t < 5) {
+      const p = t / 5;
+      hud.style.opacity = '1';
+      cityLayer.classList.add('active');
+      phone.classList.remove('active');
+      finaleOverlay.classList.remove('visible');
+      servicesRow.classList.remove('visible');
+      auraOrb.classList.remove('visible');
+      touchPointer.classList.remove('visible');
+
+      const pathOffset = 800 - (p * 800);
+      cityPath.style.strokeDashoffset = pathOffset;
+
+      if (p > 0.6) citySpark.classList.add('visible');
+      else citySpark.classList.remove('visible');
+
+      if (lastSceneTriggered !== 1) {
+        lastSceneTriggered = 1;
+        playWhoosh();
+        hudTag.textContent = "01 // A CITY IN MOTION";
+        hudTitle.textContent = "Every Street Connected.";
+        hudKaraoke.textContent = "“Fine mint route lines draw themselves across the city. Flowing into Dropp.”";
+        highlightSceneDot(0);
+      }
+    }
+
+    // ────────────────────────────────────────────────────────
+    // SCENE 02: Dropp Opens (5s – 12s)
+    // ────────────────────────────────────────────────────────
+    else if (t < 12) {
+      const p = (t - 5) / 7;
+      hud.style.opacity = '1';
+      cityLayer.classList.remove('active');
+      citySpark.classList.remove('visible');
+      phone.classList.add('active');
+      switchAppView(viewHome);
+      finaleOverlay.classList.remove('visible');
+      servicesRow.classList.remove('visible');
+      auraOrb.classList.remove('visible');
+
+      // Subtle touch animation on the "Ride" card at p > 0.75
+      if (p > 0.75) {
+        touchPointer.style.top = '365px';
+        touchPointer.style.left = '90px';
+        touchPointer.classList.add('visible');
+      } else {
+        touchPointer.classList.remove('visible');
+      }
+
+      if (lastSceneTriggered !== 2) {
+        lastSceneTriggered = 2;
+        playVoice('s1');
+        playWhoosh();
+        hudTag.textContent = "02 // DROPP OPENS";
+        hudTitle.textContent = "Move Freely. Live Smarter.";
+        hudKaraoke.textContent = "“The real React Native app glides into view. Rides, food, deliveries and local shopping.”";
+        highlightSceneDot(1);
+      }
+
+      phone.style.transform = `scale(${0.96 + p * 0.04})`;
+    }
+
+    // ────────────────────────────────────────────────────────
+    // SCENE 03: Book a Ride (12s – 20s)
+    // ────────────────────────────────────────────────────────
+    else if (t < 20) {
+      const p = (t - 12) / 8;
+      hud.style.opacity = '1';
+      switchAppView(viewRides);
+      finaleOverlay.classList.remove('visible');
+      servicesRow.classList.remove('visible');
+      auraOrb.classList.remove('visible');
+
+      // Tap on Go Mini selection
+      if (p > 0.45 && p < 0.75) {
+        touchPointer.style.top = '515px';
+        touchPointer.style.left = '235px';
+        touchPointer.classList.add('visible');
+      } else {
+        touchPointer.classList.remove('visible');
+      }
+
+      if (lastSceneTriggered !== 3) {
+        lastSceneTriggered = 3;
+        playVoice('s3');
+        playTap();
+        hudTag.textContent = "03 // BOOK A RIDE";
+        hudTitle.textContent = "Real-Time Mapbox Routing & Fares";
+        hudKaraoke.textContent = "“A destination is entered, live route draws, and upfront tiers appear: Bike, Auto, Go Mini.”";
+        highlightSceneDot(2);
+      }
+
+      phone.style.transform = 'scale(1)';
+    }
+
+    // ────────────────────────────────────────────────────────
+    // SCENE 04: Discover Food (20s – 29s)
+    // ────────────────────────────────────────────────────────
+    else if (t < 29) {
+      const p = (t - 20) / 9;
+      hud.style.opacity = '1';
+      finaleOverlay.classList.remove('visible');
+      servicesRow.classList.remove('visible');
+      auraOrb.classList.remove('visible');
+      touchPointer.classList.remove('visible');
+
+      // Crossfade from Menu to Cart Summary
+      if (p < 0.5) {
+        switchAppView(viewFoodMenu);
+      } else {
+        if (lastSceneTriggered === 4) playTap();
+        switchAppView(viewFoodCart);
+      }
+
+      if (lastSceneTriggered !== 4) {
+        lastSceneTriggered = 4;
+        playVoice('s4');
+        playWhoosh();
+        hudTag.textContent = "04 // DISCOVER FOOD";
+        hudTitle.textContent = "Tactile Dining & Automated Discounts";
+        hudKaraoke.textContent = "“Dishes enter with staggered movement. Added to cart with DROPP50 coupon savings.”";
+        highlightSceneDot(3);
+      }
+
+      phone.style.transform = 'scale(1)';
+    }
+
+    // ────────────────────────────────────────────────────────
+    // SCENE 05: Deliver Anything (29s – 36s)
+    // ────────────────────────────────────────────────────────
+    else if (t < 36) {
+      const p = (t - 29) / 7;
+      hud.style.opacity = '1';
+      finaleOverlay.classList.remove('visible');
+      servicesRow.classList.remove('visible');
+      auraOrb.classList.remove('visible');
+      touchPointer.classList.remove('visible');
+
+      // Crossfade package options to live GPS tracker
+      if (p < 0.45) {
+        switchAppView(viewDeliveryPkg);
+      } else {
+        switchAppView(viewDeliveryTrack);
+      }
+
+      if (lastSceneTriggered !== 5) {
+        lastSceneTriggered = 5;
+        playVoice('s5');
+        playWhoosh();
+        hudTag.textContent = "05 // DELIVER ANYTHING";
+        hudTitle.textContent = "Send Parcels & Live Fleet GPS";
+        hudKaraoke.textContent = "“A package card settles into place. Amit Kumar arrives on Honda Activa in 18 mins.”";
+        highlightSceneDot(4);
+      }
+
+      phone.style.transform = 'scale(1)';
+    }
+
+    // ────────────────────────────────────────────────────────
+    // SCENE 06: Meet Aura (36s – 46s)
+    // ────────────────────────────────────────────────────────
+    else if (t < 46) {
+      const p = (t - 36) / 10;
+      hud.style.opacity = '1';
+      switchAppView(viewAura);
+      finaleOverlay.classList.remove('visible');
+      servicesRow.classList.remove('visible');
+      auraOrb.classList.add('visible');
+      touchPointer.classList.remove('visible');
+
+      if (lastSceneTriggered !== 6) {
+        lastSceneTriggered = 6;
+        playVoice('s2');
+        hudTag.textContent = "06 // MEET AURA VOICE OS";
+        hudTitle.textContent = "The Emotional Centre of Dropp";
+        hudKaraoke.textContent = "“User: ‘Aura, ek veg biryani aur ek cab book kar do.’ The voice orb listens.”";
+        highlightSceneDot(5);
+      }
+
+      phone.style.transform = 'scale(1)';
+    }
+
+    // ────────────────────────────────────────────────────────
+    // SCENE 07: Words Become Actions (46s – 55s)
+    // ────────────────────────────────────────────────────────
+    else if (t < 55) {
+      const p = (t - 46) / 9;
+      hud.style.opacity = '1';
+      switchAppView(viewAura);
+      finaleOverlay.classList.remove('visible');
+      servicesRow.classList.remove('visible');
+      auraOrb.classList.add('visible');
+
+      if (lastSceneTriggered !== 7) {
+        lastSceneTriggered = 7;
+        hudTag.textContent = "07 // WORDS BECOME ACTIONS";
+        hudTitle.textContent = "Parallel Multi-Intent Booking";
+        hudKaraoke.textContent = "“Aura: ‘Dum Biryani aur Mini cab ready hai. Dono confirm kar doon?’ Tap confirm.”";
+        highlightSceneDot(6);
+      }
+
+      // Booking confirmation chime at p > 0.55
+      if (p > 0.55 && lastSceneTriggered === 7) {
+        playChime();
+        lastSceneTriggered = 7.5;
+        hudKaraoke.textContent = "“Booking Confirmed! Cab arriving in 5 mins • Biryani in preparation.”";
+      }
+
+      phone.style.transform = 'scale(1)';
+    }
+
+    // ────────────────────────────────────────────────────────
+    // SCENE 08: One App, Endless Possibilities (55s – 63s)
+    // ────────────────────────────────────────────────────────
+    else if (t < 63) {
+      const p = (t - 55) / 8;
+      hud.style.opacity = '1';
+      switchAppView(viewHome);
+      servicesRow.classList.add('visible');
+      finaleOverlay.classList.remove('visible');
+      auraOrb.classList.add('visible');
+      touchPointer.classList.remove('visible');
+
+      if (lastSceneTriggered !== 8) {
+        lastSceneTriggered = 8;
+        playWhoosh();
+        hudTag.textContent = "08 // ONE APP, ENDLESS POSSIBILITIES";
+        hudTitle.textContent = "All 4 Services Connected by Aura";
+        hudKaraoke.textContent = "“Rides, dining, parcels, and local shopping united into one seamless experience.”";
+        highlightSceneDot(7);
+      }
+
+      phone.style.transform = 'scale(0.97)';
+    }
+
+    // ────────────────────────────────────────────────────────
+    // SCENE 09: The Final Reveal (63s – 68s)
+    // ────────────────────────────────────────────────────────
+    else {
+      servicesRow.classList.remove('visible');
+      finaleOverlay.classList.add('visible');
+      hud.style.opacity = '0';
+      auraOrb.classList.remove('visible');
+
+      if (lastSceneTriggered !== 9) {
+        lastSceneTriggered = 9;
+        playVoice('s6');
+        playChime();
+        highlightSceneDot(8);
+      }
+
+      phone.style.transform = 'scale(0.92)';
+    }
+
+    // Update Progress Timeline
+    const progressPercent = (t / DURATION) * 100;
+    timelineFill.style.width = `${progressPercent}%`;
+    timelineHandle.style.left = `${progressPercent}%`;
+
+    const mins = Math.floor(t / 60).toString().padStart(2, '0');
+    const secs = Math.floor(t % 60).toString().padStart(2, '0');
+    const durMins = Math.floor(DURATION / 60).toString().padStart(2, '0');
+    const durSecs = Math.floor(DURATION % 60).toString().padStart(2, '0');
+    timecodeDisplay.textContent = `${mins}:${secs} / ${durMins}:${durSecs}`;
+  }
+
+  /* ==========================================================
+     ANIMATION LOOP
+     ========================================================== */
+  function renderLoop(timestamp) {
+    if (!lastTimestamp) lastTimestamp = timestamp;
+    const delta = (timestamp - lastTimestamp) / 1000;
+    lastTimestamp = timestamp;
+
+    if (isPlaying) {
+      currentTime += delta;
+      if (currentTime >= DURATION) {
+        currentTime = DURATION;
+        isPlaying = false;
+        playPauseBtn.textContent = '▶ Play';
+      }
+      updateCinematics(currentTime);
+    }
+
+    requestAnimationFrame(renderLoop);
+  }
+  requestAnimationFrame(renderLoop);
+
+  /* ==========================================================
+     CONTROLS INTERACTION
+     ========================================================== */
+  function startPlayback() {
+    initAudioEngine();
+    isPlaying = true;
+    playPauseBtn.textContent = '⏸ Pause';
+    startOverlay.classList.add('hidden');
+  }
+
+  startBtn.addEventListener('click', () => {
+    startPlayback();
+  });
+
+  playPauseBtn.addEventListener('click', () => {
+    initAudioEngine();
+    isPlaying = !isPlaying;
+    playPauseBtn.textContent = isPlaying ? '⏸ Pause' : '▶ Play';
+    startOverlay.classList.add('hidden');
+    if (currentTime >= DURATION) currentTime = 0;
+  });
+
+  restartBtn.addEventListener('click', () => {
+    currentTime = 0;
+    lastSceneTriggered = -1;
+    stopAllVoice();
+    updateCinematics(0);
+    if (!isPlaying) {
+      isPlaying = true;
+      playPauseBtn.textContent = '⏸ Pause';
+    }
+  });
+
+  soundBtn.addEventListener('click', () => {
+    soundEnabled = !soundEnabled;
+    soundBtn.textContent = soundEnabled ? '🔊 Sound: On' : '🔇 Sound: Off';
+    if (!soundEnabled) {
+      stopAllVoice();
+      if (ambientGain) ambientGain.gain.value = 0;
+    } else {
+      initAudioEngine();
+      if (ambientGain) ambientGain.gain.value = 0.035;
+    }
+  });
+
+  // Aspect Ratio Toggle
+  aspectBtn.addEventListener('click', () => {
+    if (stage.classList.contains('aspect-shorts')) {
+      stage.classList.remove('aspect-shorts');
+      stage.classList.add('aspect-landscape');
+      aspectBtn.textContent = '🖥️ 16:9 Widescreen';
+    } else {
+      stage.classList.remove('aspect-landscape');
+      stage.classList.add('aspect-shorts');
+      aspectBtn.textContent = '📱 9:16 Shorts';
+    }
+  });
+
+  // Scene Dots
+  function highlightSceneDot(index) {
+    sceneBtns.forEach((btn, i) => {
+      if (i === index) btn.classList.add('active');
+      else btn.classList.remove('active');
+    });
+  }
+
+  const sceneStartTimes = [0, 5, 12, 20, 29, 36, 46, 55, 63];
+  sceneBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.getAttribute('data-scene'));
+      currentTime = sceneStartTimes[idx];
+      lastSceneTriggered = -1;
+      stopAllVoice();
+      updateCinematics(currentTime);
+      startOverlay.classList.add('hidden');
+      initAudioEngine();
+    });
+  });
+
+  // Timeline Scrubbing
+  const timelineBar = document.getElementById('timeline-bar');
+  let isDraggingTimeline = false;
+
+  function scrubTimeline(e) {
+    const rect = timelineBar.getBoundingClientRect();
+    let frac = (e.clientX - rect.left) / rect.width;
+    frac = Math.max(0, Math.min(1, frac));
+    currentTime = frac * DURATION;
+    lastSceneTriggered = -1;
+    stopAllVoice();
+    updateCinematics(currentTime);
+    startOverlay.classList.add('hidden');
+  }
+
+  timelineBar.addEventListener('mousedown', (e) => {
+    isDraggingTimeline = true;
+    scrubTimeline(e);
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (isDraggingTimeline) scrubTimeline(e);
+  });
+  window.addEventListener('mouseup', () => {
+    isDraggingTimeline = false;
+  });
+
+  // Keyboard Shortcuts
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      playPauseBtn.click();
+    } else if (e.code === 'KeyR') {
+      restartBtn.click();
+    } else if (e.code === 'KeyM') {
+      soundBtn.click();
+    }
+  });
+</script>
+
+</body>
+</html>

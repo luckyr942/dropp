@@ -7,7 +7,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
-import useAura from '../../../shared/voice/useAura';
+import { useAuraContext } from '../../../shared/voice/AuraContext';
+import AuraOverlay from '../../../shared/voice/AuraOverlay';
 
 const { width } = Dimensions.get('window');
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
@@ -44,7 +45,7 @@ const TIER_META = {
 
 export default function HomeScreen({ navigation, onNavigate }) {
     const { pickupLocation, destination, setPickupLocation, setDestination, setServiceType, selectVehicle } = useRideStore();
-    const { startListening, isListening } = useAura();
+    const { openAura, isOpen } = useAuraContext();
 
     const [selectedService, setSelectedService] = useState('Ride');
     const [selectedRideType, setSelectedRideType] = useState('bike');
@@ -391,9 +392,9 @@ export default function HomeScreen({ navigation, onNavigate }) {
                     <Text style={s.navLabel}>Orders</Text>
                 </TouchableOpacity>
                 <View style={s.navCenter}>
-                    <TouchableOpacity style={s.auraBtn} onPress={startListening}>
+                    <TouchableOpacity style={s.auraBtn} onPress={openAura}>
                         <LinearGradient colors={['#00E57B', '#00B055']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.auraBtnGrad}>
-                            <MaterialCommunityIcons name={isListening ? 'microphone' : 'qrcode-scan'} size={23} color="#FFF" />
+                            <MaterialCommunityIcons name="microphone" size={23} color="#FFF" />
                         </LinearGradient>
                     </TouchableOpacity>
                 </View>
@@ -406,6 +407,9 @@ export default function HomeScreen({ navigation, onNavigate }) {
                     <Text style={s.navLabel}>Profile</Text>
                 </TouchableOpacity>
             </View>
+
+            {/* ── Aura Voice Overlay ── */}
+            <AuraOverlay />
         </SafeAreaView>
     );
 }

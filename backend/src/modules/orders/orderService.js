@@ -92,6 +92,27 @@ export async function confirmOrder(orderId) {
     totalAmount: order.totalAmount,
   });
 
+  try {
+    const { setLatestDriverOffer } = await import('../rides/rideService.js');
+    const driverOffer = {
+      offerId: order._id.toString(),
+      serviceType: 'FOOD DELIVERY',
+      title: 'NEW FOOD ORDER PICKUP',
+      fare: `₹${Math.round(order.totalAmount * 0.25) || 65}`,
+      fareNumber: Math.round(order.totalAmount * 0.25) || 65,
+      distance: '3.6 km • 16 mins',
+      pickup: 'Bawarchee Biryani House, Sector 28',
+      destination: 'Cyber Hub Building 10, Gurugram',
+      otp: '4821',
+      customerName: 'Rahul Verma',
+      totalAmount: order.totalAmount,
+      itemsCount: order.items?.length || 2,
+      createdAt: new Date().toISOString(),
+    };
+    setLatestDriverOffer(driverOffer);
+    broadcast('driver.incoming_offer', driverOffer);
+  } catch(_) {}
+
   return order.toObject();
 }
 

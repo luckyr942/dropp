@@ -201,4 +201,52 @@ export async function handleCancelRide(req, res, next) {
     }
 }
 
+// GET /api/rides/driver/latest-offer
+export async function handleGetLatestDriverOffer(req, res, next) {
+    try {
+        const { getLatestDriverOffer } = await import('./rideService.js');
+        const offer = getLatestDriverOffer();
+        return res.status(200).json({
+            success: true,
+            data: offer,
+        });
+    } catch (err) {
+        next(err);
+    }
+}
+
+// POST /api/rides/driver/simulate-offer
+export async function handleSimulateDriverOffer(req, res, next) {
+    try {
+        const { serviceType = 'RIDE', fare = '₹361', pickup = 'Sector 1, Bokaro', destination = 'Balidih Main Gate' } = req.body || {};
+        const { setLatestDriverOffer } = await import('./rideService.js');
+        const { broadcast } = await import('../../infrastructure/websocket/wsServer.js');
+
+        const offer = {
+            offerId: 'offer_sim_' + Date.now(),
+            serviceType,
+            title: `NEW ${serviceType.toUpperCase()} REQUEST`,
+            fare,
+            distance: '15.97 km • 29 mins',
+            pickup,
+            destination,
+            otp: '4821',
+            customerName: 'Rahul Verma',
+            customerRating: '4.9 ★',
+            createdAt: new Date().toISOString(),
+        };
+
+        setLatestDriverOffer(offer);
+        broadcast('driver.incoming_offer', offer);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Simulated offer broadcasted to all drivers',
+            data: offer,
+        });
+    } catch (err) {
+        next(err);
+    }
+}
+
 

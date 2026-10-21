@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dropp — Pitch Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+:root {
+  --green: #00C96B;
+  --green-dark: #00A855;
+  --green-light: #55EFC4;
+  --green-pale: #E5F8EE;
+  --green-glow: rgba(0,201,107,0.25);
+  --text-dark: #111820;
+  --text-mid: #5D6872;
+  --text-light: #9CA8B3;
+  --bg-base: #F3FBF7;
+  --white: #FFFFFF;
+  --orange: #FF7A00;
+  --blue: #0087FF;
+  --border: rgba(0,201,107,0.15);
+  --shadow: 0 4px 24px rgba(0,0,0,0.06);
+}
+
+html, body {
+  width:100%; height:100%; overflow:hidden;
+  font-family:'Plus Jakarta Sans', sans-serif;
+  background: linear-gradient(145deg, #E5F8EE 0%, #F3FBF7 30%, #EDF7FC 70%, #FFFFFF 100%);
+}
+
+#progress {
+  position:fixed; top:0; left:0; height:3px;
+  background: linear-gradient(90deg, #00C96B, #55EFC4);
+  box-shadow: 0 0 12px rgba(0,201,107,0.5);
+  z-index:9999; transition: width 0.3s linear;
+}
+
+.scene {
+  position:fixed; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none;
+  transition: opacity 0.7s cubic-bezier(0.4,0,0.2,1);
+  z-index:10;
+}
+.scene.active { opacity:1; pointer-events:all; }
+
+#nav-dots {
+  position:fixed; right:20px; top:50%;
+  transform:translateY(-50%);
+  display:flex; flex-direction:column; gap:8px; z-index:9999;
+}
+.dot {
+  width:6px; height:6px; border-radius:3px;
+  background: rgba(0,168,85,0.25);
+  cursor:pointer; transition:all 0.35s;
+}
+.dot.active { height:24px; background:#00C96B; box-shadow: 0 0 10px rgba(0,201,107,0.4); }
+
+#counter {
+  position:fixed; bottom:22px; right:32px;
+  font-size:11px; letter-spacing:2px;
+  color:#9CA8B3; font-family:'Space Grotesk',sans-serif; z-index:9999;
+}
+
+#skip {
+  position:fixed; top:22px; right:36px;
+  background:rgba(255,255,255,0.8); backdrop-filter:blur(8px);
+  border:1px solid rgba(0,201,107,0.2);
+  color:#5D6872; font-size:11px; letter-spacing:1.5px;
+  padding:7px 16px; border-radius:20px; cursor:pointer;
+  z-index:9999; font-family:'Space Grotesk',sans-serif;
+  transition:all 0.3s;
+}
+#skip:hover { color:var(--green); border-color:var(--green); background:white; }
+
+.ambient { position:fixed; border-radius:50%; filter:blur(80px); pointer-events:none; z-index:1; }
+.amb1 { width:500px; height:500px; top:-100px; left:-150px;
+  background:radial-gradient(circle, rgba(0,201,107,0.12) 0%, transparent 70%);
+  animation: orbFloat1 8s ease-in-out infinite; }
+.amb2 { width:400px; height:400px; bottom:-80px; right:-100px;
+  background:radial-gradient(circle, rgba(0,135,255,0.08) 0%, transparent 70%);
+  animation: orbFloat2 10s ease-in-out infinite; }
+
+@keyframes orbFloat1 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(30px,20px)} }
+@keyframes orbFloat2 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-20px,-30px)} }
+@keyframes fadeUp { from{opacity:0;transform:translateY(28px)} to{opacity:1;transform:translateY(0)} }
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+@keyframes scaleIn { from{opacity:0;transform:scale(0.88)} to{opacity:1;transform:scale(1)} }
+@keyframes slideLeft { from{opacity:0;transform:translateX(40px)} to{opacity:1;transform:translateX(0)} }
+@keyframes slideRight { from{opacity:0;transform:translateX(-40px)} to{opacity:1;transform:translateX(0)} }
+@keyframes slideUp { from{opacity:0;transform:translateY(50px)} to{opacity:1;transform:translateY(0)} }
+@keyframes orbPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.06)} }
+@keyframes waveBar { 0%,100%{height:8px} 50%{height:var(--peak,36px)} }
+@keyframes glowPulse { 0%,100%{box-shadow:0 0 20px rgba(0,201,107,0.2)} 50%{box-shadow:0 0 40px rgba(0,201,107,0.5)} }
+@keyframes routeGrow { from{stroke-dashoffset:400} to{stroke-dashoffset:0} }
+@keyframes bubbleIn { from{opacity:0;transform:translateY(12px) scale(0.95)} to{opacity:1;transform:translateY(0) scale(1)} }
+@keyframes carMove { 0%{transform:translateX(-60px) translateY(0)} 100%{transform:translateX(60px) translateY(-12px)} }
+@keyframes pinDrop { 0%{transform:translateY(-30px);opacity:0} 70%{transform:translateY(3px)} 100%{transform:translateY(0);opacity:1} }
+
+/* SCENE 1 — BRAND */
+.s1-wrap { display:flex; flex-direction:column; align-items:center; text-align:center; }
+.s1-tag { font-family:'Space Grotesk',sans-serif; font-size:11px; letter-spacing:5px; color:var(--green-dark); text-transform:uppercase; opacity:0; animation: fadeUp 0.8s 0.3s forwards; }
+.s1-logo-wrap { margin-top:12px; display:flex; align-items:center; gap:14px; opacity:0; animation: scaleIn 0.9s 0.7s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+.s1-logo-icon { width:64px; height:64px; border-radius:20px; background: linear-gradient(135deg, #00C96B, #00A855); display:flex; align-items:center; justify-content:center; box-shadow: 0 8px 32px rgba(0,201,107,0.4); font-size:32px; animation: glowPulse 2.5s ease-in-out infinite 1.5s; }
+.s1-logo-text { font-size:76px; font-weight:800; letter-spacing:-4px; background: linear-gradient(135deg, #111820 40%, #00A855 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.s1-tagline { margin-top:20px; font-size:22px; font-weight:500; color:var(--text-mid); max-width:560px; line-height:1.5; opacity:0; animation: fadeUp 0.8s 1.3s forwards; }
+.s1-tagline span { color:var(--green-dark); font-weight:800; }
+.s1-pill { margin-top:26px; background: linear-gradient(135deg, var(--green), var(--green-dark)); color:white; font-size:12px; font-weight:700; letter-spacing:2.5px; padding:12px 32px; border-radius:40px; box-shadow: 0 4px 20px rgba(0,201,107,0.35); opacity:0; animation: fadeUp 0.8s 1.8s forwards; }
+.s1-services { display:flex; gap:12px; margin-top:28px; opacity:0; animation: fadeUp 0.8s 2.2s forwards; }
+.s1-svc { background:white; border:1px solid rgba(0,201,107,0.2); border-radius:14px; padding:10px 16px; display:flex; align-items:center; gap:8px; box-shadow: 0 2px 12px rgba(0,0,0,0.05); font-size:13px; font-weight:600; color:var(--text-dark); }
+
+/* SCENE 2 — PROBLEM */
+.s2-wrap { max-width:900px; width:90%; text-align:center; }
+.s2-eyebrow { font-size:11px; letter-spacing:5px; color:var(--green-dark); text-transform:uppercase; font-family:'Space Grotesk',sans-serif; opacity:0; animation: fadeUp 0.7s 0.2s forwards; }
+.s2-h1 { font-size:52px; font-weight:800; color:var(--text-dark); line-height:1.1; margin-top:12px; letter-spacing:-2px; opacity:0; animation: fadeUp 0.8s 0.5s forwards; }
+.s2-h1 span { color:var(--green-dark); }
+.s2-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:36px; }
+.s2-card { background:white; border:1px solid rgba(0,0,0,0.06); border-radius:20px; padding:24px 20px; text-align:left; box-shadow:var(--shadow); opacity:0; transform:translateY(24px); transition: all 0.5s cubic-bezier(0.4,0,0.2,1); }
+.s2-card.entered { opacity:1; transform:translateY(0); }
+.s2-card-icon { font-size:28px; margin-bottom:12px; }
+.s2-card-title { font-size:15px; font-weight:800; color:var(--text-dark); margin-bottom:6px; }
+.s2-card-text { font-size:12.5px; color:var(--text-mid); line-height:1.6; }
+.s2-card-tag { display:inline-block; margin-top:10px; font-size:10px; font-weight:700; letter-spacing:1px; background:var(--green-pale); color:var(--green-dark); padding:3px 10px; border-radius:10px; }
+
+/* SCENE 3 — HOME SCREEN */
+.s3-wrap { display:flex; align-items:center; gap:60px; max-width:1100px; width:95%; }
+.s3-left { flex:1; max-width:420px; }
+.s3-eyebrow { font-size:11px; letter-spacing:4px; color:var(--green-dark); text-transform:uppercase; font-family:'Space Grotesk',sans-serif; opacity:0; animation: slideRight 0.7s 0.2s forwards; }
+.s3-h1 { font-size:44px; font-weight:800; color:var(--text-dark); line-height:1.1; letter-spacing:-2px; margin-top:12px; opacity:0; animation: slideRight 0.7s 0.5s forwards; }
+.s3-h1 span { color:var(--green-dark); }
+.s3-sub { font-size:15px; color:var(--text-mid); line-height:1.6; margin-top:14px; opacity:0; animation: slideRight 0.7s 0.8s forwards; }
+.s3-features { display:flex; flex-direction:column; gap:12px; margin-top:24px; }
+.s3-feat { display:flex; align-items:center; gap:12px; opacity:0; transform:translateX(-20px); transition: all 0.5s; }
+.s3-feat.show { opacity:1; transform:translateX(0); }
+.s3-feat-icon { width:38px; height:38px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:18px; }
+.s3-feat-text { font-size:13px; font-weight:600; color:var(--text-dark); }
+.s3-feat-sub { font-size:11.5px; color:var(--text-mid); }
+.phone-wrap { flex-shrink:0; opacity:0; animation: slideLeft 0.9s 0.4s cubic-bezier(0.34,1.1,0.64,1) forwards; }
+.phone { width:255px; border-radius:42px; background: linear-gradient(145deg, #E5F8EE, #F3FBF7, #EDF7FC, #FFFFFF); box-shadow: 0 30px 80px rgba(0,0,0,0.12), 0 0 0 1px rgba(255,255,255,0.8) inset; overflow:hidden; }
+.phone-notch { width:80px; height:22px; background:white; border-radius:0 0 14px 14px; margin:0 auto; }
+.ph-status { display:flex; justify-content:space-between; align-items:center; padding:6px 16px 4px; font-size:10px; font-weight:700; color:var(--text-dark); }
+.ph-header { display:flex; justify-content:space-between; align-items:center; padding:4px 14px 8px; }
+.ph-logo { font-size:18px; font-weight:800; color:var(--text-dark); letter-spacing:-0.5px; }
+.ph-logo span { color:var(--green); }
+.ph-location { display:flex; align-items:center; gap:3px; font-size:9px; color:var(--text-mid); margin-top:1px; }
+.ph-header-right { display:flex; gap:6px; align-items:center; }
+.ph-wallet { background:white; border:1px solid #E8ECEF; border-radius:20px; padding:4px 8px; font-size:9px; font-weight:700; color:var(--text-dark); }
+.ph-avatar { width:28px; height:28px; border-radius:14px; background: linear-gradient(135deg, #667eea, #764ba2); border:2px solid white; }
+.ph-hero { margin:0 10px; border-radius:18px; overflow:hidden; height:105px; background: linear-gradient(135deg, #E5F8EE, #C8F0DC, #A8E8C8); position:relative; }
+.ph-hero-text { padding:11px 14px; }
+.ph-hero-eyebrow { font-size:7px; font-weight:800; letter-spacing:1.2px; color:#717E85; text-transform:uppercase; }
+.ph-hero-h1 { font-size:18px; font-weight:800; color:var(--text-dark); line-height:1.1; letter-spacing:-0.5px; margin-top:3px; }
+.ph-hero-h1 span { color:var(--green-dark); }
+.ph-hero-sub { font-size:8.5px; color:var(--text-mid); margin-top:3px; line-height:1.4; }
+.ph-hero-car { position:absolute; right:-4px; bottom:0; font-size:48px; opacity:0.6; animation: carMove 4s ease-in-out infinite alternate; }
+.ph-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:8px 10px 0; }
+.ph-tile { border-radius:16px; overflow:hidden; aspect-ratio:1.65; position:relative; border:1px solid rgba(255,255,255,0.9); box-shadow:0 2px 8px rgba(0,0,0,0.05); display:flex; align-items:flex-end; }
+.ph-tile-bg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:38px; opacity:0.22; }
+.ph-tile-content { position:relative; z-index:2; padding:8px 10px; }
+.ph-tile-title { font-size:12px; font-weight:800; color:var(--text-dark); }
+.ph-tile-sub { font-size:7.5px; color:var(--text-mid); line-height:1.3; }
+.ph-tile.ride { background:linear-gradient(135deg, #F0FDF8, #DCF5EC); }
+.ph-tile.food { background:linear-gradient(135deg, #FFF7F0, #FFE8D0); }
+.ph-tile.delivery { background:linear-gradient(135deg, #F0F5FF, #DDE8FF); }
+.ph-tile.shop { background:linear-gradient(135deg, #FFF0F5, #FFD8E8); }
+.ph-offer { margin:8px 10px; background: linear-gradient(135deg, #E5F8EE, #C8F0DC); border:1px solid #D8F3E5; border-radius:14px; padding:9px 12px; display:flex; justify-content:space-between; align-items:center; }
+.ph-offer-tag { font-size:7px; font-weight:800; color:#76838C; letter-spacing:1px; text-transform:uppercase; }
+.ph-offer-h { font-size:13px; font-weight:800; color:var(--text-dark); }
+.ph-offer-sub { font-size:8px; color:var(--text-mid); }
+.ph-offer-code { background:var(--green); color:white; border-radius:10px; padding:5px 10px; font-size:9px; font-weight:800; }
+.ph-nav { display:flex; justify-content:space-around; padding:8px 0 12px; border-top:1px solid rgba(0,0,0,0.05); margin-top:7px; }
+.ph-nav-item { display:flex; flex-direction:column; align-items:center; gap:2px; }
+.ph-nav-icon { font-size:15px; }
+.ph-nav-label { font-size:8px; color:var(--text-light); }
+.ph-nav-item.active .ph-nav-label { color:var(--green); font-weight:700; }
+.ph-aura-fab { position:absolute; bottom:52px; right:12px; width:36px; height:36px; border-radius:18px; background: linear-gradient(135deg, #00E575, #00A859); box-shadow:0 4px 16px rgba(0,201,107,0.45); display:flex; align-items:center; justify-content:center; font-size:16px; animation: glowPulse 2s ease-in-out infinite; }
+
+/* SCENE 4 — AURA */
+.s4-wrap { display:flex; align-items:center; gap:70px; max-width:1100px; width:95%; }
+.s4-left { flex:1; max-width:440px; }
+.s4-eyebrow { font-size:11px; letter-spacing:4px; color:var(--green-dark); text-transform:uppercase; font-family:'Space Grotesk',sans-serif; opacity:0; animation: slideRight 0.7s 0.2s forwards; }
+.s4-h1 { font-size:50px; font-weight:800; color:var(--text-dark); line-height:1.05; letter-spacing:-2.5px; margin-top:14px; opacity:0; animation: slideRight 0.7s 0.5s forwards; }
+.s4-h1 span { background: linear-gradient(135deg, #00C96B, #00A855); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.s4-sub { font-size:15px; color:var(--text-mid); line-height:1.65; margin-top:16px; opacity:0; animation: slideRight 0.7s 0.8s forwards; }
+.s4-chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:20px; opacity:0; animation: fadeUp 0.7s 1.1s forwards; }
+.s4-chip { background:white; border:1px solid rgba(0,201,107,0.2); border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; color:var(--text-dark); display:flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(0,0,0,0.05); }
+.aura-phone { width:265px; flex-shrink:0; background: linear-gradient(145deg, #E5F8EE, #F3FBF7, #EDF7FC, #FFFFFF); border-radius:42px; box-shadow: 0 30px 80px rgba(0,0,0,0.12), 0 0 0 1px rgba(255,255,255,0.8) inset; overflow:hidden; opacity:0; animation: slideLeft 0.9s 0.4s cubic-bezier(0.34,1.1,0.64,1) forwards; }
+.aura-header { display:flex; justify-content:space-between; align-items:center; padding:12px 16px 8px; }
+.aura-back { width:32px; height:32px; border-radius:16px; background:white; border:1px solid #E8ECEF; display:flex; align-items:center; justify-content:center; font-size:14px; }
+.aura-brand { font-size:14px; font-weight:800; color:var(--text-dark); }
+.aura-brand-g { color:var(--green); }
+.aura-orb-container { display:flex; flex-direction:column; align-items:center; padding:8px 0 6px; }
+.aura-orb-rings { position:relative; display:flex; align-items:center; justify-content:center; width:120px; height:120px; }
+.aura-ring { position:absolute; border-radius:50%; border:1.5px solid rgba(0,201,107,0.2); }
+.aura-ring-1 { width:120px; height:120px; animation:glowPulse 2s ease-in-out infinite; }
+.aura-ring-2 { width:98px; height:98px; border-color:rgba(0,201,107,0.3); }
+.aura-orb { width:78px; height:78px; border-radius:50%; background: linear-gradient(135deg, #55EFC4, #38D9A9, #0984E3, #00CEC9); box-shadow:0 8px 40px rgba(0,201,107,0.4); display:flex; align-items:center; justify-content:center; animation: orbPulse 2.2s ease-in-out infinite; position:relative; overflow:hidden; }
+.aura-orb-shine { position:absolute; top:8px; left:14px; width:26px; height:18px; border-radius:50%; background:rgba(255,255,255,0.55); filter:blur(4px); }
+.aura-wavebars { display:flex; align-items:center; gap:3px; }
+.aura-bar { width:3px; border-radius:2px; background:white; animation: waveBar 0.5s ease-in-out infinite alternate; }
+.aura-bar:nth-child(1){--peak:12px;animation-delay:0s}
+.aura-bar:nth-child(2){--peak:22px;animation-delay:0.08s}
+.aura-bar:nth-child(3){--peak:28px;animation-delay:0.15s}
+.aura-bar:nth-child(4){--peak:22px;animation-delay:0.22s}
+.aura-bar:nth-child(5){--peak:12px;animation-delay:0.30s}
+.aura-status-txt { font-size:11px; color:var(--text-mid); margin-top:7px; font-weight:500; }
+.aura-chips-row { display:flex; gap:6px; overflow-x:auto; padding:0 12px 7px; scrollbar-width:none; }
+.aura-chip { background:white; border:1px solid rgba(0,201,107,0.2); border-radius:16px; padding:5px 10px; font-size:9px; font-weight:600; color:var(--text-dark); display:flex; align-items:center; gap:4px; white-space:nowrap; flex-shrink:0; }
+.aura-chat { padding:0 12px 7px; display:flex; flex-direction:column; gap:7px; }
+.aura-bubble { border-radius:16px; padding:8px 12px; opacity:0; animation: bubbleIn 0.4s forwards; }
+.aura-bubble.user { background:var(--green); color:white; border-bottom-right-radius:4px; align-self:flex-end; max-width:80%; }
+.aura-bubble.ai { background:white; border:1px solid #E8ECEF; border-bottom-left-radius:4px; align-self:flex-start; max-width:88%; box-shadow:0 2px 8px rgba(0,0,0,0.05); }
+.bubble-label { font-size:9px; font-weight:700; margin-bottom:3px; display:block; }
+.aura-bubble.user .bubble-label { color:rgba(255,255,255,0.75); }
+.aura-bubble.ai .bubble-label { color:var(--green-dark); }
+.bubble-text { font-size:10px; line-height:1.4; }
+.aura-bubble.user .bubble-text { color:white; }
+.aura-bubble.ai .bubble-text { color:var(--text-dark); }
+.aura-ride-card { background:white; border:1px solid #E8ECEF; border-radius:16px; padding:9px 12px; margin:0 12px 7px; box-shadow:0 2px 8px rgba(0,0,0,0.05); opacity:0; animation: bubbleIn 0.5s 2.8s forwards; }
+.arc-header { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+.arc-title { font-size:11px; font-weight:800; color:var(--text-dark); }
+.arc-route { font-size:9px; color:var(--text-mid); margin-bottom:6px; }
+.arc-tiers { display:flex; gap:5px; }
+.arc-tier { flex:1; background:var(--green-pale); border-radius:10px; padding:5px 0; text-align:center; }
+.arc-tier-name { font-size:8px; color:var(--text-mid); }
+.arc-tier-price { font-size:11px; font-weight:800; color:var(--text-dark); }
+.arc-tier-eta { font-size:8px; color:var(--green-dark); font-weight:600; }
+.arc-confirm { background: linear-gradient(135deg, #00C96B, #00A855); color:white; font-size:10px; font-weight:700; border-radius:10px; padding:7px; text-align:center; margin-top:7px; }
+.aura-bottom { display:flex; gap:7px; padding:7px 12px 14px; align-items:center; }
+.aura-input { flex:1; background:white; border:1px solid #E8ECEF; border-radius:20px; padding:7px 12px; font-size:10px; color:var(--text-light); }
+.aura-mic { width:40px; height:40px; border-radius:20px; background: linear-gradient(135deg, #00E575, #00A859); display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; box-shadow:0 4px 14px rgba(0,201,107,0.4); animation: glowPulse 2s ease-in-out infinite; }
+
+/* SCENE 5 — RIDES */
+.s5-wrap { display:flex; align-items:center; gap:60px; max-width:1100px; width:95%; }
+.s5-right { flex:1; max-width:440px; }
+.s5-eyebrow { font-size:11px; letter-spacing:4px; color:var(--green-dark); text-transform:uppercase; font-family:'Space Grotesk',sans-serif; opacity:0; animation: slideLeft 0.7s 0.2s forwards; }
+.s5-h1 { font-size:46px; font-weight:800; color:var(--text-dark); line-height:1.08; letter-spacing:-2px; margin-top:12px; opacity:0; animation: slideLeft 0.7s 0.5s forwards; }
+.s5-h1 span { color:var(--green-dark); }
+.s5-sub { font-size:14.5px; color:var(--text-mid); line-height:1.65; margin-top:14px; opacity:0; animation: slideLeft 0.7s 0.8s forwards; }
+.s5-stats { display:flex; gap:28px; margin-top:22px; opacity:0; animation: slideLeft 0.7s 1.1s forwards; }
+.s5-stat-val { font-size:32px; font-weight:800; color:var(--text-dark); letter-spacing:-1px; }
+.s5-stat-val span { color:var(--green-dark); }
+.s5-stat-label { font-size:11px; color:var(--text-mid); margin-top:2px; }
+.ride-phone { width:252px; flex-shrink:0; background: linear-gradient(145deg, #E5F8EE, #F3FBF7, #FFFFFF); border-radius:42px; box-shadow: 0 30px 80px rgba(0,0,0,0.12), 0 0 0 1px rgba(255,255,255,0.8) inset; overflow:hidden; opacity:0; animation: slideRight 0.9s 0.4s cubic-bezier(0.34,1.1,0.64,1) forwards; }
+.ride-top { padding:14px 14px 8px; }
+.ride-title { font-size:13px; font-weight:800; color:var(--text-dark); }
+.ride-map { position:relative; height:155px; background: linear-gradient(145deg, #E8F8F0, #D4F0E4, #C8ECDC); overflow:hidden; border-radius:16px; margin:0 12px; }
+.map-grid { position:absolute; inset:0; background-image: linear-gradient(rgba(0,200,107,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,107,0.08) 1px, transparent 1px); background-size:18px 18px; }
+.map-svg { position:absolute; inset:0; width:100%; height:100%; }
+.map-route { fill:none; stroke:#00C96B; stroke-width:2.5; stroke-dasharray:400; stroke-dashoffset:400; animation: routeGrow 2s 0.8s ease-out forwards; stroke-linecap:round; }
+.map-pin-a { position:absolute; width:12px; height:12px; border-radius:50%; background:var(--green); bottom:28px; left:28px; border:2px solid white; animation: pinDrop 0.6s 0.3s both; }
+.map-pin-b { position:absolute; width:12px; height:12px; border-radius:50%; background:var(--orange); top:18px; right:38px; border:2px solid white; animation: pinDrop 0.6s 0.8s both; }
+.map-label { position:absolute; font-size:7px; font-weight:700; background:white; border-radius:6px; padding:2px 5px; box-shadow:0 1px 4px rgba(0,0,0,0.12); white-space:nowrap; }
+.map-label-a { bottom:42px; left:5px; color:var(--green-dark); }
+.map-label-b { top:4px; right:5px; color:var(--orange); }
+.map-distance { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border-radius:8px; padding:4px 8px; font-size:8.5px; font-weight:700; color:var(--text-dark); box-shadow:0 2px 8px rgba(0,0,0,0.1); white-space:nowrap; opacity:0; animation: fadeIn 0.5s 2s forwards; }
+.map-car { position:absolute; font-size:16px; bottom:32px; left:32px; animation: carMove 3s 2.5s linear infinite alternate; }
+.ride-options { padding:9px 12px; display:flex; flex-direction:column; gap:6px; }
+.ride-opt-title { font-size:10px; font-weight:800; color:var(--text-dark); margin-bottom:2px; }
+.ride-opt { display:flex; align-items:center; justify-content:space-between; background:white; border:1px solid #E8ECEF; border-radius:12px; padding:7px 10px; box-shadow:0 1px 4px rgba(0,0,0,0.04); opacity:0; }
+.ride-opt:nth-child(2){animation:slideUp 0.4s 1.2s forwards;border-color:var(--green);background:var(--green-pale);}
+.ride-opt:nth-child(3){animation:slideUp 0.4s 1.5s forwards;}
+.ride-opt:nth-child(4){animation:slideUp 0.4s 1.8s forwards;}
+.ride-opt-left { display:flex; align-items:center; gap:8px; }
+.ride-opt-icon { font-size:16px; }
+.ride-opt-name { font-size:10px; font-weight:700; color:var(--text-dark); }
+.ride-opt-time { font-size:8px; color:var(--text-mid); }
+.ride-opt-price { font-size:11px; font-weight:800; color:var(--text-dark); }
+.ride-confirm-btn { margin:0 12px 14px; padding:10px; background: linear-gradient(135deg, #00C96B, #00A855); border-radius:14px; text-align:center; font-size:11px; font-weight:800; color:white; box-shadow:0 4px 16px rgba(0,201,107,0.35); opacity:0; animation: slideUp 0.5s 2.2s forwards; }
+
+/* SCENE 6 — FOOD */
+.s6-wrap { display:flex; align-items:center; gap:60px; max-width:1100px; width:95%; }
+.s6-left { flex:1; max-width:430px; }
+.s6-eyebrow { font-size:11px; letter-spacing:4px; color:var(--orange); text-transform:uppercase; font-family:'Space Grotesk',sans-serif; opacity:0; animation: slideRight 0.7s 0.2s forwards; }
+.s6-h1 { font-size:46px; font-weight:800; color:var(--text-dark); line-height:1.08; letter-spacing:-2px; margin-top:12px; opacity:0; animation: slideRight 0.7s 0.5s forwards; }
+.s6-h1 span { color:var(--orange); }
+.s6-sub { font-size:14.5px; color:var(--text-mid); line-height:1.65; margin-top:14px; opacity:0; animation: slideRight 0.7s 0.8s forwards; }
+.s6-list { display:flex; flex-direction:column; gap:14px; margin-top:22px; }
+.s6-item { display:flex; align-items:center; gap:14px; opacity:0; transform:translateX(-20px); transition:all 0.5s; }
+.s6-item.show { opacity:1; transform:translateX(0); }
+.s6-item-icon { width:44px; height:44px; border-radius:14px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:22px; }
+.s6-item-title { font-size:14px; font-weight:700; color:var(--text-dark); }
+.s6-item-sub { font-size:12px; color:var(--text-mid); margin-top:2px; }
+.food-phone { width:252px; flex-shrink:0; background: linear-gradient(145deg, #FFFDF8, #FFF8F0, #FFFFFF); border-radius:42px; box-shadow: 0 30px 80px rgba(0,0,0,0.12), 0 0 0 1px rgba(255,255,255,0.8) inset; overflow:hidden; opacity:0; animation: slideLeft 0.9s 0.4s cubic-bezier(0.34,1.1,0.64,1) forwards; }
+.food-header { padding:14px 14px 7px; background: linear-gradient(135deg, #FFF7F0, #FFEDE0); }
+.food-header-title { font-size:16px; font-weight:800; color:var(--text-dark); }
+.food-header-sub { font-size:8.5px; color:var(--text-mid); margin-top:2px; }
+.food-search { margin:7px 12px; background:white; border:1px solid #F0E0D0; border-radius:12px; padding:7px 12px; font-size:9.5px; color:var(--text-light); display:flex; align-items:center; gap:5px; }
+.food-cats { display:flex; gap:6px; padding:0 12px 7px; overflow-x:auto; scrollbar-width:none; }
+.food-cat { padding:5px 11px; border-radius:14px; font-size:9px; font-weight:600; white-space:nowrap; flex-shrink:0; }
+.food-cat.active { background:var(--orange); color:white; }
+.food-cat:not(.active) { background:white; border:1px solid #F0E0D0; color:var(--text-mid); }
+.food-cards { display:flex; flex-direction:column; gap:7px; padding:0 12px 14px; }
+.food-card { background:white; border-radius:16px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.05); border:1px solid #F5EDE5; opacity:0; }
+.food-card:nth-child(1){animation:slideUp 0.4s 0.8s forwards}
+.food-card:nth-child(2){animation:slideUp 0.4s 1.2s forwards}
+.food-card:nth-child(3){animation:slideUp 0.4s 1.6s forwards}
+.food-card-img { height:65px; background: linear-gradient(135deg, #FFE4CC, #FFCCA0); display:flex; align-items:center; justify-content:center; font-size:32px; position:relative; }
+.food-card-rating { position:absolute; top:5px; right:7px; background:white; border-radius:8px; padding:2px 6px; font-size:9px; font-weight:700; color:var(--text-dark); }
+.food-card-body { padding:7px 10px; display:flex; justify-content:space-between; align-items:flex-end; }
+.food-card-name { font-size:10px; font-weight:800; color:var(--text-dark); }
+.food-card-info { font-size:8.5px; color:var(--text-mid); margin-top:1px; }
+.food-card-price { font-size:12px; font-weight:800; color:var(--orange); }
+
+/* SCENE 7 — TRACKING */
+.s7-wrap { display:flex; align-items:center; gap:60px; max-width:1100px; width:95%; }
+.s7-right { flex:1; max-width:440px; }
+.s7-eyebrow { font-size:11px; letter-spacing:4px; color:var(--blue); text-transform:uppercase; font-family:'Space Grotesk',sans-serif; opacity:0; animation: slideLeft 0.7s 0.2s forwards; }
+.s7-h1 { font-size:46px; font-weight:800; color:var(--text-dark); line-height:1.08; letter-spacing:-2px; margin-top:12px; opacity:0; animation: slideLeft 0.7s 0.5s forwards; }
+.s7-h1 span { color:var(--blue); }
+.s7-sub { font-size:14.5px; color:var(--text-mid); line-height:1.65; margin-top:14px; opacity:0; animation: slideLeft 0.7s 0.8s forwards; }
+.s7-tech { display:flex; flex-wrap:wrap; gap:8px; margin-top:22px; opacity:0; animation: fadeUp 0.7s 1.1s forwards; }
+.s7-badge { background:white; border:1px solid rgba(0,135,255,0.2); border-radius:16px; padding:6px 14px; font-size:12px; font-weight:600; color:var(--text-dark); display:flex; align-items:center; gap:7px; box-shadow:0 2px 8px rgba(0,0,0,0.05); }
+.s7-badge-dot { width:7px; height:7px; border-radius:50%; animation:glowPulse 1.5s infinite; }
+.track-phone { width:252px; flex-shrink:0; background: linear-gradient(145deg, #F0F5FF, #EDF2FF, #FFFFFF); border-radius:42px; box-shadow: 0 30px 80px rgba(0,0,0,0.12), 0 0 0 1px rgba(255,255,255,0.8) inset; overflow:hidden; opacity:0; animation: slideRight 0.9s 0.4s cubic-bezier(0.34,1.1,0.64,1) forwards; }
+.track-map { height:195px; background: linear-gradient(145deg, #E8EEFF, #D8E4FF); position:relative; overflow:hidden; }
+.track-map-grid { position:absolute; inset:0; background-image: linear-gradient(rgba(0,135,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(0,135,255,0.06) 1px, transparent 1px); background-size:18px 18px; }
+.track-route-svg { position:absolute; inset:0; width:100%; height:100%; }
+.track-route-line { fill:none; stroke:#0087FF; stroke-width:2.5; stroke-dasharray:300; stroke-dashoffset:300; animation: routeGrow 2s 0.5s ease-out forwards; }
+.track-dot-car { position:absolute; bottom:55px; left:55px; width:28px; height:28px; border-radius:14px; background:var(--blue); display:flex; align-items:center; justify-content:center; font-size:14px; box-shadow:0 0 0 7px rgba(0,135,255,0.18); animation: glowPulse 1.5s ease-in-out infinite; }
+.track-you { position:absolute; top:28px; right:28px; background:var(--orange); color:white; border-radius:10px; font-size:8px; font-weight:700; padding:3px 7px; }
+.track-eta { position:absolute; bottom:9px; left:50%; transform:translateX(-50%); background:white; border-radius:10px; padding:5px 14px; font-size:10px; font-weight:700; color:var(--text-dark); box-shadow:0 2px 10px rgba(0,0,0,0.12); opacity:0; animation:fadeIn 0.5s 2s forwards; white-space:nowrap; }
+.track-body { padding:10px 12px; }
+.track-driver-card { background:white; border-radius:16px; padding:11px; border:1px solid #E0E8FF; box-shadow:0 2px 8px rgba(0,0,0,0.05); }
+.track-driver-row { display:flex; align-items:center; gap:10px; }
+.track-avatar { width:40px; height:40px; border-radius:20px; background: linear-gradient(135deg, #667eea, #764ba2); display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
+.track-name { font-size:12px; font-weight:800; color:var(--text-dark); }
+.track-vehicle { font-size:9.5px; color:var(--text-mid); }
+.track-rating { font-size:9.5px; font-weight:700; color:var(--orange); margin-top:2px; }
+.track-otp { background: linear-gradient(135deg, #E5F8EE, #C8F0DC); border:1px solid #C0E8D0; border-radius:12px; padding:7px 12px; margin-top:9px; text-align:center; }
+.track-otp-label { font-size:9px; color:var(--text-mid); font-weight:600; letter-spacing:1px; }
+.track-otp-code { font-size:20px; font-weight:800; color:var(--green-dark); letter-spacing:4px; }
+.track-btns { display:flex; gap:7px; margin-top:9px; }
+.track-btn { flex:1; padding:8px; border-radius:12px; text-align:center; font-size:10px; font-weight:700; }
+.track-btn.call { background:var(--green); color:white; box-shadow:0 3px 10px rgba(0,201,107,0.3); }
+.track-btn.msg { background:white; color:var(--blue); border:1px solid #D0DFFF; }
+
+/* SCENE 8 — TECH */
+.s8-wrap { max-width:920px; width:90%; text-align:center; }
+.s8-eyebrow { font-size:11px; letter-spacing:5px; color:var(--green-dark); text-transform:uppercase; font-family:'Space Grotesk',sans-serif; opacity:0; animation: fadeUp 0.7s 0.2s forwards; }
+.s8-h1 { font-size:50px; font-weight:800; color:var(--text-dark); letter-spacing:-2.5px; margin-top:14px; opacity:0; animation: fadeUp 0.7s 0.5s forwards; }
+.s8-h1 span { color:var(--green-dark); }
+.s8-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-top:34px; }
+.s8-card { background:white; border:1px solid rgba(0,0,0,0.06); border-radius:20px; padding:20px 14px; text-align:center; box-shadow:var(--shadow); opacity:0; transform:translateY(20px); transition:all 0.5s; }
+.s8-card.entered { opacity:1; transform:translateY(0); }
+.s8-card-icon { font-size:28px; margin-bottom:9px; }
+.s8-card-title { font-size:13px; font-weight:800; color:var(--text-dark); }
+.s8-card-sub { font-size:10.5px; color:var(--text-mid); margin-top:5px; line-height:1.5; }
+.s8-card-tag { display:inline-block; margin-top:9px; font-size:9px; font-weight:700; letter-spacing:1px; background:var(--green-pale); color:var(--green-dark); padding:3px 10px; border-radius:10px; }
+
+/* SCENE 9 — STATS */
+.s9-wrap { max-width:900px; width:90%; text-align:center; }
+.s9-eyebrow { font-size:11px; letter-spacing:5px; color:var(--green-dark); text-transform:uppercase; font-family:'Space Grotesk',sans-serif; opacity:0; animation: fadeUp 0.7s 0.2s forwards; }
+.s9-h1 { font-size:52px; font-weight:800; color:var(--text-dark); letter-spacing:-2.5px; margin-top:14px; opacity:0; animation: fadeUp 0.7s 0.5s forwards; }
+.s9-h1 span { color:var(--green-dark); }
+.s9-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; margin-top:38px; }
+.s9-stat { background:white; border-radius:24px; padding:26px 18px; box-shadow:var(--shadow); border:1px solid rgba(0,0,0,0.05); opacity:0; transform:translateY(20px); transition:all 0.6s; }
+.s9-stat.entered { opacity:1; transform:translateY(0); }
+.s9-stat-num { font-size:48px; font-weight:800; letter-spacing:-2px; background: linear-gradient(135deg, #00A855, #00C96B); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.s9-stat-label { font-size:12.5px; color:var(--text-mid); margin-top:6px; font-weight:500; }
+.s9-stat-icon { font-size:26px; margin-bottom:9px; }
+.s9-sub { font-size:15px; color:var(--text-mid); margin-top:30px; opacity:0; animation: fadeUp 0.7s 1.5s forwards; }
+
+/* SCENE 10 — CTA */
+.s10-wrap { display:flex; flex-direction:column; align-items:center; text-align:center; max-width:700px; }
+.s10-tag { font-family:'Space Grotesk',sans-serif; font-size:11px; letter-spacing:5px; color:var(--green-dark); text-transform:uppercase; opacity:0; animation: fadeUp 0.7s 0.2s forwards; }
+.s10-h1 { font-size:68px; font-weight:800; color:var(--text-dark); letter-spacing:-3px; line-height:1.02; margin-top:16px; opacity:0; animation: fadeUp 0.8s 0.6s forwards; }
+.s10-h1 span { background: linear-gradient(135deg, #00A855, #00C96B, #55EFC4); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.s10-sub { font-size:18px; color:var(--text-mid); line-height:1.6; margin-top:18px; opacity:0; animation: fadeUp 0.7s 1s forwards; }
+.s10-btns { display:flex; gap:16px; margin-top:36px; opacity:0; animation: fadeUp 0.7s 1.4s forwards; }
+.s10-btn-p { background: linear-gradient(135deg, #00C96B, #00A855); color:white; font-size:15px; font-weight:700; padding:16px 40px; border-radius:40px; box-shadow:0 6px 30px rgba(0,201,107,0.4); cursor:pointer; }
+.s10-btn-s { background:white; color:var(--text-dark); font-size:15px; font-weight:700; padding:16px 40px; border-radius:40px; border:1.5px solid rgba(0,0,0,0.1); box-shadow:var(--shadow); cursor:pointer; }
+.s10-logos { display:flex; gap:14px; margin-top:34px; align-items:center; opacity:0; animation: fadeUp 0.7s 1.8s forwards; }
+.s10-logo-item { background:white; border-radius:14px; padding:10px 18px; border:1px solid rgba(0,0,0,0.07); box-shadow:var(--shadow); font-size:12px; font-weight:700; color:var(--text-dark); display:flex; align-items:center; gap:6px; }
+.s10-orb { position:absolute; width:400px; height:400px; border-radius:50%; background:radial-gradient(circle, rgba(0,201,107,0.1) 0%, transparent 70%); pointer-events:none; animation: orbFloat2 6s ease-in-out infinite; }
+
+#overlay { position:fixed; inset:0; z-index:500; background:white; opacity:0; pointer-events:none; transition:opacity 0.35s ease; }
+#overlay.fade { opacity:1; pointer-events:all; }
+
+#autoplay-bar { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:18px; z-index:9999; }
+.ab-btn { width:38px; height:38px; border-radius:19px; background:white; border:1.5px solid rgba(0,201,107,0.25); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:16px; box-shadow:var(--shadow); transition:all 0.3s; }
+.ab-btn:hover { background:var(--green); border-color:var(--green); color:white; }
+</style>
+</head>
+<body>
+<div class="ambient amb1"></div>
+<div class="ambient amb2"></div>
+<div id="progress"></div>
+<div id="nav-dots"></div>
+<div id="counter">01 / 10</div>
+<button id="skip" onclick="goToScene(9)">SKIP ↗</button>
+<div id="overlay"></div>
+
+<!-- S0: BRAND -->
+<section class="scene" id="s0">
+  <div class="s1-wrap">
+    <div class="s1-tag">Introducing</div>
+    <div class="s1-logo-wrap">
+      <div class="s1-logo-icon">🟢</div>
+      <div class="s1-logo-text">dropp</div>
+    </div>
+    <div class="s1-tagline">Too busy to type? Just <span>speak it.</span> Dropp does it.</div>
+    <div class="s1-pill">RIDE · FOOD · DELIVER · SHOP · AURA AI</div>
+    <div class="s1-services">
+      <div class="s1-svc">🚗 Rides</div>
+      <div class="s1-svc">🍛 Food</div>
+      <div class="s1-svc">📦 Deliver</div>
+      <div class="s1-svc">🛍️ Shop</div>
+      <div class="s1-svc">✦ Aura AI</div>
+    </div>
+  </div>
+</section>
+
+<!-- S1: PROBLEM -->
+<section class="scene" id="s1">
+  <div class="s2-wrap">
+    <div class="s2-eyebrow">The Problem</div>
+    <div class="s2-h1">Too many apps.<br><span>Not enough time.</span></div>
+    <div class="s2-cards">
+      <div class="s2-card"><div class="s2-card-icon">📱</div><div class="s2-card-title">App Overload</div><div class="s2-card-text">Uber for rides, Zomato for food, Dunzo for delivery. Switching apps wastes precious time.</div><span class="s2-card-tag">5+ APPS NEEDED</span></div>
+      <div class="s2-card"><div class="s2-card-icon">⌨️</div><div class="s2-card-title">Typing While Busy</div><div class="s2-card-text">Stuck in traffic, hands full — typing is the last thing you want to do right now.</div><span class="s2-card-tag">2 MIN TO BOOK</span></div>
+      <div class="s2-card"><div class="s2-card-icon">🌐</div><div class="s2-card-title">Language Barriers</div><div class="s2-card-text">English-only interfaces exclude India's 800M+ Hindi and regional language speakers.</div><span class="s2-card-tag">800M UNDERSERVED</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- S2: HOME SCREEN -->
+<section class="scene" id="s2">
+  <div class="s3-wrap">
+    <div class="s3-left">
+      <div class="s3-eyebrow">One App, Everything</div>
+      <div class="s3-h1">Move freely.<br><span>Live smarter.</span></div>
+      <div class="s3-sub">Your entire city in one beautiful app. Rides, food, packages, shopping — with a green/white gradient UI built on React Native + Expo.</div>
+      <div class="s3-features">
+        <div class="s3-feat"><div class="s3-feat-icon" style="background:#E5F8EE;">🚗</div><div><div class="s3-feat-text">Ride — Get there safely</div><div class="s3-feat-sub">Bike, Auto, Go, SUV — real-time fare calculation</div></div></div>
+        <div class="s3-feat"><div class="s3-feat-icon" style="background:#FFF0E5;">🍛</div><div><div class="s3-feat-text">Food — Order from cafés & more</div><div class="s3-feat-sub">Live restaurant catalog, menus & prices from DB</div></div></div>
+        <div class="s3-feat"><div class="s3-feat-icon" style="background:#E5EDFF;">📦</div><div><div class="s3-feat-text">Delivery — Send anything, anywhere</div><div class="s3-feat-sub">Package pickup & drop with live tracking</div></div></div>
+        <div class="s3-feat"><div class="s3-feat-icon" style="background:#FFF0F5;">🛍️</div><div><div class="s3-feat-text">Shop — Explore local stores</div><div class="s3-feat-sub">Hyperlocal commerce at doorstep speed</div></div></div>
+      </div>
+    </div>
+    <div class="phone-wrap" style="position:relative;">
+      <div class="phone">
+        <div class="phone-notch"></div>
+        <div class="ph-status"><span>9:41</span><span>5G 🔋</span></div>
+        <div class="ph-header">
+          <div><div class="ph-logo">dr<span>o</span>pp</div><div class="ph-location">📍 Gurugram, Sector 28 ▾</div></div>
+          <div class="ph-header-right"><div class="ph-wallet">💳 ₹450</div><div class="ph-avatar"></div></div>
+        </div>
+        <div class="ph-hero">
+          <div class="ph-hero-text">
+            <div class="ph-hero-eyebrow">ONE APP. ENDLESS POSSIBILITIES.</div>
+            <div class="ph-hero-h1">Move freely.<br><span>Live smarter.</span></div>
+            <div class="ph-hero-sub">Rides, food & deliveries — all in one place.</div>
+          </div>
+          <div class="ph-hero-car">🚗</div>
+        </div>
+        <div class="ph-grid">
+          <div class="ph-tile ride"><div class="ph-tile-bg">🚗</div><div class="ph-tile-content"><div class="ph-tile-title">Ride</div><div class="ph-tile-sub">Get there safely</div></div></div>
+          <div class="ph-tile food"><div class="ph-tile-bg">🍛</div><div class="ph-tile-content"><div class="ph-tile-title">Food</div><div class="ph-tile-sub">Order from cafés</div></div></div>
+          <div class="ph-tile delivery"><div class="ph-tile-bg">📦</div><div class="ph-tile-content"><div class="ph-tile-title">Delivery</div><div class="ph-tile-sub">Send anything</div></div></div>
+          <div class="ph-tile shop"><div class="ph-tile-bg">🛍️</div><div class="ph-tile-content"><div class="ph-tile-title">Shop</div><div class="ph-tile-sub">Local stores</div></div></div>
+        </div>
+        <div class="ph-offer">
+          <div><div class="ph-offer-tag">Special Offer</div><div class="ph-offer-h">Flat 20% OFF</div><div class="ph-offer-sub">on your first order</div></div>
+          <div class="ph-offer-code">DROPP20 →</div>
+        </div>
+        <div class="ph-nav">
+          <div class="ph-nav-item active"><div class="ph-nav-icon">🏠</div><div class="ph-nav-label">Home</div></div>
+          <div class="ph-nav-item"><div class="ph-nav-icon">🔍</div><div class="ph-nav-label">Explore</div></div>
+          <div class="ph-nav-item"><div class="ph-nav-icon">📋</div><div class="ph-nav-label">Bookings</div></div>
+          <div class="ph-nav-item"><div class="ph-nav-icon">💳</div><div class="ph-nav-label">Wallet</div></div>
+          <div class="ph-nav-item"><div class="ph-nav-icon">👤</div><div class="ph-nav-label">Profile</div></div>
+        </div>
+      </div>
+      <div class="ph-aura-fab">✦</div>
+    </div>
+  </div>
+</section>
+
+<!-- S3: AURA -->
+<section class="scene" id="s3">
+  <div class="s4-wrap">
+    <div class="s4-left">
+      <div class="s4-eyebrow">Meet Aura</div>
+      <div class="s4-h1">Your AI that<br>just <span>gets it.</span></div>
+      <div class="s4-sub">Speak naturally — Hindi, English, or Hinglish. Aura understands, books, confirms, and tracks. Hands-free. Always-on. Built into every screen.</div>
+      <div class="s4-chips">
+        <div class="s4-chip">🎙️ Voice First</div>
+        <div class="s4-chip">🧠 Gemini 2.0</div>
+        <div class="s4-chip">🗣️ Hindi/Hinglish</div>
+        <div class="s4-chip">⚡ Sarvam STT</div>
+        <div class="s4-chip">🔊 TTS Speaking</div>
+        <div class="s4-chip">✦ Orb Animation</div>
+      </div>
+    </div>
+    <div class="aura-phone">
+      <div style="width:70px;height:20px;background:white;border-radius:0 0 12px 12px;margin:0 auto;"></div>
+      <div class="aura-header">
+        <div class="aura-back">‹</div>
+        <div><span class="aura-brand">Dropp </span><span class="aura-brand aura-brand-g">Aura</span></div>
+        <div class="aura-back" style="font-size:11px;">✕</div>
+      </div>
+      <div class="aura-orb-container">
+        <div class="aura-orb-rings">
+          <div class="aura-ring aura-ring-1"></div>
+          <div class="aura-ring aura-ring-2"></div>
+          <div class="aura-orb">
+            <div class="aura-orb-shine"></div>
+            <div class="aura-wavebars">
+              <div class="aura-bar" style="height:12px;"></div>
+              <div class="aura-bar" style="height:20px;"></div>
+              <div class="aura-bar" style="height:28px;"></div>
+              <div class="aura-bar" style="height:20px;"></div>
+              <div class="aura-bar" style="height:12px;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="aura-status-txt">Listening to you...</div>
+      </div>
+      <div class="aura-chips-row">
+        <div class="aura-chip">🚗 Cab to Cyber City</div>
+        <div class="aura-chip">🍛 Order Biryani</div>
+        <div class="aura-chip">✈️ Airport fare</div>
+      </div>
+      <div class="aura-chat">
+        <div class="aura-bubble user" style="animation-delay:0.8s;"><span class="bubble-label">You</span><div class="bubble-text">Cab to Amritsar aur biryani order kar do</div></div>
+        <div class="aura-bubble ai" style="animation-delay:1.7s;"><span class="bubble-label">✦ Aura</span><div class="bubble-text">Route calculate kar raha hoon... 80km! Cab ₹312 + Biryani ₹249. Dono confirm karoon? 🚗🍛</div></div>
+      </div>
+      <div class="aura-ride-card">
+        <div class="arc-header"><span style="font-size:13px;">🚗</span><span class="arc-title">Ride Options • 80km</span></div>
+        <div class="arc-route">LPU Campus → Amritsar Airport</div>
+        <div class="arc-tiers">
+          <div class="arc-tier"><div class="arc-tier-name">🏍️ Bike</div><div class="arc-tier-price">₹82</div><div class="arc-tier-eta">85 min</div></div>
+          <div class="arc-tier" style="border:1.5px solid var(--green);"><div class="arc-tier-name">🚗 Go</div><div class="arc-tier-price">₹312</div><div class="arc-tier-eta">80 min</div></div>
+          <div class="arc-tier"><div class="arc-tier-name">🚙 SUV</div><div class="arc-tier-price">₹520</div><div class="arc-tier-eta">78 min</div></div>
+        </div>
+        <div class="arc-confirm">Confirm Cab ✓</div>
+      </div>
+      <div class="aura-bottom">
+        <div class="aura-input">Ask Aura or type destination...</div>
+        <div class="aura-mic">🎙️</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- S4: RIDES -->
+<section class="scene" id="s4">
+  <div class="s5-wrap">
+    <div class="ride-phone">
+      <div style="width:70px;height:20px;background:white;border-radius:0 0 12px 12px;margin:0 auto;"></div>
+      <div class="ride-top"><div class="ride-title">Choose a Ride 🚗</div></div>
+      <div class="ride-map">
+        <div class="map-grid"></div>
+        <svg class="map-svg" viewBox="0 0 252 155">
+          <path class="map-route" d="M 38 127 C 60 127 75 108 95 97 C 115 86 128 68 148 57 C 168 46 185 36 212 28"/>
+        </svg>
+        <div class="map-pin-a"></div>
+        <div class="map-label map-label-a">LPU Campus</div>
+        <div class="map-pin-b"></div>
+        <div class="map-label map-label-b">Amritsar ✈</div>
+        <div class="map-distance">📍 80 km • ~1h 20min</div>
+        <div class="map-car">🚗</div>
+      </div>
+      <div class="ride-options">
+        <div class="ride-opt-title">Available Rides</div>
+        <div class="ride-opt"><div class="ride-opt-left"><div class="ride-opt-icon">🏍️</div><div><div class="ride-opt-name">Bike</div><div class="ride-opt-time">~85 min</div></div></div><div class="ride-opt-price" style="color:var(--green-dark);">₹82</div></div>
+        <div class="ride-opt"><div class="ride-opt-left"><div class="ride-opt-icon">🛺</div><div><div class="ride-opt-name">Auto</div><div class="ride-opt-time">~90 min</div></div></div><div class="ride-opt-price">₹186</div></div>
+        <div class="ride-opt"><div class="ride-opt-left"><div class="ride-opt-icon">🚗</div><div><div class="ride-opt-name">Go</div><div class="ride-opt-time">~80 min</div></div></div><div class="ride-opt-price">₹312</div></div>
+      </div>
+      <div class="ride-confirm-btn">Confirm Cab ✓</div>
+    </div>
+    <div class="s5-right">
+      <div class="s5-eyebrow">Smart Rides</div>
+      <div class="s5-h1">Any route.<br><span>Real fares.</span><br>Instantly.</div>
+      <div class="s5-sub">Say "Cab to airport" — Aura calculates exact route using road distance via OSRM/ORS, maps real fares across all vehicle tiers. All in under 2 seconds.</div>
+      <div class="s5-stats">
+        <div><div class="s5-stat-val">80<span>km</span></div><div class="s5-stat-label">LPU → Amritsar live</div></div>
+        <div><div class="s5-stat-val">4<span>+</span></div><div class="s5-stat-label">Vehicle tiers</div></div>
+        <div><div class="s5-stat-val">&lt;2<span>s</span></div><div class="s5-stat-label">Fare response</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- S5: FOOD -->
+<section class="scene" id="s5">
+  <div class="s6-wrap">
+    <div class="s6-left">
+      <div class="s6-eyebrow">Food Delivery</div>
+      <div class="s6-h1">Order with<br>your <span>voice.</span></div>
+      <div class="s6-sub">Say "biryani dikhao" and Aura pulls live restaurants from the backend, shows menus with real prices, builds your cart — and places the order. No tapping required.</div>
+      <div class="s6-list">
+        <div class="s6-item"><div class="s6-item-icon" style="background:#FFF0E5;">🍛</div><div><div class="s6-item-title">Live Restaurant Catalog</div><div class="s6-item-sub">Real menus fetched from Dropp MongoDB backend</div></div></div>
+        <div class="s6-item"><div class="s6-item-icon" style="background:#E5F8EE;">🤖</div><div><div class="s6-item-title">AI Cart Builder</div><div class="s6-item-sub">Aura understands "ek biryani aur coffee" and builds the cart</div></div></div>
+        <div class="s6-item"><div class="s6-item-icon" style="background:#E5EDFF;">📍</div><div><div class="s6-item-title">Real-time Order Tracking</div><div class="s6-item-sub">Placed → Preparing → Out for delivery — live updates</div></div></div>
+      </div>
+    </div>
+    <div class="food-phone">
+      <div style="width:70px;height:20px;background:white;border-radius:0 0 12px 12px;margin:0 auto;"></div>
+      <div class="food-header"><div class="food-header-title">Food 🍛</div><div class="food-header-sub">Restaurants & cafés near you</div></div>
+      <div class="food-search">🔍 Search food or restaurant...</div>
+      <div class="food-cats"><div class="food-cat active">🔥 Popular</div><div class="food-cat">🍕 Pizza</div><div class="food-cat">🍛 Biryani</div><div class="food-cat">🍔 Burger</div></div>
+      <div class="food-cards">
+        <div class="food-card"><div class="food-card-img">🍛<div class="food-card-rating">⭐ 4.6</div></div><div class="food-card-body"><div><div class="food-card-name">Chicken Biryani</div><div class="food-card-info">🕐 20-25 min • Spice Hub</div></div><div class="food-card-price">₹349</div></div></div>
+        <div class="food-card"><div class="food-card-img" style="background:linear-gradient(135deg,#FFE0CC,#FFCBAA);">🍕<div class="food-card-rating">⭐ 4.8</div></div><div class="food-card-body"><div><div class="food-card-name">Pepperoni Pizza</div><div class="food-card-info">🕐 18 min • Pizza Palace</div></div><div class="food-card-price">₹499</div></div></div>
+        <div class="food-card"><div class="food-card-img" style="background:linear-gradient(135deg,#FFE8C0,#FFD4A0);">🍔<div class="food-card-rating">⭐ 4.5</div></div><div class="food-card-body"><div><div class="food-card-name">Gourmet Burger</div><div class="food-card-info">🕐 22 min • Burger Barn</div></div><div class="food-card-price">₹299</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- S6: TRACKING -->
+<section class="scene" id="s6">
+  <div class="s7-wrap">
+    <div class="track-phone">
+      <div style="width:70px;height:20px;background:white;border-radius:0 0 12px 12px;margin:0 auto;"></div>
+      <div class="track-map">
+        <div class="track-map-grid"></div>
+        <svg class="track-route-svg" viewBox="0 0 252 195">
+          <path class="track-route-line" d="M 65 160 C 90 145 115 135 135 118 C 155 101 172 78 192 57"/>
+        </svg>
+        <div class="track-dot-car">🚗</div>
+        <div class="track-you">YOU 📍</div>
+        <div class="track-eta">🚗 Arriving in 8 min</div>
+      </div>
+      <div class="track-body">
+        <div class="track-driver-card">
+          <div class="track-driver-row">
+            <div class="track-avatar">👨</div>
+            <div style="flex:1;"><div class="track-name">Rajesh Kumar</div><div class="track-vehicle">Swift Dzire • DL 4C 2289</div><div class="track-rating">⭐ 4.8 • 1,240 rides</div></div>
+          </div>
+          <div class="track-otp"><div class="track-otp-label">START OTP</div><div class="track-otp-code">4821</div></div>
+          <div class="track-btns">
+            <div class="track-btn call">📞 Call Driver</div>
+            <div class="track-btn msg">💬 Message</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="s7-right">
+      <div class="s7-eyebrow">Real-time Tracking</div>
+      <div class="s7-h1">Know exactly<br>where it <span>is.</span></div>
+      <div class="s7-sub">Live map tracking with driver info, OTP for safety, call/message — powered by WebSocket + RabbitMQ message exchange for real-time events across the Dropp fleet.</div>
+      <div class="s7-tech">
+        <div class="s7-badge"><div class="s7-badge-dot" style="background:#00C96B;"></div>WebSocket Live</div>
+        <div class="s7-badge"><div class="s7-badge-dot" style="background:#FF7A00;"></div>RabbitMQ Events</div>
+        <div class="s7-badge"><div class="s7-badge-dot" style="background:#0087FF;"></div>GPS Tracking</div>
+        <div class="s7-badge"><div class="s7-badge-dot" style="background:#9B59B6;"></div>OTP Safety</div>
+        <div class="s7-badge"><div class="s7-badge-dot" style="background:#E74C3C;"></div>Driver Matching</div>
+        <div class="s7-badge"><div class="s7-badge-dot" style="background:#2ECC71;"></div>Push Notifications</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- S7: TECH STACK -->
+<section class="scene" id="s7">
+  <div class="s8-wrap">
+    <div class="s8-eyebrow">Built Different</div>
+    <div class="s8-h1">Production-grade <span>architecture.</span></div>
+    <div class="s8-grid">
+      <div class="s8-card"><div class="s8-card-icon">📱</div><div class="s8-card-title">React Native</div><div class="s8-card-sub">Expo · iOS & Android · 3 app personas: Rider, Driver, Food</div><span class="s8-card-tag">FRONTEND</span></div>
+      <div class="s8-card"><div class="s8-card-icon">⚙️</div><div class="s8-card-title">Node.js API</div><div class="s8-card-sub">Express · Port 4000 · Modular: rides, food, aura, catalog</div><span class="s8-card-tag">BACKEND</span></div>
+      <div class="s8-card"><div class="s8-card-icon">🧠</div><div class="s8-card-title">Gemini AI</div><div class="s8-card-sub">Gemini 2.0 Flash · Aura NLU · intent parsing · STT fallback</div><span class="s8-card-tag">AI / ML</span></div>
+      <div class="s8-card"><div class="s8-card-icon">🐇</div><div class="s8-card-title">RabbitMQ</div><div class="s8-card-sub">dropp.events exchange · ride lifecycle events · real-time</div><span class="s8-card-tag">MESSAGING</span></div>
+      <div class="s8-card"><div class="s8-card-icon">🗄️</div><div class="s8-card-title">MongoDB</div><div class="s8-card-sub">Atlas · Rides, orders, users, drivers · Aggregation pipelines</div><span class="s8-card-tag">DATABASE</span></div>
+      <div class="s8-card"><div class="s8-card-icon">🌐</div><div class="s8-card-title">WebSocket</div><div class="s8-card-sub">Live ride updates · Driver GPS streaming · Chat channel</div><span class="s8-card-tag">REALTIME</span></div>
+      <div class="s8-card"><div class="s8-card-icon">🗺️</div><div class="s8-card-title">Maps & Routes</div><div class="s8-card-sub">OSRM · ORS · Geocoding · Real road distance & ETA</div><span class="s8-card-tag">GEO</span></div>
+      <div class="s8-card"><div class="s8-card-icon">🎙️</div><div class="s8-card-title">Sarvam STT</div><div class="s8-card-sub">Hindi-native speech recognition · Gemini fallback · Base64</div><span class="s8-card-tag">VOICE</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- S8: STATS -->
+<section class="scene" id="s8">
+  <div class="s9-wrap">
+    <div class="s9-eyebrow">The Numbers</div>
+    <div class="s9-h1">Built for <span>scale.</span></div>
+    <div class="s9-stats">
+      <div class="s9-stat"><div class="s9-stat-icon">🚗</div><div class="s9-stat-num" data-target="4">0</div><div class="s9-stat-label">Ride vehicle tiers (Bike, Auto, Go, SUV)</div></div>
+      <div class="s9-stat"><div class="s9-stat-icon">⚡</div><div class="s9-stat-num" data-raw="&lt;2s">&lt;2s</div><div class="s9-stat-label">Voice → booking response time</div></div>
+      <div class="s9-stat"><div class="s9-stat-icon">🌐</div><div class="s9-stat-num" data-target="3">0</div><div class="s9-stat-label">App personas (Rider / Driver / Food)</div></div>
+      <div class="s9-stat"><div class="s9-stat-icon">🧠</div><div class="s9-stat-num" data-target="2">0</div><div class="s9-stat-label">AI models (Gemini + Sarvam)</div></div>
+      <div class="s9-stat"><div class="s9-stat-icon">🐇</div><div class="s9-stat-num" data-raw="Live">Live</div><div class="s9-stat-label">RabbitMQ dropp.events exchange</div></div>
+      <div class="s9-stat"><div class="s9-stat-icon">📡</div><div class="s9-stat-num" data-target="100">0</div><div class="s9-stat-label">% real-time — no page refresh needed</div></div>
+    </div>
+    <div class="s9-sub">Running live on localhost:4000 · Expo Go ready · Production architecture</div>
+  </div>
+</section>
+
+<!-- S9: CTA -->
+<section class="scene" id="s9">
+  <div class="s10-orb"></div>
+  <div class="s10-wrap">
+    <div class="s10-tag">The Future of Urban Mobility</div>
+    <div class="s10-h1">Just say it.<br><span>Dropp it.</span></div>
+    <div class="s10-sub">One voice command. Rides, food, deliveries, shopping — handled instantly in Hindi or English. Dropp is the super-app India has been waiting for.</div>
+    <div class="s10-btns">
+      <div class="s10-btn-p">🚀 See the App</div>
+      <div class="s10-btn-s">📦 Explore Code</div>
+    </div>
+    <div class="s10-logos">
+      <div class="s10-logo-item">📱 React Native</div>
+      <div class="s10-logo-item">🧠 Gemini AI</div>
+      <div class="s10-logo-item">🎙️ Sarvam STT</div>
+      <div class="s10-logo-item">🐇 RabbitMQ</div>
+      <div class="s10-logo-item">✦ Aura Voice</div>
+    </div>
+  </div>
+</section>
+
+<!-- Controls -->
+<div id="autoplay-bar">
+  <div class="ab-btn" onclick="goToScene(currentScene-1)">←</div>
+  <div class="ab-btn" id="play-pause" onclick="togglePlay()">⏸</div>
+  <div class="ab-btn" onclick="goToScene(currentScene+1)">→</div>
+</div>
+
+<script>
+const totalScenes = 10;
+let currentScene = 0;
+let playing = true;
+let timer = null;
+const DURATIONS = [5000,6000,7000,8000,7000,7000,7000,7000,6500,9000];
+
+const navDots = document.getElementById('nav-dots');
+for (let i=0;i<totalScenes;i++){
+  const d=document.createElement('div');
+  d.className='dot'+(i===0?' active':'');
+  d.onclick=()=>goToScene(i);
+  navDots.appendChild(d);
+}
+
+function updateUI(){
+  document.getElementById('progress').style.width=((currentScene/(totalScenes-1))*100)+'%';
+  document.getElementById('counter').textContent=String(currentScene+1).padStart(2,'0')+' / '+String(totalScenes).padStart(2,'0');
+  document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===currentScene));
+}
+
+function goToScene(idx){
+  if(idx<0||idx>=totalScenes)return;
+  const ov=document.getElementById('overlay');
+  ov.classList.add('fade');
+  setTimeout(()=>{
+    document.querySelectorAll('.scene').forEach(s=>s.classList.remove('active'));
+    currentScene=idx;
+    document.getElementById('s'+idx).classList.add('active');
+    updateUI();
+    initScene(idx);
+    setTimeout(()=>ov.classList.remove('fade'),80);
+  },300);
+  clearTimeout(timer);
+  if(playing)scheduleNext();
+}
+
+function scheduleNext(){
+  clearTimeout(timer);
+  timer=setTimeout(()=>{
+    if(currentScene<totalScenes-1)goToScene(currentScene+1);
+    else{playing=false;document.getElementById('play-pause').textContent='▶';}
+  },DURATIONS[currentScene]);
+}
+
+function togglePlay(){
+  playing=!playing;
+  document.getElementById('play-pause').textContent=playing?'⏸':'▶';
+  if(playing)scheduleNext();
+  else clearTimeout(timer);
+}
+
+function initScene(idx){
+  if(idx===1){setTimeout(()=>document.querySelectorAll('.s2-card').forEach((c,i)=>setTimeout(()=>c.classList.add('entered'),i*180)),600);}
+  if(idx===2){setTimeout(()=>document.querySelectorAll('.s3-feat').forEach((f,i)=>setTimeout(()=>f.classList.add('show'),i*200+900)),100);}
+  if(idx===5){setTimeout(()=>document.querySelectorAll('.s6-item').forEach((f,i)=>setTimeout(()=>f.classList.add('show'),i*200+800)),100);}
+  if(idx===7){setTimeout(()=>document.querySelectorAll('.s8-card').forEach((c,i)=>setTimeout(()=>c.classList.add('entered'),i*120+700)),100);}
+  if(idx===8){
+    setTimeout(()=>{
+      document.querySelectorAll('.s9-stat').forEach((s,i)=>setTimeout(()=>{
+        s.classList.add('entered');
+        const el=s.querySelector('.s9-stat-num');
+        const target=+el.dataset.target;
+        if(!isNaN(target)&&target>0){
+          let cur=0; const step=target/40;
+          const iv=setInterval(()=>{cur=Math.min(cur+step,target);el.textContent=Math.floor(cur);if(cur>=target){el.textContent=target;clearInterval(iv);}},40);
+        }
+      },i*150+600));
+    },100);
+  }
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();goToScene(currentScene+1);}
+  if(e.key==='ArrowLeft')goToScene(currentScene-1);
+});
+document.body.addEventListener('click',e=>{
+  if(e.target.closest('#autoplay-bar')||e.target.closest('#nav-dots')||e.target.closest('#skip'))return;
+  goToScene(currentScene+1);
+});
+
+document.getElementById('s0').classList.add('active');
+updateUI();
+scheduleNext();
+</script>
+</body>
+</html>

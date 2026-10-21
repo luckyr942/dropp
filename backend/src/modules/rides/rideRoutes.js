@@ -4,9 +4,15 @@ import {
   handleBookRide,
   handleGetActiveRide,
   handleCancelRide,
+  handleGetLatestDriverOffer,
+  handleSimulateDriverOffer,
 } from './rideController.js';
 
 const router = Router();
+
+// Driver Live Dispatch & Offer Endpoints
+router.get('/driver/latest-offer', handleGetLatestDriverOffer);
+router.post('/driver/simulate-offer', handleSimulateDriverOffer);
 
 // Estimate fare & get 10-minute locked quote
 router.post('/estimate', handleEstimateRide);

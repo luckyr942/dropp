@@ -1,17 +1,4 @@
-/**
- * AuraOverlay.jsx — Full-screen Aura voice modal
- *
- * Sections:
- *   1. TextInput + send button
- *   2. Quick-chip suggestions
- *   3. Live captions list
- *   4. Restaurant results list    (from SHOW_RESTAURANTS)
- *   5. Draft order card           (from SHOW_DRAFT)  + Confirm / Cancel
- *   6. Placed order card          (from ORDER_PLACED) + Track Order
- *   7. Animated status bar        (thinking / speaking)
- */
-
-import React, {useState, useRef, useEffect} from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal,
   View,
@@ -19,294 +6,547 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  Animated,
   ActivityIndicator,
+  StyleSheet,
+  Animated,
+  Dimensions,
+  Easing,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuraContext } from './AuraContext.js';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
+import { useAuraContext } from './AuraContext';
 
+const { width } = Dimensions.get('window');
+// Compact orb size so conversation transcripts and cards have vertical room
+const ORB_SIZE = width * 0.44;
 
-const CHIPS = [
-    'Cyber Hub se Rajiv Chowk cab',
-    'Biryani dikhao',
-    'Airport kitna lagega?',
-    'Pizza order karo',
-];
+export default function AuraOverlay() {
+  const insets = useSafeAreaInsets();
+  const {
+    isOpen,
+    closeAura,
+    isThinking,
+    isSpeaking,
+    sendVoiceTurn,
+    messages,
+    restaurants,
+    draftOrder,
+    placedOrder,
+    rideEstimate,
+    bookedRide,
+    confirmRide,
+    cancelRideAction,
+    trackRide,
+    confirmOrder,
+    cancelDraft,
+    trackOrder,
+  } = useAuraContext();
 
-export default function AuraOverlay(){
-    const {
-        isOpen, closeAura,
-        isThinking, isSpeaking,
-        messages, restaurants, draftOrder, placedOrder,
-        rideEstimate, bookedRide, confirmRide, cancelRideAction, trackRide,
-        sendVoiceTurn, confirmOrder, cancelDraft, trackOrder,
-    } = useAuraContext();
+  const [inputText, setInputText] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const scrollRef = useRef(null);
 
-    const [inputText, setInputText] = useState('');
-    const scrollRef = useRef(null);
-    const pulseAnim = useRef(new Animated.Value(1)).current;
+  // ── Animation Drivers
+  const orbPulse = useRef(new Animated.Value(1)).current;
+  const orbRotate = useRef(new Animated.Value(0)).current;
+  const wave1 = useRef(new Animated.Value(10)).current;
+  const wave2 = useRef(new Animated.Value(24)).current;
+  const wave3 = useRef(new Animated.Value(38)).current;
+  const wave4 = useRef(new Animated.Value(20)).current;
+  const wave5 = useRef(new Animated.Value(12)).current;
 
-    // Pulse the orb while thinking or speaking
-    useEffect(() => {
-        if (isThinking || isSpeaking) {
-        Animated.loop(
-            Animated.sequence([
-            Animated.timing(pulseAnim, { toValue: 1.15, duration: 700, useNativeDriver: true }),
-            Animated.timing(pulseAnim, { toValue: 1,    duration: 700, useNativeDriver: true }),
-            ]),
-        ).start();
-        } else {
-        pulseAnim.stopAnimation();
-        pulseAnim.setValue(1);
-        }
-    }, [isThinking, isSpeaking, pulseAnim]);
-    
-    const handleSend = () => {
-        const text = inputText.trim();
-        if(!text) return;
-        setInputText('');
-        sendVoiceTurn(text);
+  // Auto-scroll transcript when new message arrives
+  useEffect(() => {
+    if (messages?.length > 0) {
+      setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [messages, rideEstimate, bookedRide, draftOrder]);
+
+  // Orb Breathing & Rotation
+  useEffect(() => {
+    const breathingWave = Animated.loop(
+      Animated.sequence([
+        Animated.timing(orbPulse, {
+          toValue: 1.06,
+          duration: 2200,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(orbPulse, {
+          toValue: 0.96,
+          duration: 2200,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    const rotation = Animated.loop(
+      Animated.timing(orbRotate, {
+        toValue: 1,
+        duration: 25000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+
+    breathingWave.start();
+    rotation.start();
+
+    return () => {
+      breathingWave.stop();
+      rotation.stop();
+    };
+  }, []);
+
+  // Animated Sound Bars when active
+  useEffect(() => {
+    const active = isListening || isThinking || isSpeaking;
+    if (!active) {
+      wave1.setValue(10);
+      wave2.setValue(24);
+      wave3.setValue(38);
+      wave4.setValue(20);
+      wave5.setValue(12);
+      return;
+    }
+
+    const animateBar = (val, minH, maxH, duration) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.timing(val, {
+            toValue: maxH,
+            duration,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: false,
+          }),
+          Animated.timing(val, {
+            toValue: minH,
+            duration,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: false,
+          }),
+        ])
+      );
     };
 
-    const statusLabel = isThinking
-    ? 'Soch raha hoon…'
-    : isSpeaking
-    ? 'Bol raha hoon…'
-    : 'Kya chahiye aapko?';
+    const a1 = animateBar(wave1, 8, 28, 450);
+    const a2 = animateBar(wave2, 14, 46, 350);
+    const a3 = animateBar(wave3, 20, 56, 500);
+    const a4 = animateBar(wave4, 12, 40, 380);
+    const a5 = animateBar(wave5, 8, 24, 420);
+    a1.start(); a2.start(); a3.start(); a4.start(); a5.start();
+    return () => {
+      a1.stop(); a2.stop(); a3.stop(); a4.stop(); a5.stop();
+    };
+  }, [isListening, isThinking, isSpeaking]);
+
+  const spin = orbRotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  const handleSendText = () => {
+    const text = inputText.trim();
+    if (!text) return;
+    setInputText('');
+    sendVoiceTurn(text);
+  };
+
+  const handlePromptPress = (prompt) => {
+    if (!prompt) return;
+    setIsListening(false);
+    sendVoiceTurn(prompt);
+  };
+
+  const recordingRef = useRef(null);
+
+  const handleMicPress = async () => {
+    // ── CASE A: Stop recording & transcribe voice
+    if (isListening) {
+      setIsListening(false);
+      if (!recordingRef.current) return;
+
+      try {
+        await recordingRef.current.stopAndUnloadAsync();
+        const uri = recordingRef.current.getURI();
+        recordingRef.current = null;
+
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+        });
+
+        if (!uri) return;
+
+        const base64Audio = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        // If audio is too short or empty, don't waste tokens
+        if (!base64Audio || base64Audio.length < 500) {
+          return;
+        }
+
+        const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
+        const res = await fetch(`${BACKEND_URL}/api/aura/transcribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audioBase64: base64Audio }),
+        });
+
+        const json = await res.json().catch(() => null);
+        const transcript = json?.transcript?.trim();
+
+        if (transcript) {
+          sendVoiceTurn(transcript);
+        }
+      } catch (err) {
+        console.warn('[Aura] Mic transcription error:', err.message);
+      }
+    }
+    // ── CASE B: Start recording user voice
+    else {
+      try {
+        const perm = await Audio.requestPermissionsAsync();
+        if (!perm.granted) {
+          alert('Microphone permission is required');
+          return;
+        }
+
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        });
+
+        const { recording } = await Audio.Recording.createAsync(
+          Audio.RecordingOptionsPresets.HIGH_QUALITY
+        );
+        recordingRef.current = recording;
+        setIsListening(true);
+      } catch (err) {
+        console.warn('[Aura] Failed to start recording:', err.message);
+        setIsListening(false);
+      }
+    }
+  };
 
 
-    return (
-        <Modal 
-            visible = {isOpen}
-            animationType='slide'
-            transparent
-            onRequestClose={closeAura}
-        >
-            <View style={s.backdrop}>
+  return (
+    <Modal
+      visible={isOpen}
+      animationType="slide"
+      transparent={false}
+      onRequestClose={closeAura}
+    >
+      <StatusBar barStyle="dark-content" backgroundColor="#E5F8EE" translucent={false} />
+      <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        {/* Soft Ambient Ethereal Glow Background */}
+        <LinearGradient
+          colors={['#E5F8EE', '#F3FBF7', '#EDF7FC', '#FFFFFF']}
+          locations={[0, 0.25, 0.65, 1]}
+          style={StyleSheet.absoluteFillObject}
+        />
+
+        {/* ── 1. Top Header ─────────────────────────────────────── */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.circleBtn} onPress={closeAura} activeOpacity={0.8}>
+            <Ionicons name="chevron-back" size={22} color="#0F172A" />
+          </TouchableOpacity>
+          <View style={styles.titleRow}>
+            <Text style={styles.brandTitleText}>Dropp </Text>
+            <Text style={styles.brandAuraText}>Aura</Text>
+          </View>
+          <TouchableOpacity style={styles.circleBtn} activeOpacity={0.8} onPress={closeAura}>
+            <Ionicons name="close" size={20} color="#0F172A" />
+          </TouchableOpacity>
+        </View>
+
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={s.sheet}
+          style={styles.keyboardContainer}
         >
-          {/* ── Header ────────────────────────────────────────── */}
-          <View style={s.header}>
-            <Animated.View style={[s.orb, { transform: [{ scale: pulseAnim }] }]}>
-              <Ionicons name="sparkles" size={22} color="#fff" />
+          {/* ── 2. Compact Luminous AI Orb ────────────────────────── */}
+          <View style={styles.orbContainer}>
+            <View style={[styles.glowRing, styles.glowRingOuter]} />
+            <View style={[styles.glowRing, styles.glowRingMid]} />
+            <Animated.View
+              style={[
+                styles.orbSphere,
+                { transform: [{ scale: orbPulse }, { rotate: spin }] },
+              ]}
+            >
+              <LinearGradient
+                colors={['#55EFC4', '#38D9A9', '#0984E3', '#00CEC9']}
+                start={{ x: 0.1, y: 0.1 }}
+                end={{ x: 0.9, y: 0.9 }}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <LinearGradient
+                colors={['rgba(255,255,255,0.7)', 'rgba(255,255,255,0.05)', 'transparent']}
+                start={{ x: 0.3, y: 0.0 }}
+                end={{ x: 0.7, y: 0.7 }}
+                style={styles.orbSpecular}
+              />
             </Animated.View>
-            <View style={s.headerText}>
-              <Text style={s.headerTitle}>Aura</Text>
-              <Text style={s.headerSub}>{statusLabel}</Text>
+
+            {/* Central Sound Wave Bars */}
+            <View style={styles.waveformCenter}>
+              {[wave1, wave2, wave3, wave4, wave5].map((waveAnim, idx) => (
+                <Animated.View key={idx} style={[styles.soundBar, { height: waveAnim }]} />
+              ))}
             </View>
-            <TouchableOpacity onPress={closeAura} style={s.closeBtn}>
-              <Ionicons name="close" size={22} color="#94A3B8" />
-            </TouchableOpacity>
           </View>
-          {/* ── Scroll area ───────────────────────────────────── */}
+
+          {/* Status Label */}
+          <Text style={styles.statusSub}>
+            {isThinking
+              ? 'Thinking & finding best options...'
+              : isSpeaking
+                ? 'Speaking...'
+                : isListening
+                  ? 'Listening to you...'
+                  : 'What would you like to do?'}
+          </Text>
+
+          {/* ── 3. Live Transcripts & Action Cards ScrollArea ─────── */}
           <ScrollView
             ref={scrollRef}
-            style={s.scroll}
-            contentContainerStyle={s.scrollContent}
-            keyboardShouldPersistTaps="handled"
+            style={styles.transcriptScroll}
+            contentContainerStyle={styles.transcriptContent}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
           >
-            {/* 1. Quick chips — only show when no conversation yet */}
+            {/* Quick Chips shown when conversation has not started */}
             {messages.length === 0 && (
-              <View style={s.chipsRow}>
-                {CHIPS.map((chip) => (
-                  <TouchableOpacity
-                    key={chip}
-                    style={s.chip}
-                    onPress={() => sendVoiceTurn(chip)}
-                  >
-                    <Text style={s.chipText}>{chip}</Text>
-                  </TouchableOpacity>
-                ))}
+              <View style={styles.chipsRow}>
+                <TouchableOpacity
+                  style={styles.actionChip}
+                  onPress={() => handlePromptPress('Cab to Cyber City')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="car-outline" size={15} color="#00A859" />
+                  <Text style={styles.chipText}>Cab to Cyber City</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionChip}
+                  onPress={() => handlePromptPress('Biryani dikhao')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="restaurant-outline" size={15} color="#FF7A00" />
+                  <Text style={styles.chipText}>Order Biryani</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionChip}
+                  onPress={() => handlePromptPress('Airport kitna lagega?')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="airplane-outline" size={15} color="#0087FF" />
+                  <Text style={styles.chipText}>Airport fare</Text>
+                </TouchableOpacity>
               </View>
             )}
-            {/* 2. Captions */}
+
+            {/* Live Message Bubbles */}
             {messages.map((msg) => (
               <View
                 key={msg.id}
                 style={[
-                  s.bubble,
-                  msg.role === 'user' ? s.bubbleUser : s.bubbleAura,
+                  styles.bubble,
+                  msg.role === 'user' ? styles.userBubble : styles.auraBubble,
                 ]}
               >
+                <Text style={msg.role === 'user' ? styles.userRole : styles.auraRole}>
+                  {msg.role === 'user' ? 'You' : '✦ Aura'}
+                </Text>
                 <Text
                   style={[
-                    s.bubbleText,
-                    msg.role === 'user' ? s.bubbleTextUser : s.bubbleTextAura,
+                    styles.bubbleText,
+                    msg.role === 'user' ? styles.userBubbleText : styles.auraBubbleText,
                   ]}
                 >
                   {msg.text}
                 </Text>
               </View>
             ))}
-            {/* 3. Thinking indicator */}
+
+            {/* Thinking Indicator */}
             {isThinking && (
-              <View style={[s.bubble, s.bubbleAura]}>
-                <ActivityIndicator size="small" color="#00C96B" />
+              <View style={[styles.bubble, styles.auraBubble, { flexDirection: 'row', gap: 8, alignItems: 'center' }]}>
+                <ActivityIndicator size="small" color="#00A859" />
+                <Text style={styles.auraBubbleText}>Finding options...</Text>
               </View>
             )}
-            {/* 4. Restaurant results */}
-            {restaurants.length > 0 && !draftOrder && !placedOrder && (
-              <View style={s.card}>
-                <Text style={s.cardTitle}>🍽 Restaurants found</Text>
-                {restaurants.map((r) => (
-                  <View key={r._id ?? r.id} style={s.restRow}>
-                    <Text style={s.restName}>{r.name}</Text>
-                    <Text style={s.restMeta}>
-                      {Array.isArray(r.cuisine)
-                        ? r.cuisine.join(' • ')
-                        : r.cuisine}
-                      {'  ·  '}
-                      ⭐ {r.rating}
-                    </Text>
-                  </View>
-                ))}
-                <Text style={s.hintText}>
-                  Say: "Biryani Bhai se 2 veg biryani chahiye"
+
+            {/* ── Action Card: Ride Estimate ─────────────────────── */}
+            {rideEstimate && (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons name="car-sport" size={20} color="#00A859" />
+                  <Text style={styles.cardTitle}>Ride Options</Text>
+                </View>
+                <Text style={styles.cardSub} numberOfLines={2}>
+                  {rideEstimate.pickup?.address || rideEstimate.origin || 'Pickup'} → {rideEstimate.drop?.address || rideEstimate.destination || 'Destination'}
                 </Text>
-              </View>
-            )}
-            {/* 5. Draft order card */}
-            {draftOrder && !placedOrder && (
-              <View style={s.card}>
-                <Text style={s.cardTitle}>🛒 Draft Order</Text>
-                <Text style={s.restName}>{draftOrder.restaurantName}</Text>
-                {(draftOrder.items ?? []).map((item, i) => (
-                  <View key={i} style={s.itemRow}>
-                    <Text style={s.itemName}>
-                      {item.quantity}× {item.name}
-                    </Text>
-                    <Text style={s.itemPrice}>₹{item.price * item.quantity}</Text>
-                  </View>
-                ))}
-                <View style={s.divider} />
-                <View style={s.itemRow}>
-                  <Text style={[s.itemName, { fontWeight: '700' }]}>Total</Text>
-                  <Text style={[s.itemPrice, { color: '#00C96B', fontWeight: '700' }]}>
-                    ₹{draftOrder.totalAmount}
+                {rideEstimate.distanceKm ? (
+                  <Text style={{ fontSize: 12, color: '#00A859', fontWeight: '700', marginTop: 3 }}>
+                    📍 {rideEstimate.distanceKm} km • ~{rideEstimate.durationMins} mins road journey
                   </Text>
+                ) : null}
+                <View style={styles.tierRow}>
+                  {(rideEstimate.fares || rideEstimate.tiers || []).map((t, idx) => (
+                    <View key={idx} style={styles.tierBox}>
+                      <Text style={styles.tierName}>{t.name}</Text>
+                      <Text style={styles.tierPrice}>₹{t.fare}</Text>
+                      <Text style={styles.tierEta}>{t.etaMins || t.eta || 3} min</Text>
+                    </View>
+                  ))}
                 </View>
-                <View style={s.actionRow}>
-                  <TouchableOpacity
-                    style={[s.actionBtn, s.cancelBtn]}
-                    onPress={cancelDraft}
-                    disabled={isThinking}
-                  >
-                    <Text style={s.cancelBtnText}>Cancel</Text>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={cancelRideAction} activeOpacity={0.85}>
+                    <Text style={styles.cancelBtnText}>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[s.actionBtn, s.confirmBtn, isThinking && s.btnDisabled]}
-                    onPress={confirmOrder}
-                    disabled={isThinking}
-                  >
-                    <Text style={s.confirmBtnText}>
-                      {isThinking ? 'Placing…' : 'Confirm Order'}
-                    </Text>
+                  <TouchableOpacity style={styles.confirmBtn} onPress={confirmRide} activeOpacity={0.85}>
+                    <Text style={styles.confirmBtnText}>Confirm Cab</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             )}
-            {/* 6. Placed order card */}
-            {placedOrder && (
-              <View style={[s.card, s.placedCard]}>
-                <Text style={s.placedEmoji}>🎉</Text>
-                <Text style={s.placedTitle}>Order Placed!</Text>
-                <Text style={s.placedId}>
-                  Order ID: {placedOrder.orderId ?? placedOrder._id}
+
+            {/* ── Action Card: Booked Ride ───────────────────────── */}
+            {bookedRide && (
+              <View style={[styles.card, { borderColor: '#00A859' }]}>
+                <View style={styles.cardHeader}>
+                  <Ionicons name="checkmark-circle" size={22} color="#00A859" />
+                  <Text style={[styles.cardTitle, { color: '#00A859' }]}>Cab Confirmed!</Text>
+                </View>
+                <Text style={styles.cardSub}>
+                  Driver: {bookedRide.driverName || 'Rajesh Kumar'} • {bookedRide.vehicleModel || 'Swift Dzire'}
                 </Text>
-                <Text style={s.placedMeta}>
-                  Total: ₹{placedOrder.totalAmount}
-                </Text>
-                <TouchableOpacity style={s.trackBtn} onPress={trackOrder}>
-                  <Text style={s.trackBtnText}>Track Order →</Text>
+                <View style={styles.otpBadge}>
+                  <Text style={styles.otpText}>START OTP: {bookedRide.otp || '4821'}</Text>
+                </View>
+                <TouchableOpacity style={styles.confirmBtn} onPress={trackRide} activeOpacity={0.85}>
+                  <Text style={styles.confirmBtnText}>Track Ride on Map</Text>
                 </TouchableOpacity>
               </View>
             )}
 
-            {/* 7. Ride Estimate Card */}
-            {rideEstimate && (
-              <View style={[s.card, s.rideCard]}>
-                <View style={s.rideHeader}>
-                  <Ionicons name="navigate-circle" size={26} color="#00E5FF" />
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={s.rideRouteText} numberOfLines={1}>
-                      {rideEstimate.pickup?.address || 'Pickup'} ➔ {rideEstimate.drop?.address || 'Drop'}
-                    </Text>
-                    <Text style={s.rideSubText}>
-                      {rideEstimate.distanceKm} km • ~{rideEstimate.durationMins} mins road trip
-                    </Text>
-                  </View>
+            {/* ── Action Card: Restaurants List ────────────────── */}
+            {restaurants && restaurants.length > 0 && !draftOrder && !placedOrder && (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons name="restaurant" size={20} color="#FF7A00" />
+                  <Text style={styles.cardTitle}>Restaurants Found</Text>
                 </View>
-
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tierScroll}>
-                  {rideEstimate.fares?.map((tier) => (
-                    <View key={tier.type} style={s.tierBox}>
-                      <Ionicons name={tier.icon || 'car'} size={24} color="#00C96B" />
-                      <Text style={s.tierName}>{tier.name}</Text>
-                      <Text style={s.tierFare}>₹{tier.fare}</Text>
-                      <Text style={s.tierEta}>{tier.etaMins}m away</Text>
+                {restaurants.map((r, idx) => (
+                  <TouchableOpacity
+                    key={r.id || r._id || idx}
+                    style={styles.restCardRow}
+                    activeOpacity={0.8}
+                    onPress={() => sendVoiceTurn(`${r.name} se biryani aur coffee order kar do`)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.restNameText}>{r.name}</Text>
+                      <Text style={styles.restCuisineText}>{r.cuisine || 'Biryani, Coffee'} • ⭐ {r.rating || '4.6'}</Text>
                     </View>
-                  ))}
-                </ScrollView>
-
-                <View style={s.actionRow}>
-                  <TouchableOpacity style={[s.actionBtn, s.cancelBtn]} onPress={cancelRideAction}>
-                    <Text style={s.cancelBtnText}>Cancel</Text>
+                    <View style={styles.orderSmallBtn}>
+                      <Text style={styles.orderSmallBtnText}>Order</Text>
+                    </View>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[s.actionBtn, s.confirmBtn]} onPress={confirmRide}>
-                    <Text style={s.confirmBtnText}>Confirm Cab</Text>
+                ))}
+              </View>
+            )}
+
+            {/* ── Action Card: Food Draft ───────────────────────── */}
+            {draftOrder && (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Ionicons name="receipt-outline" size={20} color="#FF7A00" />
+                  <Text style={styles.cardTitle}>{draftOrder.restaurantName || 'Order Draft'}</Text>
+                </View>
+                {draftOrder.items?.map((item, idx) => (
+                  <View key={idx} style={styles.itemRow}>
+                    <Text style={styles.itemName}>{item.name} x {item.quantity}</Text>
+                    <Text style={styles.itemPrice}>₹{item.price * item.quantity}</Text>
+                  </View>
+                ))}
+                <View style={styles.divider} />
+                <View style={styles.itemRow}>
+                  <Text style={styles.totalLabel}>Total</Text>
+                  <Text style={styles.totalPrice}>₹{draftOrder.total || draftOrder.totalAmount || 370}</Text>
+                </View>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={cancelDraft} activeOpacity={0.85}>
+                    <Text style={styles.cancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: '#FF7A00' }]} onPress={confirmOrder} activeOpacity={0.85}>
+                    <Text style={styles.confirmBtnText}>Confirm Order</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             )}
 
-            {/* 8. Booked Ride Card */}
-            {bookedRide && (
-              <View style={[s.card, s.bookedCard]}>
-                <View style={s.bookedHeader}>
-                  <View style={s.driverAvatar}>
-                    <Ionicons name="person" size={24} color="#00C96B" />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={s.driverName}>{bookedRide.driver?.name || 'Driver Assigned'}</Text>
-                    <Text style={s.driverVehicle}>{bookedRide.driver?.vehicle || 'Dropp Cab'}</Text>
-                    <Text style={s.driverRating}>★ {bookedRide.driver?.rating || '4.9'}</Text>
-                  </View>
-                  <View style={s.otpBadge}>
-                    <Text style={s.otpLabel}>OTP</Text>
-                    <Text style={s.otpVal}>{bookedRide.otp}</Text>
-                  </View>
+            {/* ── Action Card: Placed Food Order ────────────────── */}
+            {placedOrder && (
+              <View style={[styles.card, { borderColor: '#00A859' }]}>
+                <View style={styles.cardHeader}>
+                  <Ionicons name="checkmark-done-circle" size={22} color="#00A859" />
+                  <Text style={[styles.cardTitle, { color: '#00A859' }]}>Order Placed!</Text>
                 </View>
-
-                <TouchableOpacity style={s.trackBtn} onPress={trackRide}>
-                  <Text style={s.trackBtnText}>Track Ride on Map →</Text>
+                <Text style={styles.cardSub}>Order #{placedOrder._id?.slice(-6) || '7891'} • ETA 25 mins</Text>
+                <TouchableOpacity style={styles.confirmBtn} onPress={trackOrder} activeOpacity={0.85}>
+                  <Text style={styles.confirmBtnText}>Track Food Delivery</Text>
                 </TouchableOpacity>
               </View>
             )}
           </ScrollView>
-          {/* ── Text input ────────────────────────────────────── */}
-          <View style={s.inputRow}>
-            <TextInput
-              style={s.input}
-              placeholder="Type your order…"
-              placeholderTextColor="#64748B"
-              value={inputText}
-              onChangeText={setInputText}
-              onSubmitEditing={handleSend}
-              returnKeyType="send"
-              editable={!isThinking}
-            />
+
+          {/* ── 4. Bottom Controls: Text Box + Send + Mic ─────────── */}
+          <View style={styles.bottomBar}>
+            <View style={[styles.inputContainer, isListening && styles.inputContainerListening]}>
+              <TextInput
+                style={styles.textInput}
+                placeholder={
+                  isListening
+                    ? '🎙️ Listening... (Speak now)'
+                    : isThinking
+                    ? '⏳ Processing speech...'
+                    : 'Ask Aura or type destination...'
+                }
+                placeholderTextColor={isListening ? '#00A859' : '#94A3B8'}
+                value={inputText}
+                onChangeText={setInputText}
+                onSubmitEditing={handleSendText}
+                returnKeyType="send"
+              />
+              {inputText.trim().length > 0 && (
+                <TouchableOpacity style={styles.sendIconBtn} onPress={handleSendText}>
+                  <Ionicons name="arrow-up" size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Circular Mic Button */}
             <TouchableOpacity
-              style={[s.sendBtn, (!inputText.trim() || isThinking) && s.btnDisabled]}
-              onPress={handleSend}
-              disabled={!inputText.trim() || isThinking}
+              style={[styles.micBtnSmall, isListening && styles.micBtnActive]}
+              onPress={handleMicPress}
+              activeOpacity={0.85}
             >
-              <Ionicons name="send" size={18} color="#fff" />
+              <LinearGradient
+                colors={isListening ? ['#FF4D4D', '#E11D48'] : ['#00E575', '#00A859']}
+                style={styles.micGradientSmall}
+              >
+                <Ionicons name={isListening ? 'stop' : 'mic'} size={24} color="#FFFFFF" />
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -314,332 +554,378 @@ export default function AuraOverlay(){
     </Modal>
   );
 }
-// ─── Styles ──────────────────────────────────────────────────────────────────
-const s = StyleSheet.create({
-  backdrop: {
+
+const styles = StyleSheet.create({
+  root: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
+    backgroundColor: '#F3FAF6',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
   },
-  sheet: {
-    backgroundColor: '#0F172A',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '88%',
-    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
-  },
-  // Header
+  // 1. Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
   },
-  orb: {
+  circleBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#00C96B',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  brandTitleText: {
+    fontFamily: 'PlusJakartaSans_800ExtraBold',
+    fontSize: 18,
+    color: '#0F172A',
+  },
+  brandAuraText: {
+    fontFamily: 'PlusJakartaSans_800ExtraBold',
+    fontSize: 18,
+    color: '#00A859',
+  },
+  keyboardContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  // 2. Orb
+  orbContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: ORB_SIZE + 24,
+    marginTop: 4,
+  },
+  glowRing: {
+    position: 'absolute',
+    borderRadius: 999,
+    borderWidth: 1.5,
+  },
+  glowRingOuter: {
+    width: ORB_SIZE * 1.32,
+    height: ORB_SIZE * 1.32,
+    borderColor: 'rgba(0, 201, 107, 0.12)',
+  },
+  glowRingMid: {
+    width: ORB_SIZE * 1.14,
+    height: ORB_SIZE * 1.14,
+    borderColor: 'rgba(56, 217, 169, 0.25)',
+  },
+  orbSphere: {
+    width: ORB_SIZE,
+    height: ORB_SIZE,
+    borderRadius: ORB_SIZE / 2,
+    overflow: 'hidden',
     shadowColor: '#00C96B',
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 8,
   },
-  headerText: { flex: 1, marginLeft: 12 },
-  headerTitle: {
-    color: '#F1F5F9',
-    fontSize: 16,
-    fontFamily: 'PlusJakartaSans_700Bold',
+  orbSpecular: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '55%',
+    borderRadius: 999,
   },
-  headerSub: {
+  waveformCenter: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    height: 40,
+  },
+  soundBar: {
+    width: 4,
+    borderRadius: 2,
+    backgroundColor: '#FFFFFF',
+  },
+  statusSub: {
+    fontFamily: 'PlusJakartaSans_500Medium',
+    fontSize: 13,
     color: '#64748B',
-    fontSize: 12,
-    fontFamily: 'PlusJakartaSans_400Regular',
-    marginTop: 2,
+    textAlign: 'center',
+    marginTop: 4,
   },
-  closeBtn: { padding: 4 },
-  // Scroll
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16, gap: 12 },
-  // Chips
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
-  chip: {
-    backgroundColor: '#1E293B',
+  // 3. Chips
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginVertical: 10,
+  },
+  actionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 9,
+    paddingHorizontal: 13,
     borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E7F2EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
   chipText: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontFamily: 'PlusJakartaSans_500Medium',
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 12,
+    color: '#0F172A',
   },
-  // Bubbles
+  // 4. Transcripts
+  transcriptScroll: {
+    flex: 1,
+    marginVertical: 8,
+    paddingHorizontal: 4,
+  },
+  transcriptContent: {
+    gap: 10,
+    paddingBottom: 10,
+  },
   bubble: {
-    maxWidth: '80%',
-    borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 10,
+    borderRadius: 16,
+    maxWidth: '85%',
   },
-  bubbleUser: { alignSelf: 'flex-end', backgroundColor: '#00C96B' },
-  bubbleAura: { alignSelf: 'flex-start', backgroundColor: '#1E293B' },
-  bubbleText: { fontSize: 14, lineHeight: 20 },
-  bubbleTextUser: {
-    color: '#fff',
+  userBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#00A859',
+    borderBottomRightRadius: 4,
+  },
+  auraBubble: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  userRole: {
+    fontSize: 10,
+    color: '#D1FAE5',
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  auraRole: {
+    fontSize: 10,
+    color: '#00A859',
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  userBubbleText: {
+    fontSize: 14,
+    color: '#FFFFFF',
     fontFamily: 'PlusJakartaSans_500Medium',
   },
-  bubbleTextAura: {
-    color: '#CBD5E1',
-    fontFamily: 'PlusJakartaSans_400Regular',
+  auraBubbleText: {
+    fontSize: 14,
+    color: '#0F172A',
+    fontFamily: 'PlusJakartaSans_500Medium',
   },
-  // Cards
+  // 5. Action Cards
   card: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
+    marginVertical: 6,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   cardTitle: {
-    color: '#F1F5F9',
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: 'PlusJakartaSans_700Bold',
-    marginBottom: 4,
+    color: '#0F172A',
   },
-  restRow: { gap: 2 },
-  restName: {
-    color: '#F1F5F9',
-    fontSize: 14,
-    fontFamily: 'PlusJakartaSans_600SemiBold',
-  },
-  restMeta: {
+  cardSub: {
+    fontSize: 13,
     color: '#64748B',
-    fontSize: 12,
-    fontFamily: 'PlusJakartaSans_400Regular',
-  },
-  hintText: {
-    color: '#475569',
-    fontSize: 12,
-    fontFamily: 'PlusJakartaSans_400Regular',
     marginTop: 4,
-    fontStyle: 'italic',
   },
-  itemRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  itemName: {
-    color: '#CBD5E1',
-    fontSize: 13,
-    fontFamily: 'PlusJakartaSans_400Regular',
+  tierRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 12,
+  },
+  tierBox: {
     flex: 1,
-  },
-  itemPrice: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontFamily: 'PlusJakartaSans_500Medium',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#334155',
-    marginVertical: 4,
-  },
-  // Draft actions
-  actionRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  actionBtn: {
-    flex: 1,
-    paddingVertical: 12,
+    backgroundColor: '#F8FAFC',
     borderRadius: 12,
+    padding: 10,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  cancelBtn: { backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#EF4444' },
-  cancelBtnText: {
-    color: '#EF4444',
-    fontFamily: 'PlusJakartaSans_600SemiBold',
-    fontSize: 14,
-  },
-  confirmBtn: { backgroundColor: '#00C96B' },
-  confirmBtnText: {
-    color: '#fff',
-    fontFamily: 'PlusJakartaSans_700Bold',
-    fontSize: 14,
-  },
-  // Placed order
-  placedCard: {
-    alignItems: 'center',
-    gap: 6,
-    borderColor: '#00C96B',
-  },
-  placedEmoji: { fontSize: 40 },
-  placedTitle: {
-    color: '#00C96B',
-    fontSize: 20,
-    fontFamily: 'PlusJakartaSans_700Bold',
-  },
-  placedId: {
-    color: '#64748B',
-    fontSize: 12,
-    fontFamily: 'PlusJakartaSans_400Regular',
-  },
-  placedMeta: {
-    color: '#94A3B8',
-    fontSize: 14,
-    fontFamily: 'PlusJakartaSans_500Medium',
-  },
-  trackBtn: {
+  tierName: { fontSize: 11, color: '#64748B', fontWeight: '600' },
+  tierPrice: { fontSize: 16, color: '#00A859', fontWeight: '800', marginTop: 2 },
+  tierEta: { fontSize: 10, color: '#94A3B8', marginTop: 2 },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
     marginTop: 8,
-    backgroundColor: '#00C96B',
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 12,
   },
-  trackBtnText: {
-    color: '#fff',
-    fontFamily: 'PlusJakartaSans_700Bold',
+  cancelBtn: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    color: '#64748B',
+    fontWeight: '700',
     fontSize: 14,
   },
-  // Input bar
-  inputRow: {
+  confirmBtn: {
+    flex: 2,
+    backgroundColor: '#00A859',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  confirmBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  otpBadge: {
+    backgroundColor: '#E6F9F0',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginVertical: 10,
+  },
+  otpText: {
+    color: '#00A859',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  itemName: { fontSize: 13, color: '#0F172A', fontWeight: '500' },
+  itemPrice: { fontSize: 13, color: '#64748B', fontWeight: '600' },
+  divider: { height: 1, backgroundColor: '#E2E8F0', marginVertical: 8 },
+  totalLabel: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
+  totalPrice: { fontSize: 16, fontWeight: '800', color: '#00A859' },
+  // 6. Bottom Bar (Input + Mic)
+  bottomBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#1E293B',
+    paddingTop: 8,
+    paddingBottom: 12,
   },
-  input: {
+  inputContainer: {
     flex: 1,
-    backgroundColor: '#1E293B',
-    color: '#F1F5F9',
-    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 14,
-    fontFamily: 'PlusJakartaSans_400Regular',
+    height: 48,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  sendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#00C96B',
-    alignItems: 'center',
-    justifyContent: 'center',
+  inputContainerListening: {
+    borderColor: '#00A859',
+    borderWidth: 1.5,
+    backgroundColor: '#F0FDF4',
   },
-  btnDisabled: { opacity: 0.4 },
-
-  // ── Ride Estimate & Booking Cards ─────────────────────────
-  rideCard: {
-    borderColor: '#00E5FF33',
-    backgroundColor: '#0F172A',
-  },
-  rideHeader: {
+  restCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
-  rideRouteText: {
-    color: '#F8FAFC',
+  restNameText: {
     fontSize: 14,
     fontFamily: 'PlusJakartaSans_700Bold',
+    color: '#0F172A',
   },
-  rideSubText: {
-    color: '#94A3B8',
+  restCuisineText: {
     fontSize: 12,
-    fontFamily: 'PlusJakartaSans_500Medium',
-    marginTop: 2,
-  },
-  tierScroll: {
-    marginVertical: 10,
-  },
-  tierBox: {
-    backgroundColor: '#1E293B',
-    borderRadius: 14,
-    padding: 12,
-    alignItems: 'center',
-    marginRight: 10,
-    width: 105,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  tierName: {
-    color: '#E2E8F0',
-    fontSize: 11,
-    fontFamily: 'PlusJakartaSans_600SemiBold',
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  tierFare: {
-    color: '#00C96B',
-    fontSize: 15,
-    fontFamily: 'PlusJakartaSans_800ExtraBold',
-    marginTop: 2,
-  },
-  tierEta: {
     color: '#64748B',
-    fontSize: 10,
-    fontFamily: 'PlusJakartaSans_500Medium',
     marginTop: 2,
   },
-  bookedCard: {
-    borderColor: '#00C96B44',
-    backgroundColor: '#062E1E',
+  orderSmallBtn: {
+    backgroundColor: '#00A859',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  bookedHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
+  orderSmallBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 12,
   },
-  driverAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#00C96B22',
+  textInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0F172A',
+    fontFamily: 'PlusJakartaSans_500Medium',
+  },
+  sendIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#00A859',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#00C96B55',
   },
-  driverName: {
-    color: '#F1F5F9',
-    fontSize: 15,
-    fontFamily: 'PlusJakartaSans_700Bold',
+  micBtnSmall: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#00A859',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  driverVehicle: {
-    color: '#94A3B8',
-    fontSize: 12,
-    fontFamily: 'PlusJakartaSans_400Regular',
-    marginTop: 2,
+  micBtnActive: {
+    shadowColor: '#EF4444',
   },
-  driverRating: {
-    color: '#FBBF24',
-    fontSize: 12,
-    fontFamily: 'PlusJakartaSans_700Bold',
-    marginTop: 2,
-  },
-  otpBadge: {
-    backgroundColor: '#00C96B',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
+  micGradientSmall: {
+    flex: 1,
     alignItems: 'center',
-  },
-  otpLabel: {
-    color: '#000',
-    fontSize: 9,
-    fontFamily: 'PlusJakartaSans_800ExtraBold',
-    letterSpacing: 0.5,
-  },
-  otpVal: {
-    color: '#000',
-    fontSize: 16,
-    fontFamily: 'PlusJakartaSans_800ExtraBold',
+    justifyContent: 'center',
   },
 });
