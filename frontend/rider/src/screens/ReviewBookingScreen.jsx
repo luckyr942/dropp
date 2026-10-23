@@ -36,6 +36,7 @@ export default function ReviewBookingScreen({ onBack, onNavigate }) {
         selectedVehicleTier, fare,
         quoteId, distanceKm, durationMins,
         routeGeometry,
+        setDriver, setDeliveryOtp,
         resetTripState,
     } = useRideStore();
 
@@ -81,12 +82,20 @@ export default function ReviewBookingScreen({ onBack, onNavigate }) {
                 body: JSON.stringify(body),
             });
             const json = await res.json();
-            if (json.success || json.data || json.error?.includes('active ride')) {
-                if (onNavigate) onNavigate('FindingDriver');
-            } else {
-                // If quote expired or failed, still transition to dispatching
-                if (onNavigate) onNavigate('FindingDriver');
+            if (json.data?.driver) {
+                const d = json.data.driver;
+                const vehicleParts = (d.vehicle || '').split('•').map(p => p.trim());
+                setDriver({
+                    ...d,
+                    plate: d.plate || vehicleParts[1] || 'DL 1Z A 4421',
+                    vehicle: vehicleParts[0] || d.vehicle || 'Swift Dzire',
+                    avatar: d.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80',
+                });
             }
+            if (json.data?.otp) {
+                setDeliveryOtp(json.data.otp);
+            }
+            if (onNavigate) onNavigate('FindingDriver');
         } catch (err) {
             console.warn('[ReviewBooking] Book error fallback:', err.message);
             if (onNavigate) onNavigate('FindingDriver');

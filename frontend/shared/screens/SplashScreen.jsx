@@ -9,7 +9,13 @@ import {
     Easing,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as SplashScreen from 'expo-splash-screen';
+
+let SplashScreen;
+try {
+    SplashScreen = require('expo-splash-screen');
+} catch (_) {
+    SplashScreen = { hideAsync: async () => {} };
+}
 import { DROPP_THEME, DROPP_MOTION } from '../theme/droppMotion';
 import CityGridPattern from './splash/CityGridPattern';
 import RoutePathAnimation from './splash/RoutePathAnimation';

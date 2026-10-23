@@ -145,42 +145,53 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
                 <View style={styles.divider} />
 
                 {/* Driver Profile & Vehicle */}
-                <View style={styles.driverRow}>
-                    <Image
-                        source={{ uri: driver.avatar }}
-                        style={styles.avatar}
-                    />
-                    <View style={styles.driverMeta}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={styles.driverName}>{driver.name}</Text>
-                            <View style={styles.ratingBadge}>
-                                <Ionicons name="star" size={11} color="#FFB800" />
-                                <Text style={styles.ratingText}>{driver.rating}</Text>
+                {(() => {
+                    const vehicleParts = (driver?.vehicle || '').split('•').map(p => p.trim());
+                    const vehicleModel = vehicleParts[0] || driver?.vehicle || 'Swift Dzire';
+                    const vehiclePlate = driver?.plate || vehicleParts[1] || 'DL 1Z A 4421';
+                    const avatarUri = driver?.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80';
+                    const driverDisplayName = driver?.name || 'Assigned Driver';
+                    const driverRating = driver?.rating || 4.88;
+
+                    return (
+                        <View style={styles.driverRow}>
+                            <Image
+                                source={{ uri: avatarUri }}
+                                style={styles.avatar}
+                            />
+                            <View style={styles.driverMeta}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                    <Text style={styles.driverName}>{driverDisplayName}</Text>
+                                    <View style={styles.ratingBadge}>
+                                        <Ionicons name="star" size={11} color="#FFB800" />
+                                        <Text style={styles.ratingText}>{driverRating}</Text>
+                                    </View>
+                                </View>
+                                <Text style={styles.vehicleText}>{vehicleModel}</Text>
+                                <Text style={styles.plateBadge}>{vehiclePlate}</Text>
+                            </View>
+
+                            {/* Contact Action Buttons */}
+                            <View style={styles.actionCol}>
+                                <TouchableOpacity
+                                    style={styles.actionCircleGreen}
+                                    onPress={handleCall}
+                                    activeOpacity={0.8}
+                                >
+                                    <Ionicons name="call" size={18} color="#FFF" />
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.actionCircleGrey}
+                                    onPress={handleChat}
+                                    activeOpacity={0.8}
+                                >
+                                    <Ionicons name="chatbubble-ellipses" size={18} color="#111820" />
+                                </TouchableOpacity>
                             </View>
                         </View>
-                        <Text style={styles.vehicleText}>{driver.vehicle}</Text>
-                        <Text style={styles.plateBadge}>{driver.plate}</Text>
-                    </View>
-
-                    {/* Contact Action Buttons */}
-                    <View style={styles.actionCol}>
-                        <TouchableOpacity
-                            style={styles.actionCircleGreen}
-                            onPress={handleCall}
-                            activeOpacity={0.8}
-                        >
-                            <Ionicons name="call" size={18} color="#FFF" />
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={styles.actionCircleGrey}
-                            onPress={handleChat}
-                            activeOpacity={0.8}
-                        >
-                            <Ionicons name="chatbubble-ellipses" size={18} color="#111820" />
-                        </TouchableOpacity>
-                    </View>
-                </View>
+                    );
+                })()}
 
                 <View style={styles.divider} />
 

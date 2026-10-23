@@ -22,6 +22,9 @@
         "backgroundColor": "#0B0F17"
       },
       "package": "com.dropp.driver"
-    }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

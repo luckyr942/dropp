@@ -2,15 +2,22 @@ const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 
 const projectRoot = __dirname;
-const monorepoRoot = path.resolve(projectRoot, '../..');
+const frontendRoot = path.resolve(projectRoot, '..');
 
 const config = getDefaultConfig(projectRoot);
 
-config.watchFolders = [monorepoRoot];
+// Watch shared components and store
+config.watchFolders = [
+  path.resolve(frontendRoot, 'shared'),
+];
 
+// Resolve driver node_modules first, fallback to frontend/node_modules
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
-  path.resolve(monorepoRoot, 'node_modules'),
+  path.resolve(frontendRoot, 'node_modules'),
 ];
+
+// Prevent picking up mismatched root-level SDK 54 packages from monorepo root
+config.resolver.disableHierarchicalLookup = true;
 
 module.exports = config;

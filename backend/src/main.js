@@ -15,6 +15,8 @@ import catalogRouter from './modules/catalog/catalogRoutes.js';
 import orderRouter from './modules/orders/orderRoutes.js';
 import auraRouter from './aura/auraRoutes.js';
 import rideRouter from './modules/rides/rideRoutes.js';
+import driverRouter from './modules/drivers/driverRoutes.js';
+
 
 //Map 
 import geocodeRoutes from './modules/geoCode/geoRoutes.js';
@@ -117,6 +119,7 @@ app.get('/health', (req, res) => {
 app.use('/api/catalog', catalogRouter);
 app.use('/api/orders', orderRouter);
 app.use('/api/rides', rideRouter);
+app.use('/api/drivers', driverRouter);
 app.use('/api/aura', auraRouter);
 app.use('/api/geocode', geocodeRoutes);
 

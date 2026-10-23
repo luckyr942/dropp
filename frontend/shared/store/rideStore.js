@@ -26,17 +26,17 @@ const initialTripState = {
 export const useRideStore = create((set) => ({
     ...initialTripState,
 
-    // Driver assigned to trip
+    // Driver assigned to trip — populated by backend on ride.driver_assigned event
     driver: {
-        name: 'Alex Johnson',
-        vehicle: 'Toyota Camry Hybrid',
-        plate: 'DL-01-AB-4821',
-        rating: 4.9,
-        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+        name: '',          // filled by backend
+        vehicle: '',
+        plate: '',
+        rating: 5.0,
+        avatar: null,
         etaMinutes: 4,
         seats: 4,
-        tripsCount: 1240,
-        phone: '+1 (555) 345-6789',
+        tripsCount: 0,
+        phone: '',
     },
 
     // Driver App Mode State
@@ -63,6 +63,10 @@ export const useRideStore = create((set) => ({
         allFares: fares || [],
         routeGeometry: geometry || null,
     }),
+    setDriver: (driverData) => set((state) => ({
+        driver: { ...state.driver, ...driverData },
+    })),
+    setDeliveryOtp: (otp) => set({ deliveryOtp: otp }),
     clearLocations: () => set({ pickupLocation: "", destination: "" }),
 
     // Reset whole trip state when completed or cancelled

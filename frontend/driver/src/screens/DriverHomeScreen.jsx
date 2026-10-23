@@ -7,138 +7,254 @@ import {
     SafeAreaView,
     StatusBar,
     ScrollView,
+    TextInput,
+    Alert,
+    ActivityIndicator,
+    Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/themeContext';
-import { useRideStore } from '../../../shared/store/rideStore';
 import RideOfferModal from './RideOfferModal';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
-const WS_URL = API_BASE.replace(/^http/, 'ws');
+// On a physical phone set EXPO_PUBLIC_WS_URL=ws://<LAN-IP>:4000 in frontend/.env
+const WS_URL = process.env.EXPO_PUBLIC_WS_URL || API_BASE.replace(/^http/, 'ws');
+
+const DRIVER_ID_KEY = '@dropp_driver_id';
 
 export default function DriverHomeScreen({ onNavigate }) {
     const { theme, isDark } = useTheme();
-    const { isDriverOnline, toggleDriverOnline, driverEarningsToday, driverTripsToday, driverAcceptanceRate } = useRideStore();
-    const [showIncomingOffer, setShowIncomingOffer] = useState(false);
-    const [currentOffer, setCurrentOffer] = useState(null);
+
+    // ── Driver Identity ────────────────────────────────────────────
+    const [driverId, setDriverId] = useState(null);   // MongoDB _id from registration
+    const [driverProfile, setDriverProfile] = useState(null);
+    const [isOnline, setIsOnline] = useState(false);
     const [wsConnected, setWsConnected] = useState(false);
+
+    // ── Offer State ────────────────────────────────────────────────
+    const [currentOffer, setCurrentOffer] = useState(null);
+    const [showOffer, setShowOffer] = useState(false);
     const lastHandledOfferId = useRef(null);
 
-    // ── Live WebSocket & Polling Listener ────────────────────────────
+    // ── Registration Modal ─────────────────────────────────────────
+    const [showRegModal, setShowRegModal] = useState(false);
+    const [regName, setRegName] = useState('');
+    const [regPhone, setRegPhone] = useState('');
+    const [regVehicleType, setRegVehicleType] = useState('cab_economy');
+    const [regVehicleModel, setRegVehicleModel] = useState('');
+    const [regVehicleNumber, setRegVehicleNumber] = useState('');
+    const [registering, setRegistering] = useState(false);
+
+    // Stats (local)
+    const [earningsToday, setEarningsToday] = useState(0);
+    const [tripsToday, setTripsToday] = useState(0);
+
+    // ── 1. Load saved driverId on mount ───────────────────────────
     useEffect(() => {
-        let ws = null;
-        let pollInterval = null;
+        let isMounted = true;
+        async function loadDriver() {
+            try {
+                const id = await AsyncStorage.getItem(DRIVER_ID_KEY);
+                if (!isMounted) return;
+                if (id) {
+                    setDriverId(id);
+                    try {
+                        const res = await fetch(`${API_BASE}/api/drivers/${id}`);
+                        const json = await res.json();
+                        if (isMounted && json.success) setDriverProfile(json.data);
+                    } catch (_) { }
+                } else {
+                    setShowRegModal(true);
+                }
+            } catch (err) {
+                console.warn('[DriverApp] Could not load saved driverId:', err.message);
+                if (isMounted) setShowRegModal(true);
+            }
+        }
+        loadDriver();
+        return () => { isMounted = false; };
+    }, []);
+
+    // ── 2. WebSocket listener ─────────────────────────────────────
+    useEffect(() => {
+        let ws;
+        let pollInterval;
         let isMounted = true;
 
-        function connectWs() {
+        function connect() {
             try {
                 ws = new WebSocket(WS_URL);
-                ws.onopen = () => {
-                    if (isMounted) setWsConnected(true);
-                    console.log('[DriverApp] Connected to live dispatch:', WS_URL);
+                ws.onopen = () => { if (isMounted) setWsConnected(true); };
+                ws.onclose = () => {
+                    if (isMounted) {
+                        setWsConnected(false);
+                        setTimeout(connect, 3000);
+                    }
                 };
+                ws.onerror = () => { if (isMounted) setWsConnected(false); };
                 ws.onmessage = (e) => {
                     try {
                         const msg = JSON.parse(e.data);
                         if (
                             msg.type === 'driver.incoming_offer' ||
-                            msg.type === 'ride.driver_assigned' ||
-                            msg.type === 'ORDER_CONFIRMED' ||
-                            msg.type === 'ORDER_PLACED_VOICE'
+                            msg.type === 'ORDER_CONFIRMED'
                         ) {
-                            const offer = msg.data || msg;
-                            handleNewIncomingOffer(offer);
+                            handleIncomingOffer(msg.data || msg);
                         }
                     } catch (err) {
                         console.warn('[DriverApp] WS parse error:', err.message);
                     }
                 };
-                ws.onerror = () => {
-                    if (isMounted) setWsConnected(false);
-                };
-                ws.onclose = () => {
-                    if (isMounted) {
-                        setWsConnected(false);
-                        setTimeout(connectWs, 3000);
-                    }
-                };
-            } catch (_) {}
+            } catch (err) {
+                console.warn('[DriverApp] WS connect error:', err.message);
+            }
         }
 
-        connectWs();
+        connect();
 
-        // 2.5s Polling Fallback (ensures no missed dispatches across simulators)
+        // Polling fallback — catches offers if WS drops
         pollInterval = setInterval(async () => {
-            if (!isMounted) return;
+            if (!isMounted || !isOnline) return;
             try {
                 const res = await fetch(`${API_BASE}/api/rides/driver/latest-offer`);
                 const json = await res.json();
-                if (json.success && json.data && json.data.offerId !== lastHandledOfferId.current) {
-                    lastHandledOfferId.current = json.data.offerId;
-                    handleNewIncomingOffer(json.data);
+                if (json.success && json.data?.offerId !== lastHandledOfferId.current) {
+                    handleIncomingOffer(json.data);
                 }
-            } catch (_) {}
-        }, 2500);
+            } catch (_) { }
+        }, 3000);
 
         return () => {
             isMounted = false;
-            if (ws) ws.close();
-            if (pollInterval) clearInterval(pollInterval);
+            ws?.close();
+            clearInterval(pollInterval);
         };
-    }, []);
+    }, [isOnline]);
 
-    function handleNewIncomingOffer(raw) {
-        if (!raw) return;
-        const formatted = {
+    function handleIncomingOffer(raw) {
+        if (!raw || !isOnline) return;  // ignore if driver is offline
+        if (raw.offerId === lastHandledOfferId.current) return;
+        lastHandledOfferId.current = raw.offerId;
+
+        setCurrentOffer({
             offerId: raw.offerId || 'offer_' + Date.now(),
-            serviceType: raw.serviceType || (raw.rideType ? 'RIDE' : 'FOOD DELIVERY'),
-            fare: raw.fare || (raw.totalAmount ? `₹${Math.round(raw.totalAmount * 0.25)}` : '₹361.00'),
-            distance: raw.distance || (raw.distanceKm ? `${raw.distanceKm} km • ${raw.estimatedMins || 18} mins` : '15.97 km • 29 mins'),
-            pickup: raw.pickup || raw.pickupLocation || 'Sector 1, Bokaro Steel City',
-            destination: raw.destination || raw.dropLocation || 'Balidih Main Gate',
-            otp: raw.otp || '4821',
-            customerName: raw.customerName || 'Rahul Verma',
-        };
-        setCurrentOffer(formatted);
-        setShowIncomingOffer(true);
+            rideId: raw.offerId,   // offerId IS the rideId in bookRide
+            serviceType: raw.serviceType || 'RIDE',
+            fare: raw.fare || '₹—',
+            distance: raw.distance || '—',
+            pickup: raw.pickup || '—',
+            destination: raw.destination || '—',
+            otp: raw.otp || '—',
+            customerName: raw.customerName || 'Customer',
+        });
+        setShowOffer(true);
     }
 
-    const triggerTestOffer = (type) => {
-        if (type === 'RIDE') {
-            handleNewIncomingOffer({
-                offerId: 'ride_sim_' + Date.now(),
-                serviceType: 'RIDE',
-                fare: '₹361.00',
-                distance: '15.97 km • 29 mins',
-                pickup: 'Sector 1, Bokaro Steel City',
-                destination: 'Balidih Industrial Area',
-                otp: '4821',
-                customerName: 'Rahul Verma',
-            });
-        } else if (type === 'FOOD') {
-            handleNewIncomingOffer({
-                offerId: 'food_sim_' + Date.now(),
-                serviceType: 'FOOD DELIVERY',
-                fare: '₹249.00',
-                distance: '3.6 km • 16 mins',
-                pickup: 'Bawarchee Biryani House, Sector 28',
-                destination: 'DLF Cyber City, Gurugram',
-                otp: '7192',
-                customerName: 'Priya Sharma',
-            });
-        } else {
-            handleNewIncomingOffer({
-                offerId: 'pkg_sim_' + Date.now(),
-                serviceType: 'PACKAGE DELIVERY',
-                fare: '₹140.00',
-                distance: '5.2 km • 22 mins',
-                pickup: 'Sector 14 Market',
-                destination: 'Balidih Gate 3',
-                otp: '9931',
-                customerName: 'Amit Saxena',
-            });
+    // ── Accept Offer ───────────────────────────────────────────────
+    // Calls real backend: POST /api/drivers/:driverId/accept/:rideId
+    // Backend updates the ride with real driver data and emits to customer
+    const handleAcceptOffer = async (offer) => {
+        setShowOffer(false);
+
+        if (!driverId) {
+            Alert.alert('Not Registered', 'Please register first.');
+            return;
+        }
+
+        try {
+            const res = await fetch(
+                `${API_BASE}/api/drivers/${driverId}/accept/${offer.rideId}`,
+                { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+            );
+            const json = await res.json();
+
+            if (json.success) {
+                setTripsToday((t) => t + 1);
+                setEarningsToday((e) => e + (json.data?.ride?.fare || 0));
+                Alert.alert('✅ Ride Accepted!', `Navigate to ${offer.pickup}`);
+                if (onNavigate) onNavigate('DriverNav');
+            } else {
+                Alert.alert('Could Not Accept', json.error || 'The ride may have been cancelled.');
+            }
+        } catch (err) {
+            console.error('[DriverApp] Accept error:', err.message);
+            Alert.alert('Error', 'Connection error. Could not accept ride.');
         }
     };
+
+    const handleDeclineOffer = () => {
+        setShowOffer(false);
+        setCurrentOffer(null);
+    };
+
+    // ── Online / Offline Toggle ────────────────────────────────────
+    const handleToggleOnline = async () => {
+        if (!driverId) {
+            setShowRegModal(true);
+            return;
+        }
+        const goingOnline = !isOnline;
+        try {
+            const endpoint = goingOnline ? 'online' : 'offline';
+            await fetch(`${API_BASE}/api/drivers/${driverId}/${endpoint}`, {
+                method: 'POST',
+            });
+            setIsOnline(goingOnline);
+        } catch (err) {
+            console.warn('[DriverApp] Toggle online error:', err.message);
+            // Still update local state — server will sync on next call
+            setIsOnline(goingOnline);
+        }
+    };
+
+    // ── Register Driver ────────────────────────────────────────────
+    const handleRegister = async () => {
+        if (!regName.trim() || !regPhone.trim() || !regVehicleModel.trim() || !regVehicleNumber.trim()) {
+            Alert.alert('Missing Fields', 'Fill in all fields to continue.');
+            return;
+        }
+        setRegistering(true);
+        try {
+            const res = await fetch(`${API_BASE}/api/drivers/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: regName.trim(),
+                    phone: regPhone.trim(),
+                    vehicleType: regVehicleType,
+                    vehicleModel: regVehicleModel.trim(),
+                    vehicleNumber: regVehicleNumber.trim(),
+                }),
+            });
+            const json = await res.json();
+            if (json.success) {
+                const id = json.data._id;
+                try {
+                    await AsyncStorage.setItem(DRIVER_ID_KEY, id);
+                } catch (err) {
+                    console.warn('[DriverApp] Could not persist driverId:', err.message);
+                }
+                setDriverId(id);
+                setDriverProfile(json.data);
+                setShowRegModal(false);
+                Alert.alert('🎉 Welcome!', `Registered as ${json.data.name}. Tap GO ONLINE to start.`);
+            } else {
+                Alert.alert('Registration Failed', json.error || 'Try again.');
+            }
+        } catch (err) {
+            Alert.alert('Error', 'Could not reach the server. Check your connection.');
+        } finally {
+            setRegistering(false);
+        }
+    };
+
+    const VEHICLE_TYPES = [
+        { value: 'bike', label: '🏍️  Bike' },
+        { value: 'auto', label: '🛺  Auto' },
+        { value: 'cab_economy', label: '🚗  Cab (Economy)' },
+        { value: 'cab_premium', label: '🚙  Cab (Premium)' },
+    ];
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -147,158 +263,183 @@ export default function DriverHomeScreen({ onNavigate }) {
                 backgroundColor={theme.background}
             />
 
-            {/* Header Bar */}
+            {/* ── Header ── */}
             <View style={[styles.header, { borderBottomColor: theme.inputSeparator }]}>
                 <View style={styles.titleRow}>
                     <Ionicons name="car-sport" size={24} color={theme.primaryGreen} />
-                    <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Dropp Partner</Text>
+                    <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+                        {driverProfile ? driverProfile.name : 'Dropp Partner'}
+                    </Text>
                 </View>
-
-                <View style={[styles.statusIndicator, { backgroundColor: isDriverOnline ? theme.tierCardActiveBg : theme.inputBg }]}>
-                    <View style={[styles.statusDot, { backgroundColor: isDriverOnline ? theme.primaryGreen : '#94A3B8' }]} />
-                    <Text style={[styles.statusText, { color: isDriverOnline ? theme.primaryGreen : theme.textSecondary }]}>
-                        {isDriverOnline ? 'ONLINE' : 'OFFLINE'}
+                <View style={[styles.statusIndicator, { backgroundColor: isOnline ? theme.tierCardActiveBg : theme.inputBg }]}>
+                    <View style={[styles.statusDot, { backgroundColor: isOnline ? theme.primaryGreen : '#94A3B8' }]} />
+                    <Text style={[styles.statusText, { color: isOnline ? theme.primaryGreen : theme.textSecondary }]}>
+                        {isOnline ? 'ONLINE' : 'OFFLINE'}
                     </Text>
                 </View>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                {/* Big Online/Offline Toggle Button */}
+
+                {/* Driver Profile Card */}
+                {driverProfile && (
+                    <View style={[styles.profileCard, { backgroundColor: theme.surface }]}>
+                        <Ionicons name="person-circle" size={40} color={theme.primaryGreen} />
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                            <Text style={[styles.profileName, { color: theme.textPrimary }]}>
+                                {driverProfile.name}
+                            </Text>
+                            <Text style={[styles.profileSub, { color: theme.textSecondary }]}>
+                                {driverProfile.vehicleModel} • {driverProfile.vehicleNumber}
+                            </Text>
+                            <Text style={[styles.profileSub, { color: theme.textSecondary }]}>
+                                ⭐ {driverProfile.rating?.toFixed(1)} • {driverProfile.totalTrips} trips
+                            </Text>
+                        </View>
+                    </View>
+                )}
+
+                {/* Online / Offline Toggle */}
                 <TouchableOpacity
                     style={[
                         styles.onlineToggleBtn,
                         {
-                            backgroundColor: isDriverOnline ? theme.surface : theme.primaryGreen,
-                            borderColor: isDriverOnline ? theme.primaryGreen : 'transparent',
+                            backgroundColor: isOnline ? theme.surface : theme.primaryGreen,
+                            borderColor: isOnline ? theme.primaryGreen : 'transparent',
                         },
                     ]}
-                    onPress={toggleDriverOnline}
+                    onPress={handleToggleOnline}
                     activeOpacity={0.85}
                 >
                     <Ionicons
-                        name={isDriverOnline ? 'power-outline' : 'power'}
+                        name={isOnline ? 'power-outline' : 'power'}
                         size={38}
-                        color={isDriverOnline ? theme.primaryGreen : '#000000'}
+                        color={isOnline ? theme.primaryGreen : '#000000'}
                     />
-                    <Text
-                        style={[
-                            styles.onlineBtnText,
-                            { color: isDriverOnline ? theme.primaryGreen : '#000000' },
-                        ]}
-                    >
-                        {isDriverOnline ? 'YOU ARE ONLINE • READY FOR DISPATCH' : 'GO ONLINE'}
+                    <Text style={[styles.onlineBtnText, { color: isOnline ? theme.primaryGreen : '#000000' }]}>
+                        {isOnline ? 'YOU ARE ONLINE • READY FOR DISPATCH' : 'GO ONLINE'}
                     </Text>
-                    <Text
-                        style={[
-                            styles.onlineBtnSub,
-                            { color: isDriverOnline ? theme.textSecondary : 'rgba(0,0,0,0.7)' },
-                        ]}
-                    >
-                        {isDriverOnline ? 'Live dispatch connected • Listening for customer orders' : 'Tap to start accepting ride & parcel requests'}
+                    <Text style={[styles.onlineBtnSub, { color: isOnline ? theme.textSecondary : 'rgba(0,0,0,0.7)' }]}>
+                        {wsConnected
+                            ? '🟢 Live dispatch connected'
+                            : '🔴 Connecting to dispatch server...'}
                     </Text>
                 </TouchableOpacity>
 
-                {/* Earnings & Stats Summary Grid */}
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Today's Performance</Text>
-                <View style={styles.statsGrid}>
+                {/* Earnings Stats */}
+                <View style={styles.statsRow}>
                     <View style={[styles.statCard, { backgroundColor: theme.surface }]}>
-                        <Ionicons name="cash-outline" size={22} color={theme.primaryGreen} />
-                        <Text style={[styles.statValue, { color: theme.textPrimary }]}>${driverEarningsToday.toFixed(2)}</Text>
-                        <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Earnings Today</Text>
+                        <Text style={[styles.statValue, { color: theme.primaryGreen }]}>₹{earningsToday}</Text>
+                        <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Earned Today</Text>
                     </View>
-
                     <View style={[styles.statCard, { backgroundColor: theme.surface }]}>
-                        <Ionicons name="car-sport-outline" size={22} color="#3B82F6" />
-                        <Text style={[styles.statValue, { color: theme.textPrimary }]}>{driverTripsToday}</Text>
-                        <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Trips Completed</Text>
-                    </View>
-
-                    <View style={[styles.statCard, { backgroundColor: theme.surface }]}>
-                        <Ionicons name="checkmark-done-circle-outline" size={22} color="#F59E0B" />
-                        <Text style={[styles.statValue, { color: theme.textPrimary }]}>{driverAcceptanceRate}%</Text>
-                        <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Acceptance Rate</Text>
-                    </View>
-
-                    <View style={[styles.statCard, { backgroundColor: theme.surface }]}>
-                        <Ionicons name="time-outline" size={22} color="#8B5CF6" />
-                        <Text style={[styles.statValue, { color: theme.textPrimary }]}>6.5h</Text>
-                        <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Online Hours</Text>
+                        <Text style={[styles.statValue, { color: theme.primaryGreen }]}>{tripsToday}</Text>
+                        <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Trips Today</Text>
                     </View>
                 </View>
 
-                {/* Demand Map & Live Simulation Test */}
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary, marginTop: 24 }]}>Live Dispatch & Test Offers</Text>
-                <View style={[styles.surgeMap, { backgroundColor: theme.surface }]}>
-                    <View style={styles.surgeOverlay}>
-                        <View style={[styles.surgeChip, { backgroundColor: '#EF4444' }]}>
-                            <Text style={styles.surgeChipText}>🔥 1.8x Surge • Connaught Place</Text>
-                        </View>
-                        <View style={[styles.surgeChip, { backgroundColor: '#F59E0B', marginTop: 8 }]}>
-                            <Text style={styles.surgeChipText}>⚡ 1.4x Surge • Cyber City</Text>
-                        </View>
-                    </View>
+                {/* Register / Edit Profile */}
+                <TouchableOpacity
+                    style={[styles.editProfileBtn, { backgroundColor: theme.surface }]}
+                    onPress={() => setShowRegModal(true)}
+                >
+                    <Ionicons name="create-outline" size={18} color={theme.primaryGreen} />
+                    <Text style={[styles.editProfileText, { color: theme.textPrimary }]}>
+                        {driverProfile ? 'Edit Profile' : 'Register as Driver'}
+                    </Text>
+                </TouchableOpacity>
 
-                    {/* Instant Test Buttons */}
-                    <View style={{ flexDirection: 'row', gap: 6, marginTop: 12 }}>
-                        <TouchableOpacity
-                            style={[styles.simOfferBtn, { flex: 1, backgroundColor: theme.primaryGreen }]}
-                            onPress={() => triggerTestOffer('RIDE')}
-                            activeOpacity={0.8}
-                        >
-                            <Text style={styles.simOfferText}>🚖 Ride (₹361)</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.simOfferBtn, { flex: 1, backgroundColor: '#F59E0B' }]}
-                            onPress={() => triggerTestOffer('FOOD')}
-                            activeOpacity={0.8}
-                        >
-                            <Text style={[styles.simOfferText, { color: '#FFF' }]}>🍛 Food (₹249)</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.simOfferBtn, { flex: 1, backgroundColor: '#3B82F6' }]}
-                            onPress={() => triggerTestOffer('PKG')}
-                            activeOpacity={0.8}
-                        >
-                            <Text style={[styles.simOfferText, { color: '#FFF' }]}>📦 Parcel (₹140)</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                {/* Driver Navigation shortcuts */}
-                <View style={styles.quickNavRow}>
-                    <TouchableOpacity
-                        style={[styles.quickNavBtn, { backgroundColor: theme.surface }]}
-                        onPress={() => onNavigate && onNavigate('DriverEarnings')}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons name="stats-chart-outline" size={20} color={theme.primaryGreen} />
-                        <Text style={[styles.quickNavText, { color: theme.textPrimary }]}>Payouts & Stats</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.quickNavBtn, { backgroundColor: theme.surface }]}
-                        onPress={() => onNavigate && onNavigate('DriverNav')}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons name="navigate-outline" size={20} color={theme.primaryGreen} />
-                        <Text style={[styles.quickNavText, { color: theme.textPrimary }]}>Active Navigation</Text>
-                    </TouchableOpacity>
-                </View>
             </ScrollView>
 
-            {/* Incoming Offer Modal */}
-            {showIncomingOffer && (
+            {/* ── Incoming Offer Modal ── */}
+            {showOffer && currentOffer && (
                 <RideOfferModal
                     offer={currentOffer}
-                    onAccept={(accepted) => {
-                        setShowIncomingOffer(false);
-                        if (onNavigate) onNavigate('DriverNav');
-                    }}
-                    onDecline={() => setShowIncomingOffer(false)}
+                    onAccept={handleAcceptOffer}
+                    onDecline={handleDeclineOffer}
                 />
             )}
+
+            {/* ── Registration Modal ── */}
+            <Modal visible={showRegModal} animationType="slide" transparent>
+                <View style={styles.regOverlay}>
+                    <View style={[styles.regCard, { backgroundColor: theme.surface }]}>
+                        <Text style={[styles.regTitle, { color: theme.textPrimary }]}>
+                            {driverProfile ? 'Edit Profile' : 'Register as Dropp Partner'}
+                        </Text>
+
+                        <TextInput
+                            style={[styles.input, { color: theme.textPrimary, borderColor: theme.inputSeparator }]}
+                            placeholder="Full Name"
+                            placeholderTextColor={theme.textSecondary}
+                            value={regName}
+                            onChangeText={setRegName}
+                        />
+                        <TextInput
+                            style={[styles.input, { color: theme.textPrimary, borderColor: theme.inputSeparator }]}
+                            placeholder="Phone Number"
+                            placeholderTextColor={theme.textSecondary}
+                            value={regPhone}
+                            onChangeText={setRegPhone}
+                            keyboardType="phone-pad"
+                        />
+                        <TextInput
+                            style={[styles.input, { color: theme.textPrimary, borderColor: theme.inputSeparator }]}
+                            placeholder="Vehicle Model (e.g. Honda Activa)"
+                            placeholderTextColor={theme.textSecondary}
+                            value={regVehicleModel}
+                            onChangeText={setRegVehicleModel}
+                        />
+                        <TextInput
+                            style={[styles.input, { color: theme.textPrimary, borderColor: theme.inputSeparator }]}
+                            placeholder="Vehicle Number (e.g. DL 4S AB 1234)"
+                            placeholderTextColor={theme.textSecondary}
+                            value={regVehicleNumber}
+                            onChangeText={(t) => setRegVehicleNumber(t.toUpperCase())}
+                            autoCapitalize="characters"
+                        />
+
+                        <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Vehicle Type</Text>
+                        <View style={styles.vehicleTypeRow}>
+                            {VEHICLE_TYPES.map((vt) => (
+                                <TouchableOpacity
+                                    key={vt.value}
+                                    style={[
+                                        styles.vehicleTypeBtn,
+                                        {
+                                            backgroundColor: regVehicleType === vt.value
+                                                ? theme.primaryGreen
+                                                : theme.inputBg,
+                                        },
+                                    ]}
+                                    onPress={() => setRegVehicleType(vt.value)}
+                                >
+                                    <Text style={{ color: regVehicleType === vt.value ? '#000' : theme.textPrimary, fontSize: 12, fontWeight: '700' }}>
+                                        {vt.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        <TouchableOpacity
+                            style={[styles.regSubmitBtn, { backgroundColor: theme.primaryGreen }]}
+                            onPress={handleRegister}
+                            disabled={registering}
+                        >
+                            {registering
+                                ? <ActivityIndicator color="#000" />
+                                : <Text style={styles.regSubmitText}>Save & Continue</Text>
+                            }
+                        </TouchableOpacity>
+
+                        {driverProfile && (
+                            <TouchableOpacity onPress={() => setShowRegModal(false)} style={{ marginTop: 12, alignItems: 'center' }}>
+                                <Text style={{ color: theme.textSecondary }}>Cancel</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -309,70 +450,35 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 20,
+        paddingHorizontal: 16,
         paddingVertical: 14,
         borderBottomWidth: 1,
     },
     titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    headerTitle: { fontWeight: '900', fontSize: 18 },
-    statusIndicator: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 16,
-        gap: 6,
-    },
+    headerTitle: { fontSize: 18, fontWeight: '800' },
+    statusIndicator: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
     statusDot: { width: 8, height: 8, borderRadius: 4 },
-    statusText: { fontWeight: '800', fontSize: 12 },
-    scrollContent: { padding: 20, paddingBottom: 40 },
-    onlineToggleBtn: {
-        borderRadius: 24,
-        padding: 24,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 2,
-        marginBottom: 24,
-        elevation: 6,
-    },
-    onlineBtnText: { fontSize: 16, fontWeight: '900', marginTop: 10, letterSpacing: 0.5 },
-    onlineBtnSub: { fontSize: 12, textAlign: 'center', marginTop: 4 },
-    sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 14 },
-    statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-    statCard: {
-        width: '48%',
-        borderRadius: 20,
-        padding: 16,
-    },
-    statValue: { fontSize: 22, fontWeight: '900', marginVertical: 6 },
-    statLabel: { fontSize: 12, fontWeight: '500' },
-    surgeMap: {
-        borderRadius: 24,
-        padding: 16,
-        height: 180,
-        justifyContent: 'space-between',
-    },
-    surgeOverlay: { alignSelf: 'flex-start' },
-    surgeChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-    surgeChipText: { color: '#FFF', fontWeight: '800', fontSize: 12 },
-    simOfferBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: 46,
-        borderRadius: 14,
-        gap: 8,
-    },
-    simOfferText: { color: '#000', fontWeight: '800', fontSize: 13 },
-    quickNavRow: { flexDirection: 'row', gap: 12, marginTop: 20 },
-    quickNavBtn: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: 48,
-        borderRadius: 16,
-        gap: 8,
-    },
-    quickNavText: { fontWeight: '700', fontSize: 13 },
+    statusText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+    scrollContent: { padding: 16, gap: 14 },
+    profileCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16 },
+    profileName: { fontSize: 16, fontWeight: '800' },
+    profileSub: { fontSize: 12, marginTop: 2 },
+    onlineToggleBtn: { borderRadius: 24, padding: 24, alignItems: 'center', gap: 10, borderWidth: 1.5 },
+    onlineBtnText: { fontSize: 15, fontWeight: '900', letterSpacing: 0.5 },
+    onlineBtnSub: { fontSize: 12, fontWeight: '500', textAlign: 'center' },
+    statsRow: { flexDirection: 'row', gap: 12 },
+    statCard: { flex: 1, padding: 16, borderRadius: 16, alignItems: 'center', gap: 4 },
+    statValue: { fontSize: 28, fontWeight: '900' },
+    statLabel: { fontSize: 11, fontWeight: '600' },
+    editProfileBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, borderRadius: 16 },
+    editProfileText: { fontSize: 14, fontWeight: '700' },
+    regOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end', padding: 16 },
+    regCard: { borderRadius: 24, padding: 24, gap: 12 },
+    regTitle: { fontSize: 18, fontWeight: '900', marginBottom: 4 },
+    input: { borderWidth: 1, borderRadius: 12, padding: 14, fontSize: 14, fontWeight: '600' },
+    inputLabel: { fontSize: 12, fontWeight: '700' },
+    vehicleTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    vehicleTypeBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
+    regSubmitBtn: { padding: 16, borderRadius: 16, alignItems: 'center', marginTop: 4 },
+    regSubmitText: { fontSize: 15, fontWeight: '900', color: '#000' },
 });

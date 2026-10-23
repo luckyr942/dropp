@@ -4,6 +4,8 @@ const path = require('path');
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
 const foodRoot = path.resolve(projectRoot, '../food');
+const driverRoot = path.resolve(projectRoot, '../driver');
+const frontendRoot = path.resolve(projectRoot, '..');
 
 const config = getDefaultConfig(projectRoot);
 
@@ -12,9 +14,13 @@ config.watchFolders = [monorepoRoot];
 
 // 2. Resolve node_modules in priority order:
 //    a) rider's own node_modules (highest priority — correct expo/react-native versions)
-//    b) food's node_modules (fallback — for @expo/vector-icons and its deps)
+//    b) frontend's node_modules (shared packages like expo-splash-screen, etc.)
+//    c) driver's node_modules (AsyncStorage, etc.)
+//    d) food's node_modules (fallback — for @expo/vector-icons and its deps)
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
+  path.resolve(frontendRoot, 'node_modules'),
+  path.resolve(driverRoot, 'node_modules'),
   path.resolve(foodRoot, 'node_modules'),
 ];
 
