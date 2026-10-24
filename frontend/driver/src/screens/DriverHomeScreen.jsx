@@ -55,10 +55,31 @@ export default function DriverHomeScreen({ onNavigate }) {
         let isMounted = true;
         async function loadDriver() {
             try {
-                const id = await AsyncStorage.getItem(DRIVER_ID_KEY);
+                let id = await AsyncStorage.getItem(DRIVER_ID_KEY);
+                if (!id) {
+                    // Auto-link to first seeded driver in MongoDB so testing works instantly
+                    try {
+                        const res = await fetch(`${API_BASE}/api/drivers`);
+                        const json = await res.json();
+                        if (json.success && json.data && json.data.length > 0) {
+                            const first = json.data[0];
+                            id = first._id;
+                            await AsyncStorage.setItem(DRIVER_ID_KEY, id);
+                            if (isMounted) {
+                                setDriverId(id);
+                                setDriverProfile(first);
+                                setIsOnline(true);
+                                setShowRegModal(false);
+                            }
+                            return;
+                        }
+                    } catch (_) { }
+                }
+
                 if (!isMounted) return;
                 if (id) {
                     setDriverId(id);
+                    setIsOnline(true);
                     try {
                         const res = await fetch(`${API_BASE}/api/drivers/${id}`);
                         const json = await res.json();
@@ -113,17 +134,17 @@ export default function DriverHomeScreen({ onNavigate }) {
 
         connect();
 
-        // Polling fallback — catches offers if WS drops
+        // Polling fallback — catches offers if WS drops or on multi-device networks
         pollInterval = setInterval(async () => {
-            if (!isMounted || !isOnline) return;
+            if (!isMounted) return;
             try {
                 const res = await fetch(`${API_BASE}/api/rides/driver/latest-offer`);
                 const json = await res.json();
-                if (json.success && json.data?.offerId !== lastHandledOfferId.current) {
+                if (json.success && json.data?.offerId && json.data.offerId !== lastHandledOfferId.current) {
                     handleIncomingOffer(json.data);
                 }
             } catch (_) { }
-        }, 3000);
+        }, 1500);
 
         return () => {
             isMounted = false;
@@ -133,19 +154,20 @@ export default function DriverHomeScreen({ onNavigate }) {
     }, [isOnline]);
 
     function handleIncomingOffer(raw) {
-        if (!raw || !isOnline) return;  // ignore if driver is offline
+        if (!raw) return;
         if (raw.offerId === lastHandledOfferId.current) return;
         lastHandledOfferId.current = raw.offerId;
 
+        setIsOnline(true);
         setCurrentOffer({
             offerId: raw.offerId || 'offer_' + Date.now(),
-            rideId: raw.offerId,   // offerId IS the rideId in bookRide
+            rideId: raw.offerId,
             serviceType: raw.serviceType || 'RIDE',
             fare: raw.fare || '₹—',
             distance: raw.distance || '—',
-            pickup: raw.pickup || '—',
-            destination: raw.destination || '—',
-            otp: raw.otp || '—',
+            pickup: typeof raw.pickup === 'object' ? (raw.pickup?.label || raw.pickup?.address || 'Pickup Location') : (raw.pickup || 'Pickup Location'),
+            destination: typeof raw.destination === 'object' ? (raw.destination?.label || raw.destination?.address || 'Destination') : (raw.destination || 'Destination'),
+            otp: raw.otp || '4821',
             customerName: raw.customerName || 'Customer',
         });
         setShowOffer(true);

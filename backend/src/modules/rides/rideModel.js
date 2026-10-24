@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// ── 1. Location Sub-Schema 
+// Location sub-schema
 const locationSchema = new mongoose.Schema(
   {
     address: {
@@ -19,7 +19,7 @@ const locationSchema = new mongoose.Schema(
   { _id: false }
 );
 
-// ── 2. Assigned Driver Sub-Schema 
+// Driver sub-schema
 const driverInfoSchema = new mongoose.Schema(
   {
     driverId: {
@@ -50,7 +50,7 @@ const driverInfoSchema = new mongoose.Schema(
   { _id: false }
 );
 
-// ── 3. Ride Model 
+// Ride model
 const rideSchema = new mongoose.Schema(
   {
     customerId: {
@@ -143,7 +143,7 @@ const rideSchema = new mongoose.Schema(
 
 rideSchema.index({ customerId: 1, status: 1 });
 
-// ── 4. Temporary Fare Quote Model
+// Temporary fare quote model
 const rideQuoteSchema = new mongoose.Schema(
   {
     customerId: {
@@ -222,7 +222,6 @@ const rideQuoteSchema = new mongoose.Schema(
   }
 );
 
-// ── 5. Export Models ────────────────────────────────────────────
 export const Ride = mongoose.model('Ride', rideSchema);
 export const RideQuote = mongoose.model('RideQuote', rideQuoteSchema);
 

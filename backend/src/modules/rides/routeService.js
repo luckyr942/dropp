@@ -6,7 +6,7 @@ const MAPBOX_BASE_URL = 'https://api.mapbox.com/directions/v5/mapbox/driving';
 
 
 export const KNOWN_LANDMARKS = {
-  // ─── 1. DELHI-NCR 
+  // Delhi-NCR
   'cyber hub': { lat: 28.4950, lng: 77.0878, address: 'DLF Cyber Hub, Gurugram' },
   'cyber city': { lat: 28.4960, lng: 77.0900, address: 'DLF Cyber City, Gurugram' },
   'sector 28': { lat: 28.4682, lng: 77.0847, address: 'Sector 28, Gurugram' },
@@ -18,7 +18,8 @@ export const KNOWN_LANDMARKS = {
   'saket': { lat: 28.5244, lng: 77.2185, address: 'Select Citywalk, Saket, New Delhi' },
   'igi airport': { lat: 28.5562, lng: 77.1000, address: 'Indira Gandhi International Airport, T3, New Delhi' },
   'noida sector 18': { lat: 28.5708, lng: 77.3260, address: 'Sector 18 Market, Atta Market, Noida' },
-  // ─── 2. BENGALURU
+
+  // Bengaluru
   'indiranagar': { lat: 12.9784, lng: 77.6408, address: '100 Feet Road, Indiranagar, Bengaluru' },
   'koramangala': { lat: 12.9352, lng: 77.6245, address: 'Sony World Junction, Koramangala, Bengaluru' },
   'hsr layout': { lat: 12.9121, lng: 77.6446, address: 'HSR Layout Sector 1, Bengaluru' },
@@ -29,7 +30,8 @@ export const KNOWN_LANDMARKS = {
   'marathahalli': { lat: 12.9591, lng: 77.6974, address: 'Marathahalli Bridge, Outer Ring Road, Bengaluru' },
   'bangalore airport': { lat: 13.1986, lng: 77.7066, address: 'Kempegowda International Airport (BLR), Devanahalli' },
   'kempegowda airport': { lat: 13.1986, lng: 77.7066, address: 'Kempegowda International Airport (BLR), Bengaluru' },
-  // ─── 3. MUMBAI 
+
+  // Mumbai
   'bkc': { lat: 19.0657, lng: 77.8687, address: 'Bandra Kurla Complex (BKC), Mumbai' },
   'bandra': { lat: 19.0596, lng: 72.8295, address: 'Bandra West, Hill Road, Mumbai' },
   'bandra terminus': { lat: 19.0620, lng: 72.8410, address: 'Bandra Terminus, Mumbai' },
@@ -41,7 +43,8 @@ export const KNOWN_LANDMARKS = {
   'powai': { lat: 19.1176, lng: 72.9060, address: 'Hiranandani Gardens, Powai, Mumbai' },
   'dadar': { lat: 19.0178, lng: 72.8478, address: 'Dadar TT Circle, Mumbai' },
   'mumbai airport': { lat: 19.0896, lng: 72.8656, address: 'Chhatrapati Shivaji Maharaj International Airport T2, Mumbai' },
-  // ─── 4. PUNJAB & NORTH INDIA
+
+  // Punjab & North India
   'lpu': { lat: 31.2536, lng: 75.7037, address: 'Lovely Professional University (LPU), Phagwara' },
   'lovely professional university': { lat: 31.2536, lng: 75.7037, address: 'LPU, Phagwara, Punjab' },
   'amritsar': { lat: 31.6340, lng: 74.8723, address: 'Amritsar, Punjab' },

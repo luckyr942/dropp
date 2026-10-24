@@ -160,7 +160,7 @@ async function start() {
   await connectRabbitMQ();
   setupWebSockets(server);
 
-  server.listen(config.port, () => {
+  server.listen(config.port, '0.0.0.0', () => {
     console.log(`[Dropp] Production-ready backend listening on port ${config.port}`);
     console.log(`[Dropp] Health → http://localhost:${config.port}/health`);
   });
@@ -174,17 +174,15 @@ async function start() {
 async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`[Dropp] ${signal} received: closing HTTP and WebSocket connections...`);
+  console.log(`[Dropp] ${signal} received: closing connections...`);
+
+  setTimeout(() => process.exit(0), 400).unref();
 
   if (typeof server.closeAllConnections === 'function') {
     server.closeAllConnections();
   }
 
-  server.close((err) => {
-    if (err) {
-      console.error('[Dropp] Error while closing HTTP server:', err);
-    }
-    console.log('[Dropp] Cleanup complete. Process exiting gracefully.');
+  server.close(() => {
     process.exit(0);
   });
 }

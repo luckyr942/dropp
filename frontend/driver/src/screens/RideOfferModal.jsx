@@ -13,11 +13,17 @@ export default function RideOfferModal({ offer, onAccept, onDecline }) {
     const { theme } = useTheme();
     const [timeLeft, setTimeLeft] = useState(30);
 
+    const formatLocation = (loc, fallback) => {
+        if (!loc) return fallback;
+        if (typeof loc === 'string') return loc;
+        return loc.label || loc.address || loc.name || fallback;
+    };
+
     const serviceType = offer?.serviceType || 'RIDE';
     const fare = offer?.fare || '₹361.00';
     const distance = offer?.distance || '4.2 km • 12 mins';
-    const pickup = offer?.pickup || 'Cyber Hub, Building 10, Gurugram';
-    const destination = offer?.destination || 'Sector 28, Gurugram';
+    const pickup = formatLocation(offer?.pickup, 'Cyber Hub, Building 10, Gurugram');
+    const destination = formatLocation(offer?.destination, 'Sector 28, Gurugram');
     const otp = offer?.otp || '4821';
     const customerName = offer?.customerName || 'Rahul Verma';
 

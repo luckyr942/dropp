@@ -33,6 +33,7 @@ export default function AuraOverlay() {
     closeAura,
     isThinking,
     isSpeaking,
+    voiceCredits,
     sendVoiceTurn,
     messages,
     restaurants,
@@ -158,13 +159,13 @@ export default function AuraOverlay() {
     const text = inputText.trim();
     if (!text) return;
     setInputText('');
-    sendVoiceTurn(text);
+    sendVoiceTurn(text, 'text');
   };
 
   const handlePromptPress = (prompt) => {
     if (!prompt) return;
     setIsListening(false);
-    sendVoiceTurn(prompt);
+    sendVoiceTurn(prompt, 'text');
   };
 
   const recordingRef = useRef(null);
@@ -207,7 +208,7 @@ export default function AuraOverlay() {
         const transcript = json?.transcript?.trim();
 
         if (transcript) {
-          sendVoiceTurn(transcript);
+          sendVoiceTurn(transcript, 'voice');
         }
       } catch (err) {
         console.warn('[Aura] Mic transcription error:', err.message);
@@ -264,6 +265,12 @@ export default function AuraOverlay() {
           <View style={styles.titleRow}>
             <Text style={styles.brandTitleText}>Dropp </Text>
             <Text style={styles.brandAuraText}>Aura</Text>
+            {typeof voiceCredits === 'number' && (
+              <View style={styles.creditPill}>
+                <Ionicons name="sparkles" size={11} color="#00A859" />
+                <Text style={styles.creditPillText}>{voiceCredits} Credits</Text>
+              </View>
+            )}
           </View>
           <TouchableOpacity style={styles.circleBtn} activeOpacity={0.8} onPress={closeAura}>
             <Ionicons name="close" size={20} color="#0F172A" />
@@ -452,7 +459,7 @@ export default function AuraOverlay() {
                     key={r.id || r._id || idx}
                     style={styles.restCardRow}
                     activeOpacity={0.8}
-                    onPress={() => sendVoiceTurn(`${r.name} se biryani aur coffee order kar do`)}
+                    onPress={() => sendVoiceTurn(`${r.name} se biryani aur coffee order kar do`, 'text')}
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={styles.restNameText}>{r.name}</Text>
@@ -594,6 +601,23 @@ const styles = StyleSheet.create({
   brandAuraText: {
     fontFamily: 'PlusJakartaSans_800ExtraBold',
     fontSize: 18,
+    color: '#00A859',
+  },
+  creditPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  creditPillText: {
+    fontSize: 11,
+    fontWeight: '700',
     color: '#00A859',
   },
   keyboardContainer: {

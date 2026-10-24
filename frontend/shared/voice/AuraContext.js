@@ -71,6 +71,7 @@ export function AuraProvider({ children, onNavigate }) {
   const [bookedRide,   setBookedRide]   = useState(null);
   const [draftOrder,  setDraftOrder]  = useState(null);
   const [placedOrder, setPlacedOrder] = useState(null);
+  const [voiceCredits, setVoiceCredits] = useState(70);
 
   const sessionIdRef    = useRef(makeSessionId());
   const busyRef         = useRef(false);
@@ -210,7 +211,7 @@ export function AuraProvider({ children, onNavigate }) {
     setIsOpen(false);
   }, [stopAudio]);
 
-  const sendVoiceTurn = useCallback(async (userText) => {
+  const sendVoiceTurn = useCallback(async (userText, mode = 'voice') => {
     const text = userText?.trim();
     if (!text || busyRef.current) return;
 
@@ -231,6 +232,7 @@ export function AuraProvider({ children, onNavigate }) {
         body: JSON.stringify({
           sessionId: sessionIdRef.current,
           text,
+          mode,
         }),
         signal: controller.signal,
       });
@@ -242,13 +244,20 @@ export function AuraProvider({ children, onNavigate }) {
           ? 'Thoda ruk kar dobara bolein.'
           : 'Samajh nahi aaya, dobara bolein.';
         addMessage('aura', fallbackMsg);
-        playAudio(fallbackMsg, null);
+        if (mode === 'voice') {
+          playAudio(fallbackMsg, null);
+        }
         return;
       }
 
-      const { reply, screenAction, audioUrl } = json.data;
+      const { reply, screenAction, audioUrl, creditsLeft } = json.data;
+      if (typeof creditsLeft === 'number') {
+        setVoiceCredits(creditsLeft);
+      }
       addMessage('aura', reply);
-      playAudio(reply, audioUrl);
+      if (mode === 'voice') {
+        playAudio(reply, audioUrl);
+      }
 
       switch (screenAction?.type) {
         case 'SHOW_RESTAURANTS':
@@ -363,6 +372,7 @@ export function AuraProvider({ children, onNavigate }) {
       value={{
         isOpen,    openAura,  closeAura,
         isThinking, isSpeaking,
+        voiceCredits, setVoiceCredits,
         messages,  restaurants, draftOrder, placedOrder,
         rideEstimate, bookedRide, confirmRide, cancelRideAction, trackRide,
         sendVoiceTurn, confirmOrder, cancelDraft, trackOrder,

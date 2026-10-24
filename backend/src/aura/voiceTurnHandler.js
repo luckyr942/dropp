@@ -10,6 +10,8 @@ import { bookRide } from '../modules/rides/rideService.js';
 import { AuraSession } from './sessionModel.js';
 import { config } from '../config/config.js';
 import { textToSpeech, storeAudio } from './ttsService.js';
+import { runGuardRails } from './guardRails.js';
+
 
 const MAX_TEXT_LENGTH = 300;
 const MAX_STORED_TURNS = 40;  // How many past messages we keep in MongoDB
@@ -63,7 +65,7 @@ export async function handleVoiceTurn(req, res, next) {
   const startTime = Date.now();
 
   try {
-    const { sessionId, text } = req.body ?? {};
+    const { sessionId, text, mode = 'voice' } = req.body ?? {};
 
     if (typeof sessionId !== 'string' || !sessionId.trim() || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ success: false, error: 'sessionId and text are required' });
@@ -78,6 +80,25 @@ export async function handleVoiceTurn(req, res, next) {
 
     const cleanText = text.trim();
     const customerId = req.user?.id ?? config.defaultCustomerId;
+    
+    // ── 0. Guardrails Gate (Safety + Credit Protection) ──
+    const guard = await runGuardRails({ text: cleanText, customerId, mode });
+    if (!guard.allowed) {
+      // Only generate voice audio if user is in voice mode; otherwise 0 audio calls (0 credits)
+      const audioUrl = mode === 'voice' ? await getAudioUrl(guard.reply) : null;
+      await saveConversationHistory(sessionId, cleanText, guard.reply);
+      return res.json({
+        success: true,
+        data: {
+          reply: guard.reply,
+          toolCallsMade: [],
+          screenAction: null,
+          audioUrl,
+          creditsLeft: guard.creditsLeft ?? null,
+        },
+      });
+    }
+
 
     // Ensure session exists
     await startSession(sessionId, customerId);
@@ -211,7 +232,7 @@ export async function handleVoiceTurn(req, res, next) {
     }
 
     // ── 5. Generate Natural Audio ──
-    const audioUrl = await getAudioUrl(reply);
+    const audioUrl = mode === 'voice' ? await getAudioUrl(reply) : null;
 
     // Save History and Return
     await saveConversationHistory(sessionId, cleanText, reply);
