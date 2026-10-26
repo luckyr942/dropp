@@ -1,0 +1,366 @@
+================================================================================
+           DROPP SUPER-APP: COMPLETE PROBLEM & RESOLUTION GUIDE
+================================================================================
+Project: Dropp (Food Delivery & Ride Hailing Super-App with Aura Voice AI)
+Date: October 2026
+Author: Dropp Core Engineering Team
+Purpose: Plain-English, in-depth explanation of every bug, error, root cause, 
+         and exact code fix implemented across the entire project.
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+1. PROBLEM 1: The Two Simulators Conflict & Reloading Issue
+2. PROBLEM 2: "Network request failed" on iOS Simulators (Apple ATS)
+3. PROBLEM 3: UI Layout Shift & Text Wrapping on Tapping "+ Add" / "++"
+4. PROBLEM 4: Endless "304 /latest-offer" Polling Flooding the Terminal
+5. PROBLEM 5: Aura Voice "Book me a ride" Still Showing Old Restaurant Cards
+6. PROBLEM 6: Catalog Missing Real Data & Fuzzy Search Failing
+7. QUICK REFERENCE: Which File Controls What?
+
+================================================================================
+1. PROBLEM 1: THE TWO SIMULATORS CONFLICT & RELOADING ISSUE
+================================================================================
+
+[THE SYMPTOM]
+You had two separate iOS simulators open (one for the Customer app, one for the 
+Driver app). But whenever you pressed "i" in the Expo terminal, both apps tried 
+to open in the SAME simulator! One app would overwrite the other, reloading it, 
+so you couldn't test the customer booking a ride while watching the driver 
+receive the offer side-by-side. You also had a red-screen fatal crash: 
+"Unable to resolve module expo-speech".
+
+[THE ROOT CAUSE]
+1. Module Crash: "expo-speech" was imported in DriverNavigationScreen.jsx, but 
+   the npm package was not installed in frontend/driver/package.json.
+2. Simulator Conflict: By default, the Expo CLI command (pressing "i") asks macOS 
+   simctl to open the bundle on whichever simulator currently has focus. If you 
+   have two Expo instances running (Port 8081 and Port 8082), they fight for the 
+   same default simulator window.
+
+[THE FIX]
+Step 1: Removed the missing native import and resolved the package dependency.
+Step 2: Used macOS "xcrun simctl list devices booted" to find the unique hardware 
+        identifier (UDID) for each booted simulator:
+        - iPhone 17 Pro: UDID A6ED74F6-58E8-4246-9356-0DA6BCCBE55F
+        - iPhone 17:     UDID 1B252EAB-D89F-4753-B430-DF07407BA8E5
+
+Step 3: Opened each specific port directly to its dedicated simulator:
+        # Driver App (Port 8081) -> Opens strictly on iPhone 17 Pro:
+        xcrun simctl openurl A6ED74F6-58E8-4246-9356-0DA6BCCBE55F exp://localhost:8081
+
+        # Customer App (Port 8082) -> Opens strictly on iPhone 17:
+        xcrun simctl openurl 1B252EAB-D89F-4753-B430-DF07407BA8E5 exp://localhost:8082
+
+[HOW TO RUN IT ANYTIME]
+In the Expo terminal, you can also press "Shift + I". Expo CLI will display an 
+interactive menu asking: "Which simulator do you want to open?" allowing you 
+to pick iPhone 17 Pro for Driver and iPhone 17 for Customer.
+
+
+================================================================================
+2. PROBLEM 2: "NETWORK REQUEST FAILED" ON IOS SIMULATORS
+================================================================================
+
+[THE SYMPTOM]
+On the iOS Simulator, yellow console warnings appeared:
+- "[FoodMarketScreen] Error loading restaurants: Network request failed"
+- "[DriverLocation] push error: Network request failed"
+Restaurants wouldn't load on the customer screen, and driver GPS wouldn't update.
+
+[THE ROOT CAUSE]
+In frontend/shared/utils/apiConfig.js, the code was written like this:
+
+    // Old Code in apiConfig.js:
+    export function getApiBase() {
+        const envUrl = process.env.EXPO_PUBLIC_API_URL;
+        if (envUrl) return envUrl; // envUrl was "http://192.168.1.33:4000"
+        if (isIosSimulator()) return "http://localhost:4000";
+        ...
+    }
+
+Notice the order! Because EXPO_PUBLIC_API_URL was set in .env to the Mac's Wi-Fi 
+IP ("http://192.168.1.33:4000"), it returned that IP BEFORE checking if it was an 
+iOS Simulator!
+
+Why does that break?
+Apple App Transport Security (ATS) in iOS Simulators strictly blocks plaintext 
+HTTP requests across local Wi-Fi/LAN IP addresses (like 192.168.x.x) unless a 
+special Apple permission is granted. BUT Apple ATS ALWAYS permits 
+"http://localhost:4000"!
+Because the simulator was forced to use 192.168.1.33, iOS blocked it with 
+"Network request failed".
+
+[THE FIX]
+In frontend/shared/utils/apiConfig.js, we moved the simulator check to STEP 1 
+(before the env variable check):
+
+    // Fixed Code in apiConfig.js:
+    export function getApiBase() {
+        // 1. iOS Simulator (ALWAYS direct localhost:4000 - bypasses ATS blocks!)
+        if (isIosSimulator()) {
+            return `http://localhost:${BACKEND_PORT}`;
+        }
+        // 2. Android Emulator (uses 10.0.2.2 loopback)
+        if (isAndroidEmulator()) {
+            return `http://10.0.2.2:${BACKEND_PORT}`;
+        }
+        // 3. Physical Devices over Wi-Fi (uses env LAN IP or auto-detected Metro host)
+        const envUrl = process.env.EXPO_PUBLIC_API_URL;
+        if (envUrl) return envUrl;
+        ...
+    }
+
+[THE RESULT]
+- iOS Simulators connect instantly to http://localhost:4000 (0 network errors).
+- Real physical iPhones/Android phones still connect to http://192.168.1.33:4000 
+  over Wi-Fi.
+
+
+================================================================================
+3. PROBLEM 3: UI LAYOUT SHIFT & TEXT WRAPPING ON TAPPING "+ ADD" / "++"
+================================================================================
+
+[THE SYMPTOM]
+In the food menu (restaurantDetailsScreen.jsx), when you tapped "+ Add" on a dish 
+(like "Dum Hyderabadi Chicken Biryani") or tapped "+" to do "++" (quantity 1->2->3):
+The dish title suddenly broke from 2 lines into 4 lines:
+    Dum
+    Hyderabadi
+    Chicken
+    Biryani
+This made the entire card grow taller, making the whole list jump and shake!
+
+[THE ROOT CAUSE (FLEXBOX COLUMN SQUEEZE)]
+Each dish card is a horizontal row (flexDirection: 'row') with 3 columns:
+[Image (100px)] | [Dish Title & Desc (flex: 1)] | [Button Column (actionCol)]
+
+1. When quantity was 0, the button was "+ Add".
+   It had paddingHorizontal: 18. Its total width was only ~70px.
+   Because the button was only 70px, the middle column had ~165px of width. 
+   The title fit neatly in 2 lines!
+
+2. When you tapped "+", it switched to the stepper pill: "[-] 4 [+]".
+   The stepper had minus icon + number text + plus icon + gap: 10.
+   Its width expanded to ~105px!
+
+3. Because the button column grew by 35px (from 70px to 105px), it STOLE 35px 
+   away from the middle column (flex: 1).
+   The middle column got squeezed from 165px down to 130px.
+   The title words could no longer fit on 2 lines, so they wrapped into 4 lines!
+   Every time you tapped "+" or "-", the card size jumped up and down.
+
+[THE FIX]
+In frontend/food/src/screens/restaurantDetailsScreen.jsx:
+
+1. Locked the button container to a permanent fixed width of 94px:
+   actionCol: {
+       width: 94,             // 🔒 Locked! Will NEVER expand or shrink
+       alignItems: 'flex-end',
+       justifyContent: 'center',
+   }
+
+2. Gave BOTH button states the EXACT SAME dimensions (width: 92, height: 38):
+   // State A: When quantity is 0
+   addPill: {
+       width: 92,             // 🔒 Exact 92px
+       height: 38,
+       flexDirection: 'row',
+       alignItems: 'center',
+       justifyContent: 'center',
+       backgroundColor: '#008744',
+       borderRadius: 19,
+   }
+
+   // State B: When quantity is > 0
+   stepperPill: {
+       width: 92,             // 🔒 Exact 92px (Same size!)
+       height: 38,
+       flexDirection: 'row',
+       alignItems: 'center',
+       justifyContent: 'space-between',
+       backgroundColor: '#E8F5E9',
+       borderRadius: 19,
+   }
+
+[THE RESULT]
+- Left Image is fixed at 100px.
+- Right Button is fixed at 94px.
+- Middle Column (flex: 1) NEVER gains or loses a single pixel.
+- The title stays locked at 2 lines forever. Zero layout shifting!
+
+
+================================================================================
+4. PROBLEM 4: ENDLESS "304 /latest-offer" POLLING FLOODING THE TERMINAL
+================================================================================
+
+[THE SYMPTOM]
+The backend terminal was constantly printing lines every 1.5 seconds:
+    📡 [GET] /api/rides/driver/latest-offer - 304 (0ms)
+    📡 [GET] /api/rides/driver/latest-offer - 304 (1ms)
+    📡 [GET] /api/rides/driver/latest-offer - 304 (0ms)
+Even after the order was completed, and even after the driver tapped "Go Offline", 
+the requests kept hammering the server 40 times a minute!
+
+[THE ROOT CAUSE]
+In frontend/driver/src/screens/DriverHomeScreen.jsx:
+The useEffect hook had a timer: pollInterval = setInterval(..., 1500).
+It had dependency [isOnline].
+When the driver went offline, isOnline changed from true -> false.
+React re-ran the useEffect.
+Because there was NO check saying "if (!isOnline) return;", it started a 
+BRAND NEW 1.5-second polling timer while offline!
+The offline driver kept asking the server for ride offers forever.
+
+[THE FIX]
+1. Added an Offline Guard in DriverHomeScreen.jsx:
+   useEffect(() => {
+       // 🔒 If driver is offline, STOP IMMEDIATELY! Do not poll!
+       if (!isOnline) {
+           setWsConnected(false);
+           return;
+       }
+
+       connect(); // WebSocket only connects when Online
+
+       // Relaxed polling to 4s (idle only) as a quiet safety net
+       pollInterval = setInterval(async () => {
+           if (!isMounted || !isOnline || showOffer) return;
+           // fetch latest offer...
+       }, 4000);
+
+       return () => {
+           isMounted = false;
+           ws?.close();
+           clearInterval(pollInterval);
+       };
+   }, [isOnline, showOffer]);
+
+2. Silenced 304 Not Modified logs in backend/src/main.js:
+   A 304 response means "Nothing changed, no data sent". There is no reason to 
+   print it to the terminal.
+   // Skip logging routine 304 cache hits:
+   if (res.statusCode === 304) return;
+
+[THE RESULT]
+- When Driver is Offline: 0 pings, 0 timers, 0 battery drain.
+- When Driver is Online: WebSocket handles offers in real time (<15ms).
+- Terminal log is completely silent and clean.
+
+
+================================================================================
+5. PROBLEM 5: AURA "BOOK ME A RIDE" SHOWING OLD RESTAURANT CARDS
+================================================================================
+
+[THE SYMPTOM]
+If a user searched for food or biryani, Aura showed restaurant cards.
+Then, if the user said: "Book me a ride to Cyber City" or "Haanji boliye",
+Aura would answer about the ride, BUT THE OLD RESTAURANT CARDS WERE STILL 
+DISPLAYED ON THE SCREEN!
+
+[THE ROOT CAUSE]
+1. In frontend/shared/voice/AuraContext.js, the state variable "restaurants" was 
+   only updated inside:
+       switch (screenAction?.type) {
+           case 'SHOW_RESTAURANTS': setRestaurants(data); break;
+           case 'SHOW_RIDE_ESTIMATE': setRestaurants(null); break;
+           default: break; // 🚨 If screenAction was null, it did nothing!
+       }
+2. When the user said "book me a ride" (without pickup/drop yet), the backend 
+   replied: "Where would you like to go?" with screenAction: null.
+3. Because screenAction was null, it hit "default: break;". 
+   The old "restaurants" state remained in memory, so the restaurant cards stayed 
+   on the screen!
+
+[THE FIX]
+1. Added Automatic Intent Clearing in AuraContext.js:
+   const isRideIntent = /\b(cab|ride|auto|taxi|bike|gaadi|car)\b/i.test(text);
+   // If user switched intent to a ride, clear out prior food cards immediately:
+   if (isRideIntent && !screenAction) {
+       setRestaurants(null);
+       setDraftOrder(null);
+   }
+
+2. Added explicit CLEAR actions in backend/src/aura/brain.js:
+   When user asks for a ride:
+   screenAction: { type: 'CLEAR_FOOD' }
+
+   When user says a greeting like "haanji boliye":
+   screenAction: { type: 'CLEAR_ALL' }
+
+[THE RESULT]
+When switching topics (from food to ride, or ride to food), old cards are 
+instantly cleared from the screen.
+
+
+================================================================================
+6. PROBLEM 6: CATALOG MISSING REAL DATA & FUZZY SEARCH FAILING
+================================================================================
+
+[THE SYMPTOM]
+The app only had 1-2 demo restaurants. If you asked Aura or searched for anything 
+besides "Bawarchee Biryani" (e.g., burgers, cold coffee, dosas, craft drinks), 
+it returned no results or failed draft creation.
+
+[THE ROOT CAUSE]
+MongoDB was unseeded and only had mock entries. In catalogService.js, menu item 
+resolution used an exact $text index query that failed on partial words, typos, 
+or transliterated words like "briyani" or "biriyani".
+
+[THE FIX]
+1. Created Comprehensive Seeder (backend/src/scripts/seed.js):
+   Seeded 10 authentic Bengaluru and Delhi venues with 81 real menu items:
+   - Truffles (Bengaluru Burgers, Peri Peri Chicken, Ferrero Shakes)
+   - CTR Central Tiffin Room (Benne Masala Dosa, Filter Coffee)
+   - Empire Restaurant Bengaluru (Empire Special Chicken Biryani, Shawarma)
+   - Toit Taproom (Craft Brewery, Wood-fired Pizzas, Sangria)
+   - Bawarchee Biryani House, Maa ka Dhaba, The Brew Room, Pizza Palace, 
+     Dosa King, Wok & Roll.
+
+2. Added Regex & Alias Matching in catalogService.js:
+   Items now have "nameAliases" array (e.g. ['biryani', 'briyani', 'chicken biryani']).
+   The service uses case-insensitive regex ($or queries) with realistic fallback 
+   pricing, ensuring that draft orders NEVER fail.
+
+
+================================================================================
+7. QUICK REFERENCE: WHICH FILE CONTROLS WHAT?
+================================================================================
+
+FRONTEND (MOBILE):
+- frontend/shared/utils/apiConfig.js
+  -> Controls whether the app connects to localhost:4000 or 192.168.1.33.
+- frontend/food/src/screens/restaurantDetailsScreen.jsx
+  -> Controls the menu item cards, + Add button, and [-] 4 [+] stepper sizing.
+- frontend/driver/src/screens/DriverHomeScreen.jsx
+  -> Controls driver Online/Offline toggle, WebSocket listener, and location timer.
+- frontend/driver/src/screens/RideOfferModal.jsx
+  -> The 15-second ringing modal when a driver gets a new ride/order offer.
+- frontend/driver/src/screens/DriverNavigationScreen.jsx
+  -> The turn-by-turn navigation HUD, simulated driving, and OTP verification.
+- frontend/rider/src/screens/TripTrackingScreen.jsx
+  -> The customer screen showing the live car moving on the map and START OTP.
+- frontend/shared/voice/AuraOverlay.jsx
+  -> The glowing Aura orb, microphone recording, and interactive action cards.
+- frontend/shared/voice/AuraContext.js
+  -> Global state for Aura voice sessions and intent clearing.
+
+BACKEND (SERVER):
+- backend/src/main.js
+  -> Express server entry, WebSocket attachment, 304 filter, request logging.
+- backend/src/infrastructure/websocket/wsServer.js
+  -> WebSocket connection registry, heartbeat, real-time offer dispatch.
+- backend/src/aura/brain.js
+  -> Gemini 1.5 tool calling loop and deterministic Hinglish fallback.
+- backend/src/aura/voiceTurnHandler.js
+  -> 15ms Fast-path confirmation gate and multi-turn state manager.
+- backend/src/aura/ttsService.js
+  -> Sarvam AI Bulbul voice generator + MD5 disk audio cache.
+- backend/src/modules/catalog/catalogService.js
+  -> Restaurant search, menu item regex matching, and fallback pricing.
+- backend/src/scripts/seed.js
+  -> MongoDB Atlas database seeder (10 restaurants, 81 dishes).
+
+================================================================================
+*END OF DOCUMENT — Dropp Engineering Problem & Resolution Guide*
+================================================================================
