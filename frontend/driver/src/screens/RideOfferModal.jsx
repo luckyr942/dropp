@@ -27,6 +27,16 @@ export default function RideOfferModal({ offer, onAccept, onDecline }) {
     const otp = offer?.otp || '4821';
     const customerName = offer?.customerName || 'Rahul Verma';
 
+    const isFood = serviceType.includes('FOOD');
+    const isParcel = serviceType.includes('PARCEL') || serviceType.includes('DELIVERY');
+    const isShop = serviceType.includes('SHOP');
+
+    const badgeColor = isFood ? '#FF7A00' : isParcel ? '#3B82F6' : isShop ? '#A855F7' : theme.primaryGreen;
+    const badgeBg = isFood ? 'rgba(255, 122, 0, 0.15)' : isParcel ? 'rgba(59, 130, 246, 0.15)' : isShop ? 'rgba(168, 85, 247, 0.15)' : theme.tierCardActiveBg;
+    const serviceIcon = isFood ? 'fast-food' : isParcel ? 'cube' : isShop ? 'cart' : 'car';
+    const pickupTitle = isFood ? 'RESTAURANT PICKUP' : isParcel ? 'SENDER PICKUP' : isShop ? 'STORE PICKUP' : 'PASSENGER PICKUP';
+    const destTitle = isFood ? 'CUSTOMER DROP-OFF' : isParcel ? 'RECIPIENT DROP-OFF' : isShop ? 'CUSTOMER DROP-OFF' : 'DESTINATION';
+
     useEffect(() => {
         if (timeLeft <= 0) {
             onDecline();
@@ -45,13 +55,16 @@ export default function RideOfferModal({ offer, onAccept, onDecline }) {
                 <View style={[styles.card, { backgroundColor: theme.surface }]}>
                     {/* Countdown Timer Bar */}
                     <View style={styles.timerHeader}>
-                        <View style={[styles.timerBadge, { backgroundColor: theme.tierCardActiveBg }]}>
-                            <Ionicons name="timer-outline" size={16} color={theme.primaryGreen} />
-                            <Text style={[styles.timerText, { color: theme.primaryGreen }]}>{timeLeft}s to Accept</Text>
+                        <View style={[styles.timerBadge, { backgroundColor: badgeBg }]}>
+                            <Ionicons name="timer-outline" size={16} color={badgeColor} />
+                            <Text style={[styles.timerText, { color: badgeColor }]}>{timeLeft}s to Accept</Text>
                         </View>
-                        <Text style={[styles.serviceType, { color: theme.primaryGreen }]}>
-                            {serviceType.toUpperCase()}
-                        </Text>
+                        <View style={[styles.pillarPill, { backgroundColor: badgeBg }]}>
+                            <Ionicons name={serviceIcon} size={14} color={badgeColor} style={{ marginRight: 5 }} />
+                            <Text style={[styles.serviceType, { color: badgeColor }]}>
+                                {serviceType.toUpperCase()}
+                            </Text>
+                        </View>
                     </View>
 
                     {/* Earnings Banner */}
@@ -71,9 +84,9 @@ export default function RideOfferModal({ offer, onAccept, onDecline }) {
                     {/* Pickup & Destination */}
                     <View style={styles.routeBox}>
                         <View style={styles.locRow}>
-                            <Ionicons name="ellipse" size={10} color={theme.primaryGreen} />
+                            <Ionicons name="ellipse" size={10} color={badgeColor} />
                             <View style={{ flex: 1 }}>
-                                <Text style={[styles.locTitle, { color: theme.textSecondary }]}>PICKUP</Text>
+                                <Text style={[styles.locTitle, { color: theme.textSecondary }]}>{pickupTitle}</Text>
                                 <Text style={[styles.locText, { color: theme.textPrimary }]} numberOfLines={1}>
                                     {pickup}
                                 </Text>
@@ -85,7 +98,7 @@ export default function RideOfferModal({ offer, onAccept, onDecline }) {
                         <View style={styles.locRow}>
                             <Ionicons name="location" size={12} color="#EF4444" />
                             <View style={{ flex: 1 }}>
-                                <Text style={[styles.locTitle, { color: theme.textSecondary }]}>DESTINATION</Text>
+                                <Text style={[styles.locTitle, { color: theme.textSecondary }]}>{destTitle}</Text>
                                 <Text style={[styles.locText, { color: theme.textPrimary }]} numberOfLines={1}>
                                     {destination}
                                 </Text>
@@ -97,7 +110,7 @@ export default function RideOfferModal({ offer, onAccept, onDecline }) {
                     <View style={[styles.otpNote, { backgroundColor: theme.inputBg }]}>
                         <Ionicons name="shield-checkmark" size={16} color={theme.primaryGreen} />
                         <Text style={[styles.otpText, { color: theme.textPrimary }]}>
-                            Customer: {customerName} • OTP: {otp} required at completion.
+                            Customer: {customerName} • OTP: {otp} required at drop-off.
                         </Text>
                     </View>
 
@@ -151,7 +164,14 @@ const styles = StyleSheet.create({
         gap: 6,
     },
     timerText: { fontWeight: '900', fontSize: 13 },
-    serviceType: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+    pillarPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 10,
+    },
+    serviceType: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
     earningsRow: {
         flexDirection: 'row',
         alignItems: 'center',

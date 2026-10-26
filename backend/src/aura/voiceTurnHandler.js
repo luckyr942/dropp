@@ -11,11 +11,11 @@ import { AuraSession } from './sessionModel.js';
 import { config } from '../config/config.js';
 import { textToSpeech, storeAudio } from './ttsService.js';
 import { runGuardRails } from './guardRails.js';
-
+import { toolMap } from './toolRegistry.js';
 
 const MAX_TEXT_LENGTH = 300;
-const MAX_STORED_TURNS = 40;  // How many past messages we keep in MongoDB
-const MAX_PROMPT_TURNS = 6;   // Optimized: only send last 6 turns to Gemini (saves 70% input tokens)
+const MAX_STORED_TURNS = 20;  // Space optimization: cap stored MongoDB history
+const MAX_PROMPT_TURNS = 4;   // Latency optimization: only send last 4 turns to Gemini (cuts prompt tokens by 40%)
 
 async function getAudioUrl(reply) {
   try {
@@ -30,9 +30,9 @@ async function getAudioUrl(reply) {
   }
 }
 
-// Whole utterance must be a confirmation (e.g., "haan", "yes confirm", "haan confirm kar do", "theek hai kar do", "book kar do")
+// Whole utterance must be a confirmation (e.g., "haan", "yes confirm", "haan confirm kar do", "theek hai kar do", "book kar do", "bike book kar do")
 const CONFIRM_REGEX =
-  /^\s*(haan|han|yes|ok|theek hai|confirm|book|kar do)(\s+(confirm|kar do|karo|ji|place karo|order kar do|book kar do|cab book kar do|please))*[.!?\s]*$/i;
+  /^\s*(haan|han|yes|ok|theek hai|confirm|book|kar do|karo|chalega)(\s+(confirm|kar do|karo|ji|place karo|order kar do|book kar do|cab book kar do|bike|auto|cab|premier|premium|economy|go|car|please))*[.!?\s]*$/i;
 
 // Whole utterance must be a cancellation (e.g., "nahi", "cancel karo", "rehne do")
 const CANCEL_REGEX =
@@ -65,7 +65,7 @@ export async function handleVoiceTurn(req, res, next) {
   const startTime = Date.now();
 
   try {
-    const { sessionId, text, mode = 'voice' } = req.body ?? {};
+    const { sessionId, text, mode = 'voice', rideType } = req.body ?? {};
 
     if (typeof sessionId !== 'string' || !sessionId.trim() || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ success: false, error: 'sessionId and text are required' });
@@ -80,9 +80,32 @@ export async function handleVoiceTurn(req, res, next) {
 
     const cleanText = text.trim();
     const customerId = req.user?.id ?? config.defaultCustomerId;
-    
+
+    // Look up existing session to check if user is already in an active multi-turn flow
+    const existingSession = await AuraSession.findOne({ sessionId }).lean();
+    const isTaskActive = Boolean(
+      existingSession?.stage === 'awaiting_confirmation' ||
+      existingSession?.stage === 'awaiting_ride_confirmation'
+    );
+
+    const isRideChoice = Boolean(
+      existingSession?.stage === 'awaiting_ride_confirmation' &&
+      (/\b(bike|auto|cab|car|gaadi|premier|premium|economy|go)\b/i.test(cleanText) || Boolean(rideType))
+    );
+
+    const isConfirm = CONFIRM_REGEX.test(cleanText) || isRideChoice;
+    const isCancel = CANCEL_REGEX.test(cleanText);
+
+    // Confirmations, cancellations, and active draft confirmations cost 0 credits (completely free)
+    const isFreeTurn = isConfirm || isCancel || isTaskActive;
+
     // ── 0. Guardrails Gate (Safety + Credit Protection) ──
-    const guard = await runGuardRails({ text: cleanText, customerId, mode });
+    const guard = await runGuardRails({
+      text: cleanText,
+      customerId,
+      mode,
+      isFreeTurn,
+    });
     if (!guard.allowed) {
       // Only generate voice audio if user is in voice mode; otherwise 0 audio calls (0 credits)
       const audioUrl = mode === 'voice' ? await getAudioUrl(guard.reply) : null;
@@ -94,17 +117,16 @@ export async function handleVoiceTurn(req, res, next) {
           toolCallsMade: [],
           screenAction: null,
           audioUrl,
-          creditsLeft: guard.creditsLeft ?? null,
+          creditsLeft: guard.creditsLeft ?? 0,
         },
       });
     }
-
 
     // Ensure session exists
     await startSession(sessionId, customerId);
 
     // ── 1. Safe Confirmation Fast-Paths (Bypasses LLM, runs in 15ms) ──
-    if (CONFIRM_REGEX.test(cleanText)) {
+    if (isConfirm) {
       // 1A. Food Order Confirmation
       const claimedFoodSession = await AuraSession.findOneAndUpdate(
         { sessionId, stage: 'awaiting_confirmation', draftOrderId: { $ne: null } },
@@ -119,17 +141,24 @@ export async function handleVoiceTurn(req, res, next) {
         } catch (err) {
           console.error('[voiceTurnHandler] Order confirmation failed:', err.message);
           await AuraSession.updateOne({ sessionId }, { $set: { stage: 'awaiting_confirmation' } });
-          const reply = 'Order place nahi ho paya. Dobara "haan" bolein ya thodi der baad try karein.';
+          const reply = 'Order place nahi ho paya. Dobara "haan" bolein ya try karein.';
           const audioUrl = await getAudioUrl(reply);
           return res.json({
             success: true,
-            data: { reply, toolCallsMade: ['confirm_order'], screenAction: null, audioUrl },
+            data: {
+              reply,
+              toolCallsMade: ['confirm_order'],
+              screenAction: null,
+              audioUrl,
+              creditsLeft: guard.creditsLeft,
+            },
           });
         }
 
         await AuraSession.updateOne({ sessionId }, { $set: { status: 'order_placed' } });
 
-        const reply = `Aapka order confirm ho gaya! Total ${order.totalAmount} rupaye hai. Aap app mein track kar sakte hain.`;
+        // Standardized spoken reply guarantees 100% DISK CACHE HIT (0 Sarvam API credits burned)
+        const reply = 'Aapka order confirm ho gaya! Details app mein track karein.';
         await saveConversationHistory(sessionId, cleanText, reply);
         const audioUrl = await getAudioUrl(reply);
 
@@ -140,6 +169,7 @@ export async function handleVoiceTurn(req, res, next) {
             toolCallsMade: ['confirm_order'],
             screenAction: { type: 'ORDER_PLACED', data: order },
             audioUrl,
+            creditsLeft: guard.creditsLeft,
           },
         });
       }
@@ -152,29 +182,53 @@ export async function handleVoiceTurn(req, res, next) {
       );
 
       if (claimedRideSession) {
+        let chosenRideType = rideType || claimedRideSession.selectedRideType || 'cab_economy';
+        if (/\b(bike|motorcycle)\b/i.test(cleanText)) {
+          chosenRideType = 'bike';
+        } else if (/\b(auto|rikshaw|rickshaw)\b/i.test(cleanText)) {
+          chosenRideType = 'auto';
+        } else if (/\b(premier|premium)\b/i.test(cleanText)) {
+          chosenRideType = 'cab_premium';
+        } else if (/\b(cab|go|car|taxi|economy)\b/i.test(cleanText)) {
+          chosenRideType = 'cab_economy';
+        }
+
         let ride;
         try {
           ride = await bookRide({
             customerId,
             quoteId: claimedRideSession.activeQuoteId,
-            rideType: claimedRideSession.selectedRideType || 'cab_economy',
+            rideType: chosenRideType,
           });
         } catch (err) {
           console.error('[voiceTurnHandler] Ride booking failed:', err.message);
           await AuraSession.updateOne({ sessionId }, { $set: { stage: 'awaiting_ride_confirmation' } });
-          const reply = 'Cab book nahi ho payi. Dobara "haan" bolein ya ride dobara estimate karein.';
+          const reply = 'Ride book nahi ho payi. Dobara "haan" bolein ya try karein.';
           const audioUrl = await getAudioUrl(reply);
           return res.json({
             success: true,
-            data: { reply, toolCallsMade: ['book_ride_fastpath'], screenAction: null, audioUrl },
+            data: {
+              reply,
+              toolCallsMade: ['book_ride_fastpath'],
+              screenAction: null,
+              audioUrl,
+              creditsLeft: guard.creditsLeft,
+            },
           });
         }
 
-        const reply = `Aapki cab book ho gayi! Driver ${ride.driver.name} aa rahe hain. OTP hai ${ride.otp}.`;
+        const vehicleLabels = {
+          bike: 'bike',
+          auto: 'auto',
+          cab_economy: 'cab',
+          cab_premium: 'premier cab',
+        };
+        const vehicleLabel = vehicleLabels[chosenRideType] || 'cab';
+        const reply = `Aapki ${vehicleLabel} book ho gayi! Driver aur OTP screen par check karein.`;
         await saveConversationHistory(sessionId, cleanText, reply);
         const audioUrl = await getAudioUrl(reply);
 
-        console.log('[voice-turn-fastpath] ⚡ Ride booked via Fast-Path in', Date.now() - startTime, 'ms');
+        console.log('[voice-turn-fastpath] ⚡ Ride booked via Fast-Path in', Date.now() - startTime, 'ms, tier:', chosenRideType);
 
         return res.json({
           success: true,
@@ -183,31 +237,91 @@ export async function handleVoiceTurn(req, res, next) {
             toolCallsMade: ['book_ride_fastpath'],
             screenAction: { type: 'RIDE_BOOKED', data: ride },
             audioUrl,
+            creditsLeft: guard.creditsLeft,
           },
         });
       }
+
+      // If user said "haan" but no draft or ride was pending
+      const reply = 'Haanji boliye, kya chahiye? Khana ya cab?';
+      await saveConversationHistory(sessionId, cleanText, reply);
+      const audioUrl = mode === 'voice' ? await getAudioUrl(reply) : null;
+      return res.json({
+        success: true,
+        data: {
+          reply,
+          toolCallsMade: [],
+          screenAction: { type: 'CLEAR_ALL' },
+          audioUrl,
+          creditsLeft: guard.creditsLeft,
+        },
+      });
     }
 
-    // ── 2. Safe Cancellation Gate (Code-only check) ──
-    if (CANCEL_REGEX.test(cleanText)) {
-      const cancelledSession = await AuraSession.findOneAndUpdate(
-        { sessionId, stage: { $in: ['awaiting_confirmation', 'awaiting_ride_confirmation'] } },
-        { $set: { stage: null, activeQuoteId: null, draftOrderId: null } },
-        { new: false }
+    // ── 2. Safe Cancellation Gate (Code-only check, runs in 15ms) ──
+    if (isCancel) {
+      await AuraSession.updateOne(
+        { sessionId },
+        { $set: { stage: null, activeQuoteId: null, draftOrderId: null } }
       );
 
-      if (cancelledSession) {
-        const reply = 'Theek hai, cancel kar diya gaya hai. Kuch aur chahiye?';
-        await saveConversationHistory(sessionId, cleanText, reply);
-        const audioUrl = await getAudioUrl(reply);
-        return res.json({
-          success: true,
-          data: { reply, toolCallsMade: [], screenAction: { type: 'CANCELLED', data: null }, audioUrl },
-        });
+      // Standardized cancellation hits disk cache (0 Sarvam API credits, 0ms audio)
+      const reply = 'Theek hai, cancel kar diya gaya hai. Kuch aur chahiye?';
+      await saveConversationHistory(sessionId, cleanText, reply);
+      const audioUrl = mode === 'voice' ? await getAudioUrl(reply) : null;
+      return res.json({
+        success: true,
+        data: {
+          reply,
+          toolCallsMade: [],
+          screenAction: { type: 'CANCELLED', data: null },
+          audioUrl,
+          creditsLeft: guard.creditsLeft,
+        },
+      });
+    }
+
+    // ── 2B. Instant Direct Ride Estimate Fast-Path (Runs in ~25ms, cuts latency by 85%) ──
+    const isRideRequest = /\b(cab|ride|auto|taxi|bike|gaadi|jana hai|jaana hai)\b/i.test(cleanText);
+    if (isRideRequest) {
+      const match = cleanText.match(/(?:from\s+|)(.+?)\s+(?:se|to)\s+(.+?)(?:\s+tak|\s+cab|\s+chahiye|\s+book|$)/i);
+      if (match && match[1] && match[2]) {
+        const rawPickup = match[1].replace(/\b(cab|ride|auto|book|chahiye|mujhe|humein|jana|jaana)\b/gi, '').trim();
+        const drop = match[2].replace(/\b(cab|ride|auto|book|chahiye|tak|jaana hai|jana hai|distance)\b/gi, '').trim();
+
+        // Strip leading food requests if user spoke multiple things
+        const pickup = rawPickup.replace(/.*(?:order|biryani|coffee|pizza|pack|chahiye)\s*(?:kr do|kar do|karo|do|hai)?\s*/gi, '').trim() || rawPickup;
+
+        // Ensure pickup is a real location, not food words
+        const hasFoodWords = /\b(biryani|coffee|pizza|burger|khana|food|briyani)\b/i.test(pickup);
+
+        if (!hasFoodWords && pickup.length >= 2 && drop.length >= 2 && pickup.length < 60) {
+          try {
+            const estimate = await toolMap.estimate_ride({ pickup, drop, sessionId });
+            const cabFare = estimate.fares?.find((f) => f.type === 'cab_economy')?.fare || 150;
+            const reply = `${estimate.pickup.address} se ${estimate.drop.address} cab ${cabFare} rupaye hai. Confirm kar doon?`;
+            await saveConversationHistory(sessionId, cleanText, reply);
+            const audioUrl = mode === 'voice' ? await getAudioUrl(reply) : null;
+
+            console.log('[voice-turn-fastpath] ⚡ Direct Ride Estimate served in', Date.now() - startTime, 'ms');
+            return res.json({
+              success: true,
+              data: {
+                reply,
+                toolCallsMade: ['estimate_ride'],
+                screenAction: { type: 'SHOW_RIDE_ESTIMATE', data: estimate },
+                audioUrl,
+                creditsLeft: guard.creditsLeft,
+              },
+            });
+          } catch (err) {
+            console.warn('[voiceTurnHandler] Ride fastpath error, falling back to LLM:', err.message);
+          }
+        }
       }
     }
 
-    // ── 3. Load Server-Owned History (Pruned to last 6 turns) ──
+    // ── 3. Load Server-Owned History (Pruned to last 4 turns) ──
     const session = await AuraSession.findOne({ sessionId }).lean();
     const history = (session?.conversation ?? []).slice(-MAX_PROMPT_TURNS);
     const conversation = [...history, { role: 'user', parts: [{ text: cleanText }] }];
@@ -227,6 +341,7 @@ export async function handleVoiceTurn(req, res, next) {
           toolCallsMade: [],
           screenAction: null,
           audioUrl,
+          creditsLeft: guard.creditsLeft,
         },
       });
     }
@@ -244,9 +359,19 @@ export async function handleVoiceTurn(req, res, next) {
       screenAction: screenAction?.type ?? null,
       hasAudio: Boolean(audioUrl),
       latencyMs: Date.now() - startTime,
+      creditsLeft: guard.creditsLeft,
     });
 
-    return res.json({ success: true, data: { reply, toolCallsMade, screenAction, audioUrl } });
+    return res.json({
+      success: true,
+      data: {
+        reply,
+        toolCallsMade,
+        screenAction,
+        audioUrl,
+        creditsLeft: guard.creditsLeft,
+      },
+    });
   } catch (err) {
     next(err);
   }

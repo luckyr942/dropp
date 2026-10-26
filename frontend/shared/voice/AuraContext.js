@@ -13,7 +13,7 @@
  * Functions exposed:
  *   openAura()         → opens modal
  *   closeAura()        → closes modal, stops voice
- *   sendVoiceTurn(txt) → POST to /api/aura/voice-turn, plays Callirrhoe voice
+ *   sendVoiceTurn(txt) → POST to /api/aura/voice-turn, plays Ishita voice
  *   confirmOrder()     → sends "haan" through sendVoiceTurn
  *   cancelDraft()      → sends "nahi" through sendVoiceTurn
  *   trackOrder()       → closes modal, navigates to tracking screen
@@ -51,8 +51,18 @@ function cleanForSpeech(text) {
   if (!text) return '';
   return text
     .replace(/[*_#`~]/g, '')
-    .replace(/₹\s*(\d+)/g, '$1 rupaye')
-    .replace(/\b(\d+)\s*(?:rs|inr)\b/gi, '$1 rupaye')
+    // Round decimal distances to whole numbers (459.55 km -> 460 kilometers, never "point paanch paanch")
+    .replace(/(\d+)\.(\d+)\s*km\b/gi, (m, d, dec) => `${Math.round(Number(`${d}.${dec}`))} kilometers`)
+    .replace(/(\d+)\s*km\b/gi, '$1 kilometers')
+    .replace(/(\d+)\s*m\b/gi, '$1 meters')
+    // Duration: 18 min -> 18 minutes
+    .replace(/(\d+)\s*mins?\b/gi, '$1 minutes')
+    // Format fare: ₹4395 -> 4,395 rupees
+    .replace(/₹\s*(\d+)/g, (m, num) => `${Number(num).toLocaleString('en-IN')} rupees`)
+    .replace(/\b(\d+)\s*(?:rupaye|rs|inr|rupees)\b/gi, (m, num) => `${Number(num).toLocaleString('en-IN')} rupees`)
+    // OTP: space out digits so OTP is read clearly as distinct digits
+    .replace(/\bOTP\s*(?:hai|is|:)?\s*(\d{4,6})\b/gi, (m, otp) => `OTP is ${otp.split('').join(' ')}`)
+    // Clean emojis & extra spaces
     .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -144,7 +154,7 @@ export function AuraProvider({ children, onNavigate }) {
     setIsSpeaking(false);
   }, []);
 
-  // Primary playback: Stream Callirrhoe audio from backend, or fallback to device speech
+  // Primary playback: Stream Ishita audio from backend, or fallback to device speech
   const playAudio = useCallback(async (text, audioUrl) => {
     await stopAudio();
 
@@ -187,16 +197,18 @@ export function AuraProvider({ children, onNavigate }) {
     }
 
     setIsSpeaking(true);
-    const isHindi = isHindiOrHinglish(spokenText);
-    const selectedVoice = isHindi ? hindiVoiceRef.current : englishVoiceRef.current;
-    const targetLang = isHindi
+    const hasDevanagari = /[\u0900-\u097F]/.test(spokenText);
+    const selectedVoice = hasDevanagari
+      ? (hindiVoiceRef.current || englishVoiceRef.current)
+      : (englishVoiceRef.current || hindiVoiceRef.current);
+    const targetLang = hasDevanagari
       ? (selectedVoice?.language || 'hi-IN')
       : (selectedVoice?.language || 'en-IN');
 
     Speech.speak(spokenText, {
       language: targetLang,
       voice: selectedVoice?.identifier,
-      rate: isHindi ? 0.90 : 0.96,
+      rate: hasDevanagari ? 0.90 : 0.94,
       pitch: 1.0,
       onDone:    () => setIsSpeaking(false),
       onStopped: () => setIsSpeaking(false),
@@ -204,14 +216,69 @@ export function AuraProvider({ children, onNavigate }) {
     });
   }, [stopAudio]);
 
-  const openAura = useCallback(() => setIsOpen(true), []);
+  // Live WebSocket connection to receive real-time status updates from restaurant dashboard
+  useEffect(() => {
+    let ws = null;
+    let reconnectTimeout = null;
+
+    const wsUrl = BACKEND_URL.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+    const custId = sessionIdRef.current || 'cust_live_001';
+
+    function connectWs() {
+      try {
+        ws = new WebSocket(`${wsUrl}?customerId=${custId}`);
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'ORDER_STATUS_UPDATE' && msg.data) {
+              const { status, message, orderId } = msg.data;
+              if (message) {
+                addMessage('aura', message);
+                playAudio(message);
+              }
+              setPlacedOrder((prev) => (prev ? { ...prev, status } : { _id: orderId, status }));
+            }
+          } catch (_) {}
+        };
+
+        ws.onclose = () => {
+          reconnectTimeout = setTimeout(connectWs, 3000);
+        };
+
+        ws.onerror = () => {
+          ws?.close();
+        };
+      } catch (_) {}
+    }
+
+    connectWs();
+
+    return () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (ws) ws.close();
+    };
+  }, [addMessage, playAudio]);
+
+  const openAura = useCallback(() => {
+    setIsOpen(true);
+    // Sync latest credit balance from backend
+    fetch(`${BACKEND_URL}/api/aura/credits`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (typeof data?.credits === 'number') {
+          setVoiceCredits(data.credits);
+        }
+      })
+      .catch(() => {});
+  }, []);
   const closeAura = useCallback(async () => {
     await stopAudio();
     setIsThinking(false);
     setIsOpen(false);
   }, [stopAudio]);
 
-  const sendVoiceTurn = useCallback(async (userText, mode = 'voice') => {
+  const sendVoiceTurn = useCallback(async (userText, mode = 'voice', extraData = {}) => {
     const text = userText?.trim();
     if (!text || busyRef.current) return;
 
@@ -219,7 +286,9 @@ export function AuraProvider({ children, onNavigate }) {
     addMessage('user', text);
     setPlacedOrder(null);
     setBookedRide(null);
-    setPlacedOrder(null);
+    setRestaurants(null);
+    setRideEstimate(null);
+    setDraftOrder(null);
     setIsThinking(true);
 
     const controller = new AbortController();
@@ -233,6 +302,7 @@ export function AuraProvider({ children, onNavigate }) {
           sessionId: sessionIdRef.current,
           text,
           mode,
+          ...extraData,
         }),
         signal: controller.signal,
       });
@@ -259,26 +329,65 @@ export function AuraProvider({ children, onNavigate }) {
         playAudio(reply, audioUrl);
       }
 
+      const lowerText = (text || '').toLowerCase();
+      const isRideIntent = /\b(cab|ride|auto|taxi|bike|gaadi|car|cyber|airport)\b/i.test(lowerText);
+      const isFoodIntent = /\b(food|khana|biryani|briyani|pizza|burger|coffee|chai|eat|order|dish)\b/i.test(lowerText);
+
+      // If user switched intent to ride, clear out any prior food cards
+      if (isRideIntent && !screenAction) {
+        setRestaurants(null);
+        setDraftOrder(null);
+      }
+      // If user switched intent to food, clear out any prior ride cards
+      if (isFoodIntent && !screenAction) {
+        setRideEstimate(null);
+        setBookedRide(null);
+      }
+
       switch (screenAction?.type) {
         case 'SHOW_RESTAURANTS':
           setRestaurants(screenAction.data ?? []);
+          setRideEstimate(null);
+          setBookedRide(null);
+          setDraftOrder(null);
           break;
         case 'SHOW_DRAFT':
           setDraftOrder(screenAction.data);
+          setRestaurants(null);
+          setRideEstimate(null);
+          setBookedRide(null);
           break;
         case 'DRAFT_CANCELLED':
           setDraftOrder(null);
           break;
         case 'ORDER_PLACED':
           setDraftOrder(null);
+          setRestaurants(null);
+          setRideEstimate(null);
+          setBookedRide(null);
           setPlacedOrder(screenAction.data);
           break;
         case 'SHOW_RIDE_ESTIMATE':
+          setRestaurants(null);
+          setDraftOrder(null);
+          setBookedRide(null);
           setRideEstimate(screenAction.data);
           break;
         case 'RIDE_BOOKED':
+          setRestaurants(null);
+          setDraftOrder(null);
           setRideEstimate(null);
           setBookedRide(screenAction.data);
+          break;
+        case 'CLEAR_FOOD':
+          setRestaurants(null);
+          setDraftOrder(null);
+          break;
+        case 'CLEAR_ALL':
+          setRestaurants(null);
+          setDraftOrder(null);
+          setRideEstimate(null);
+          setBookedRide(null);
           break;
         default:
           break;
@@ -355,7 +464,11 @@ export function AuraProvider({ children, onNavigate }) {
     onNavigate?.(TRACKING_SCREEN);
   }, [closeAura, onNavigate]);
 
-  const confirmRide = useCallback(() => sendVoiceTurn('haan cab book kar do'), [sendVoiceTurn]);
+  const confirmRide = useCallback((rideType) => {
+    const chosenType = rideType || 'cab_economy';
+    const typeLabel = chosenType === 'bike' ? 'Bike' : chosenType === 'auto' ? 'Auto' : chosenType === 'cab_premium' ? 'Premier' : 'Cab';
+    sendVoiceTurn(`haan ${typeLabel} book kar do`, 'voice', { rideType: chosenType });
+  }, [sendVoiceTurn]);
   const cancelRideAction = useCallback(() => {
     setRideEstimate(null);
     setBookedRide(null);

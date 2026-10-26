@@ -9,7 +9,10 @@
     "docker:down": "docker-compose -f infrastructure/docker/docker-compose.yml down",
     "docker:logs": "docker-compose -f infrastructure/docker/docker-compose.yml logs -f",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "sim:customer": "xcrun simctl openurl A6ED74F6-58E8-4246-9356-0DA6BCCBE55F exp://127.0.0.1:8081",
+    "sim:driver": "xcrun simctl openurl 1B252EAB-D89F-4753-B430-DF07407BA8E5 exp://127.0.0.1:8082",
+    "sim:both": "xcrun simctl openurl A6ED74F6-58E8-4246-9356-0DA6BCCBE55F exp://127.0.0.1:8081 && xcrun simctl openurl 1B252EAB-D89F-4753-B430-DF07407BA8E5 exp://127.0.0.1:8082"
   },
   "devDependencies": {
     "prettier": "^3.2.5",

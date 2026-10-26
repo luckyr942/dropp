@@ -5,9 +5,10 @@ import {
     View,
     TouchableOpacity,
     FlatList,
-    SafeAreaView,
     StatusBar,
+    Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/themeContext';
 import BottomNavBar from '../components/bottomNavBar';
@@ -19,7 +20,7 @@ const BOOKINGS_DATA = [
         date: 'Today, 2:45 PM',
         pickup: 'Cyber City, Gurugram',
         destination: 'Terminal 3, IGI Airport',
-        price: '$24.50',
+        price: '₹1,840',
         status: 'Completed',
         icon: 'car-sport-outline',
     },
@@ -29,7 +30,7 @@ const BOOKINGS_DATA = [
         date: 'Yesterday, 11:15 AM',
         pickup: 'Green Park Main',
         destination: 'Connaught Place',
-        price: '$18.50',
+        price: '₹1,420',
         status: 'Completed',
         icon: 'cube-outline',
     },
@@ -39,7 +40,7 @@ const BOOKINGS_DATA = [
         date: 'Oct 4, 8:30 PM',
         pickup: 'Burger King, Saket',
         destination: 'Home',
-        price: '$32.10',
+        price: '₹2,470',
         status: 'Completed',
         icon: 'fast-food-outline',
     },
@@ -49,7 +50,7 @@ const BOOKINGS_DATA = [
         date: 'Oct 2, 6:00 PM',
         pickup: 'Select Citywalk Mall',
         destination: 'Hauz Khas Village',
-        price: '$14.00',
+        price: '₹1,080',
         status: 'Cancelled',
         icon: 'car-sport-outline',
     },
@@ -121,7 +122,7 @@ export default function BookingsScreen({ onNavigate }) {
     };
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+        <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: theme.background }]}>
             <StatusBar
                 barStyle={isDark ? 'light-content' : 'dark-content'}
                 backgroundColor={theme.background}
@@ -169,15 +170,13 @@ export default function BookingsScreen({ onNavigate }) {
             />
 
             <BottomNavBar
-                preset="activity"
+                preset="main"
                 activeTab="Activity"
-                onTabPress={(tab) => onNavigate && onNavigate(tab)}
-                centerAction={{
-                    icon: 'car-sports',
-                    family: 'MaterialCommunityIcons',
-                    size: 26,
-                    colors: ['#00E57B', '#00AD57'],
-                    onPress: () => onNavigate && onNavigate('Home'),
+                onTabPress={(tab) => {
+                    if (tab === 'Home') onNavigate?.('Home');
+                    else if (tab === 'Activity') onNavigate?.('Activity');
+                    else if (tab === 'Wallet') onNavigate?.('Wallet');
+                    else if (tab === 'Profile') onNavigate?.('Profile');
                 }}
             />
         </SafeAreaView>

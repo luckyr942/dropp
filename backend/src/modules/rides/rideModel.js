@@ -77,6 +77,16 @@ const rideSchema = new mongoose.Schema(
       index: true,
     },
 
+    serviceType: {
+      type: String,
+      default: 'RIDE',
+    },
+
+    packageDetails: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+
     fare: {
       type: Number,
       required: true,

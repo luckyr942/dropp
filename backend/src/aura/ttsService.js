@@ -1,4 +1,7 @@
-///text to speech multip odla 
+// backend/src/aura/ttsService.js
+// Text-to-Speech exclusively powered by Ishita (Sarvam AI Bulbul).
+// Strictly locked to Ishita voice as requested: no Gemini or other speaker fallback.
+
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -9,6 +12,30 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DISK_CACHE_DIR = path.join(__dirname, 'audio_cache');
 if (!fs.existsSync(DISK_CACHE_DIR)) {
   try { fs.mkdirSync(DISK_CACHE_DIR, { recursive: true }); } catch (_) {}
+}
+
+const MAX_MEMORY_ITEMS = 40;     // Max 40 WAV buffers in RAM (~10-12 MB)
+const MAX_DISK_CACHE_MB = 40;    // Max 40 MB disk cache
+
+// Auto-prune disk cache when it exceeds MAX_DISK_CACHE_MB
+function pruneDiskCache() {
+  try {
+    const files = fs.readdirSync(DISK_CACHE_DIR).map((f) => {
+      const fp = path.join(DISK_CACHE_DIR, f);
+      const stat = fs.statSync(fp);
+      return { fp, size: stat.size, mtime: stat.mtimeMs };
+    });
+    let totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+    const maxBytes = MAX_DISK_CACHE_MB * 1024 * 1024;
+    if (totalBytes > maxBytes) {
+      files.sort((a, b) => a.mtime - b.mtime); // Oldest first
+      while (files.length > 0 && totalBytes > maxBytes * 0.75) {
+        const oldest = files.shift();
+        try { fs.unlinkSync(oldest.fp); } catch (_) {}
+        totalBytes -= oldest.size;
+      }
+    }
+  } catch (_) {}
 }
 
 function getDiskCache(key) {
@@ -25,28 +52,105 @@ function saveDiskCache(key, buf) {
     const hash = crypto.createHash('md5').update(key).digest('hex');
     const fp = path.join(DISK_CACHE_DIR, `${hash}.wav`);
     fs.writeFileSync(fp, buf);
+    pruneDiskCache();
   } catch (_) {}
 }
 
 // In-memory cache for stream IDs (/api/aura/audio/:id)
 const audioCache = new Map();
 
-// In-memory fast cache (text -> buffer)
+// In-memory bounded LRU cache (text -> buffer)
 const contentCache = new Map();
+
+function setContentCache(key, buf) {
+  if (contentCache.size >= MAX_MEMORY_ITEMS) {
+    const oldestKey = contentCache.keys().next().value;
+    if (oldestKey) contentCache.delete(oldestKey);
+  }
+  contentCache.set(key, buf);
+}
 
 export function storeAudio(id, buffer) {
   audioCache.set(id, buffer);
-  // Auto-cleanup after 5 minutes
-  setTimeout(() => audioCache.delete(id), 5 * 60 * 1000);
+  // Auto-cleanup after 60 seconds (frees space quickly after playback)
+  setTimeout(() => audioCache.delete(id), 60 * 1000);
 }
 
 export function getAudioBuffer(id) {
   return audioCache.get(id) || null;
 }
 
-/**
- * Convert raw PCM buffer (24kHz, 16-bit, 1-channel mono) to a standard WAV buffer.
- */
+// Converts integer numbers (up to 99,999) to natural spoken Hindi words
+function numberToHindiWords(n) {
+  const num = Math.round(Number(n));
+  if (isNaN(num) || num <= 0) return '';
+  if (num > 99999) return `${num.toLocaleString('en-IN')}`;
+
+  const ones = [
+    '', 'ek', 'do', 'teen', 'chaar', 'paanch', 'chheh', 'saat', 'aath', 'nau',
+    'das', 'gyaarah', 'baarah', 'terah', 'chaudah', 'pandrah', 'solah', 'satrah', 'athaarah', 'unnis',
+    'bees', 'ikkees', 'baees', 'teis', 'chaubees', 'pachhees', 'chhabbees', 'sattaees', 'atthaees', 'untees',
+    'tees', 'iktees', 'battees', 'taintees', 'chauntees', 'paintees', 'chhattees', 'saintees', 'adhtees', 'untalis',
+    'chalis', 'iktalis', 'byalis', 'taintalis', 'chawalis', 'paintalis', 'chhiyalis', 'saintalis', 'adhtalis', 'unchas',
+    'pachas', 'ikkyawan', 'bawan', 'tirpan', 'chawwan', 'pachpan', 'chhappan', 'sattawan', 'atthaawan', 'unsath',
+    'saath', 'iksath', 'baasath', 'tirasath', 'chaunsath', 'painsath', 'chhyasath', 'sadsath', 'adsath', 'unhattar',
+    'sattar', 'ikhattar', 'bahattar', 'tihattar', 'chauhattar', 'pachhattar', 'chhihattar', 'sathattar', 'athhattar', 'unasi',
+    'assi', 'ikyasi', 'byasi', 'tirasi', 'chaurasi', 'pachasi', 'chhiyasi', 'sattasi', 'athasi', 'nawasi',
+    'nabbe', 'ikyaanve', 'baanve', 'tiraanve', 'chauraanve', 'pachaanve', 'chhiyaanve', 'sattaanve', 'athaanve', 'ninyaanve'
+  ];
+
+  let words = '';
+  const thousands = Math.floor(num / 1000);
+  const remainder1000 = num % 1000;
+  const hundreds = Math.floor(remainder1000 / 100);
+  const lastTwo = remainder1000 % 100;
+
+  if (thousands > 0) {
+    words += `${ones[thousands]} hazaar `;
+  }
+  if (hundreds > 0) {
+    words += `${ones[hundreds]} sau `;
+  }
+  if (lastTwo > 0) {
+    words += `${ones[lastTwo]} `;
+  }
+  return words.trim();
+}
+
+function numberToEnglishWords(n) {
+  const num = Math.round(Number(n));
+  if (isNaN(num) || num <= 0) return '';
+  if (num > 99999) return `${num.toLocaleString('en-US')}`;
+
+  const a = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const b = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+
+  function sub100(val) {
+    if (val < 20) return a[val];
+    const tens = Math.floor(val / 10);
+    const units = val % 10;
+    return `${b[tens]}${units ? '-' + a[units] : ''}`;
+  }
+
+  let words = '';
+  const thousands = Math.floor(num / 1000);
+  const remainder1000 = num % 1000;
+  const hundreds = Math.floor(remainder1000 / 100);
+  const lastTwo = remainder1000 % 100;
+
+  if (thousands > 0) {
+    words += `${sub100(thousands)} thousand `;
+  }
+  if (hundreds > 0) {
+    words += `${a[hundreds]} hundred `;
+  }
+  if (lastTwo > 0) {
+    words += `${sub100(lastTwo)} `;
+  }
+  return words.trim();
+}
+
+// Convert raw PCM buffer (24kHz, 16-bit, 1-channel mono) from Gemini to WAV
 function pcmToWav(pcmBuffer, sampleRate = 24000, numChannels = 1, bitDepth = 16) {
   const byteRate = (sampleRate * numChannels * bitDepth) / 8;
   const blockAlign = (numChannels * bitDepth) / 8;
@@ -70,21 +174,90 @@ function pcmToWav(pcmBuffer, sampleRate = 24000, numChannels = 1, bitDepth = 16)
   return Buffer.concat([header, pcmBuffer]);
 }
 
-// TTS model priority list for Gemini fallback
-const TTS_MODELS = [
-  config.geminiTtsModel || 'gemini-3.8-flash-tts',
-  'gemini-3.8-flash-tts',
-  'gemini-3.8-flash-lite-tts',
-  'gemini-3.1-flash-tts-preview',
-];
+/**
+ * Normalizes text for Sarvam AI Ishita & Callirrhoe so numbers, distances, fares, and OTPs
+ * are spoken naturally as full words, never single digits.
+ * Automatically classifies language as 'en-IN' or 'hi-IN'.
+ */
+export function prepareTextForIshita(rawText) {
+  if (!rawText) return { cleanText: '', lang: 'en-IN' };
+
+  let t = String(rawText).replace(/[*_#`~]/g, '');
+
+  const hasDevanagari = /[\u0900-\u097F]/.test(t);
+  const hindiGrammar = /\b(hai|hain|hoon|se|tak|ka|ki|ke|ko|karo|karein|karna|kar|rahe|raha|rahi|gayi|gaya|gaye|aaya|bolein|dhoondh|liya|mila|mile|aapka|aapki|aapke|chahiye|theek|haan|nahi|nahin|kya|aur|bhai|batao|dikhao|le|lo|matlab|kaunsa|kiraya|kiraaya|yahan)\b/gi;
+  const englishGrammar = /\b(is|are|am|from|to|for|with|your|the|this|that|should|would|can|could|please|confirm|book|order|ride|cab|fare|distance|total|ready|found|search|which|where)\b/gi;
+
+  const hindiCount = (t.match(hindiGrammar) || []).length;
+  const englishCount = (t.match(englishGrammar) || []).length;
+  const isHindi = hasDevanagari || hindiCount > englishCount || (hindiCount > 0 && englishCount === 0);
+  const lang = isHindi ? 'hi-IN' : 'en-IN';
+
+  // 1. Distances: 459.55 km -> 460 kilometer (rounds to natural integer, eliminates "point paanch paanch")
+  t = t.replace(/(\d+)\.(\d+)\s*km\b/gi, (m, d, dec) => {
+    const rounded = Math.round(Number(`${d}.${dec}`));
+    const spoken = isHindi ? numberToHindiWords(rounded) : numberToEnglishWords(rounded);
+    return `${spoken || rounded} ${isHindi ? 'kilometer' : 'kilometers'}`;
+  });
+  t = t.replace(/(\d+)\s*km\b/gi, (m, d) => {
+    const val = Number(d);
+    const spoken = isHindi ? numberToHindiWords(val) : numberToEnglishWords(val);
+    return `${spoken || val} ${isHindi ? 'kilometer' : 'kilometers'}`;
+  });
+  t = t.replace(/(\d+)\s*m\b/gi, (m, d) => `${d} ${isHindi ? 'meter' : 'meters'}`);
+
+  // 2. Duration: 18 min -> 18 minutes / 18 minute
+  t = t.replace(/(\d+)\s*mins?\b/gi, (m, d) => {
+    const val = Number(d);
+    const spoken = isHindi ? numberToHindiWords(val) : numberToEnglishWords(val);
+    return `${spoken || val} ${isHindi ? 'minute' : 'minutes'}`;
+  });
+
+  // 3. Fares & Money: Spoken as natural full words (e.g. 4395 -> "chaar hazaar teen sau pachaanve rupaye")
+  if (isHindi) {
+    t = t.replace(/(?:₹\s*|\b)(\d{1,5})\s*(?:rs|inr|rupaye|rupees)?(?=\s*(?:hai|mein|hoga|lagega|padega|confirm|\.|\,|$|\s))/gi, (m, num) => {
+      const val = Number(num);
+      const spoken = numberToHindiWords(val);
+      return spoken ? `${spoken} rupaye` : `${val.toLocaleString('en-IN')} rupaye`;
+    });
+    t = t.replace(/₹\s*(\d+)/g, (m, num) => {
+      const val = Number(num);
+      const spoken = numberToHindiWords(val);
+      return spoken ? `${spoken} rupaye` : `${val.toLocaleString('en-IN')} rupaye`;
+    });
+  } else {
+    t = t.replace(/(?:₹\s*|\b)(\d{1,5})\s*(?:rs|inr|rupaye|rupees)?(?=\s*(?:is|for|total|confirm|\.|\,|$|\s))/gi, (m, num) => {
+      const val = Number(num);
+      const spoken = numberToEnglishWords(val);
+      return spoken ? `${spoken} rupees` : `${val.toLocaleString('en-US')} rupees`;
+    });
+    t = t.replace(/₹\s*(\d+)/g, (m, num) => {
+      const val = Number(num);
+      const spoken = numberToEnglishWords(val);
+      return spoken ? `${spoken} rupees` : `${val.toLocaleString('en-US')} rupees`;
+    });
+  }
+
+  // 4. OTP: space out digits so OTP is read clearly one-by-one
+  t = t.replace(/\bOTP\s*(?:hai|is|:)?\s*(\d{4,6})\b/gi, (m, otp) => `OTP ${isHindi ? 'hai' : 'is'} ${otp.split('').join(' ')}`);
+
+  // 5. Clean emojis & extra spaces
+  t = t.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
+  t = t.replace(/\s+/g, ' ').trim();
+
+  return { cleanText: t, lang };
+}
 
 /**
- * Synthesize speech using Sarvam AI TTS (Bulbul)
+ * Synthesize speech using Sarvam AI Bulbul speaker "ishita".
  * @param {string} text
+ * @param {string} targetLang - 'en-IN' or 'hi-IN'
  * @returns {Promise<Buffer|null>}
  */
-async function generateSarvamTts(text) {
-  if (!config.sarvamApiKey) return null;
+async function generateIshitaTts(text, targetLang = 'en-IN') {
+  if (!config.sarvamApiKey) {
+    return null;
+  }
   const t0 = Date.now();
 
   try {
@@ -96,12 +269,12 @@ async function generateSarvamTts(text) {
       },
       body: JSON.stringify({
         inputs: [text],
-        target_language_code: 'hi-IN',
-        speaker: config.sarvamSpeaker || 'ishita',
+        target_language_code: targetLang,
+        speaker: 'ishita',
         pitch: 0,
         pace: 1.0,
         loudness: 1.5,
-        speech_sample_rate: 22050,
+        speech_sample_rate: 16000,
         enable_preprocessing: true,
         model: config.sarvamModel || 'bulbul:v3',
       }),
@@ -109,126 +282,146 @@ async function generateSarvamTts(text) {
 
     if (!res.ok) {
       const err = await res.text().catch(() => '');
-      console.warn(`[ttsService] Sarvam TTS error ${res.status}:`, err.slice(0, 120));
+      console.warn(`[ttsService] Ishita TTS error ${res.status}:`, err.slice(0, 120));
       return null;
     }
 
     const data = await res.json();
     const base64Audio = data.audios?.[0];
-    if (!base64Audio) {
-      console.warn('[ttsService] Sarvam returned no audio array');
-      return null;
-    }
+    if (!base64Audio) return null;
 
     const wavBuffer = Buffer.from(base64Audio, 'base64');
-    console.log(`[ttsService] ✅ Sarvam TTS (${config.sarvamSpeaker || 'simran'}) | ${Date.now() - t0}ms | ${wavBuffer.length} bytes`);
+    console.log(`[ttsService] ✅ Ishita TTS (lang: ${targetLang}) | ${Date.now() - t0}ms | ${wavBuffer.length} bytes`);
     return wavBuffer;
   } catch (err) {
-    console.warn('[ttsService] Sarvam exception:', err.message);
+    console.warn('[ttsService] Ishita exception:', err.message);
     return null;
   }
 }
 
 /**
- * Generate natural voice audio.
- * Prioritizes Sarvam AI (Indian conversational voice, <1s latency) if configured.
- * Automatically falls back to Gemini prebuilt voice (Callirrhoe) if needed.
- * @param {string} text - Text to speak
- * @param {string} [voiceName] - Gemini prebuilt voice name (default "Callirrhoe")
- * @returns {Promise<Buffer|null>} - Standard WAV Buffer or null on failure
+ * Fallback synthesizer using Gemini Prebuilt Voice "Callirrhoe" (Caroline)
+ * @param {string} text
+ * @returns {Promise<Buffer|null>}
  */
-export async function textToSpeech(text, voiceName = 'Callirrhoe') {
-  const cleanText = text
-    .replace(/[*_#`~]/g, '')
-    .replace(/₹\s*(\d+)/g, '$1 rupaye')
-    .replace(/\b(\d+)\s*(?:rs|inr)\b/gi, '$1 rupaye')
-    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+async function generateCallirrhoeTts(text) {
+  if (!config.geminiApiKey) return null;
+  const voice = config.geminiVoice || 'Callirrhoe';
+  const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
-  if (!cleanText) return null;
-
-  // 0. Cache check: returns immediately with 0 credit usage if previously spoken!
-  const cacheKey = `${config.sarvamSpeaker || 'ishita'}:${cleanText.toLowerCase()}`;
-  if (contentCache.has(cacheKey)) {
-    console.log(`[ttsService] ⚡ Memory Cache HIT for "${cleanText.slice(0, 30)}..." (0 credits, 0ms!)`);
-    return contentCache.get(cacheKey);
-  }
-  const diskAudio = getDiskCache(cacheKey);
-  if (diskAudio) {
-    contentCache.set(cacheKey, diskAudio);
-    console.log(`[ttsService] ⚡ Disk Cache HIT for "${cleanText.slice(0, 30)}..." (0 credits, 1ms!)`);
-    return diskAudio;
-  }
-
-  // 1. Try Sarvam AI TTS first if API key is present
-  if (config.sarvamApiKey) {
-    const sarvamAudio = await generateSarvamTts(cleanText);
-    if (sarvamAudio) {
-      contentCache.set(cacheKey, sarvamAudio);
-      saveDiskCache(cacheKey, sarvamAudio);
-      return sarvamAudio;
-    }
-    console.log('[ttsService] Falling back to Gemini TTS...');
-  }
-
-  // 2. Fallback to Gemini TTS (Callirrhoe)
-  if (!config.geminiApiKey) {
-    console.warn('[ttsService] Neither Sarvam nor Gemini API keys are configured');
-    return null;
-  }
-
-  const voice = voiceName || config.geminiVoice || 'Callirrhoe';
-  const payload = {
-    contents: [{ parts: [{ text: cleanText }] }],
-    generationConfig: {
-      responseModalities: ['AUDIO'],
-      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
-    },
-  };
-
-  const modelsToTry = [...new Set(TTS_MODELS)];
-
-  for (const ttsModel of modelsToTry) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${ttsModel}:generateContent?key=${config.geminiApiKey}`;
+  for (const m of models) {
     try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${config.geminiApiKey}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          contents: [{ parts: [{ text }] }],
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+          },
+        }),
       });
 
-      if (res.status === 429 || res.status === 503) {
-        const errBody = await res.text().catch(() => '');
-        console.warn(`[ttsService] ${ttsModel} quota/overload (${res.status}), trying next model. ${errBody.slice(0, 80)}`);
-        continue;
-      }
-
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => '');
-        console.error(`[ttsService] ${ttsModel} HTTP error ${res.status}:`, errBody.slice(0, 120));
-        return null;
-      }
-
+      if (!res.ok) continue;
       const data = await res.json();
-      const inlineData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-      if (!inlineData?.data) {
-        console.warn(`[ttsService] ${ttsModel} returned no audio data`);
-        continue;
-      }
+      const inline = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (!inline) continue;
 
-      console.log(`[ttsService] ✅ Gemini ${ttsModel} | voice: ${voice} | chars: ${cleanText.length}`);
-      const pcmBuffer = Buffer.from(inlineData.data, 'base64');
+      const pcmBuffer = Buffer.from(inline, 'base64');
       const wav = pcmToWav(pcmBuffer, 24000, 1, 16);
-      contentCache.set(cacheKey, wav);
-      saveDiskCache(cacheKey, wav);
+      console.log(`[ttsService] ✅ Gemini Callirrhoe Fallback TTS | voice: ${voice} | ${wav.length} bytes`);
       return wav;
-    } catch (err) {
-      console.error(`[ttsService] ${ttsModel} exception:`, err.message);
-      continue;
-    }
+    } catch (_) {}
   }
-
-  console.error('[ttsService] All TTS models exhausted — returning null');
   return null;
 }
+
+// Standard common phrases that are pre-warmed into memory/disk cache
+const PREWARM_PHRASES = [
+  'Aapka order confirm ho gaya! Details app mein track karein.',
+  'Aapki cab book ho gayi! Driver aur OTP screen par check karein.',
+  'Theek hai, cancel kar diya gaya hai. Kuch aur chahiye?',
+  'Haanji boliye, aapko khana order karna hai ya cab book karni hai?',
+  'Abhi thodi problem aa rahi hai. Ek pal mein dobara try karein.',
+  'Order place nahi ho paya. Dobara "haan" bolein ya try karein.',
+  'Cab book nahi ho payi. Dobara "haan" bolein ya try karein.',
+  'Voice credits khatam ho gaye! Niche type karke free mein continue karein.',
+];
+
+/**
+ * Generate speech with Ishita (Sarvam AI), with seamless Callirrhoe (Gemini) fallback.
+ * Highly optimized: Normalized cache keys & cross-language matching eliminate repeat API calls.
+ * @param {string} text - Raw text to speak
+ * @returns {Promise<Buffer|null>} - Standard WAV Buffer or null on failure
+ */
+export async function textToSpeech(text) {
+  const { cleanText, lang } = prepareTextForIshita(text);
+
+  if (!cleanText) return null;
+
+  // 1. Ultra-clean normalized cache key (strips punctuation and whitespace variance)
+  const normalizedKey = cleanText
+    .toLowerCase()
+    .replace(/[^\w\s\u0900-\u097F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const cacheKey = `ishita:${lang}:${normalizedKey}`;
+  const otherLang = lang === 'hi-IN' ? 'en-IN' : 'hi-IN';
+  const altCacheKey = `ishita:${otherLang}:${normalizedKey}`;
+
+  // 2. Memory Cache check (primary & cross-language)
+  if (contentCache.has(cacheKey)) {
+    console.log(`[ttsService] ⚡ Memory Cache HIT for Ishita ("${cleanText.slice(0, 30)}...")`);
+    return contentCache.get(cacheKey);
+  }
+  if (contentCache.has(altCacheKey)) {
+    console.log(`[ttsService] ⚡ Cross-Lang Memory Cache HIT for Ishita ("${cleanText.slice(0, 30)}...")`);
+    return contentCache.get(altCacheKey);
+  }
+
+  // 3. Disk Cache check (primary & cross-language)
+  const diskAudio = getDiskCache(cacheKey) || getDiskCache(altCacheKey);
+  if (diskAudio) {
+    setContentCache(cacheKey, diskAudio);
+    console.log(`[ttsService] ⚡ Disk Cache HIT for Ishita ("${cleanText.slice(0, 30)}...")`);
+    return diskAudio;
+  }
+
+  // 4. Synthesize speech using Ishita (primary)
+  let audioBuffer = await generateIshitaTts(cleanText, lang);
+
+  // 5. If Ishita fails or Sarvam API is unavailable/exhausted, fallback to Callirrhoe (Gemini voice)
+  if (!audioBuffer) {
+    console.log('[ttsService] 🔄 Ishita unavailable, falling back to Callirrhoe voice...');
+    audioBuffer = await generateCallirrhoeTts(cleanText);
+  }
+
+  if (audioBuffer) {
+    setContentCache(cacheKey, audioBuffer);
+    saveDiskCache(cacheKey, audioBuffer);
+    return audioBuffer;
+  }
+
+  console.warn(`[ttsService] Ishita speech synthesis failed for "${cleanText.slice(0, 35)}..."`);
+  return null;
+}
+
+// Background prewarm to load existing disk cached standard phrases into memory
+try {
+  for (const phrase of PREWARM_PHRASES) {
+    const { cleanText, lang } = prepareTextForIshita(phrase);
+    const normalizedKey = cleanText
+      .toLowerCase()
+      .replace(/[^\w\s\u0900-\u097F]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const cacheKey = `ishita:${lang}:${normalizedKey}`;
+    const cached = getDiskCache(cacheKey);
+    if (cached) {
+      contentCache.set(cacheKey, cached);
+    }
+  }
+} catch (_) {}

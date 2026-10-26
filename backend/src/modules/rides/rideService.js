@@ -132,12 +132,14 @@ function scheduleSimulatedRide(ride, customerId) {
                 fresh.status = status;
                 await fresh.save();
 
-                emitToCustomer(customerId, eventType, {
+                const eventPayload = {
                     rideId: ride._id,
                     customerId,
                     status,
                     message,
-                });
+                };
+                emitToCustomer(customerId, eventType, eventPayload);
+                broadcast(eventType, eventPayload);
                 console.log(`[scheduleSimulatedRide] ${eventType} -> ride ${ride._id}`);
             } catch (err) {
                 console.error('[scheduleSimulatedRide] Error at', status, ':', err.message);
@@ -152,6 +154,8 @@ export async function bookRide({
     rideType = 'cab_economy',
     pickup,
     drop,
+    serviceType = 'RIDE',
+    packageDetails = null,
 }) {
     let fareAmount = 150;
     let distKm = 5.0;
@@ -223,6 +227,8 @@ export async function bookRide({
         pickupLocation: pickupLoc,
         dropLocation: dropLoc,
         rideType,
+        serviceType: serviceType || 'RIDE',
+        packageDetails,
         fare: fareAmount,
         distanceKm: distKm,
         estimatedMins: durMins,
@@ -233,16 +239,18 @@ export async function bookRide({
         quoteId,
     });
 
+    const isDelivery = serviceType === 'DELIVERY' || serviceType === 'PARCEL DELIVERY';
     const offerData = {
         offerId: ride._id.toString(),
-        serviceType: 'RIDE',
-        title: `NEW ${String(rideType).toUpperCase()} REQUEST`,
+        serviceType: isDelivery ? 'PARCEL DELIVERY' : 'RIDE',
+        title: isDelivery ? 'NEW PARCEL PICKUP REQUEST' : `NEW ${String(rideType).toUpperCase()} REQUEST`,
         fare: `₹${fareAmount}`,
         fareNumber: fareAmount,
         distance: `${distKm.toFixed(1)} km • ${Math.round(durMins)} mins`,
         pickup: pickupLoc,
         destination: dropLoc,
         otp,
+        packageDetails,
         vehicleTier: rideType,
         customerName: customerId,
         customerRating: '4.9 ★',
@@ -254,13 +262,15 @@ export async function bookRide({
 
     broadcast('driver.incoming_offer', offerData);
 
-    emitToCustomer(customerId, 'ride.driver_assigned', {
+    const assignPayload = {
         rideId: ride._id,
         customerId,
         status: 'driver_assigned',
         driver,
         otp,
-    });
+    };
+    emitToCustomer(customerId, 'ride.driver_assigned', assignPayload);
+    broadcast('ride.driver_assigned', assignPayload);
 
     scheduleSimulatedRide(ride.toObject(), customerId);
 
@@ -278,11 +288,16 @@ export function getLatestDriverOffer() {
     return latestDriverOffer;
 }
 
+export async function getRideById(rideId) {
+    return Ride.findById(rideId).select('+otp').lean();
+}
+
 export async function getActiveRide(customerId = 'cust_live_001') {
     return Ride.findOne({
         customerId,
         status: { $in: ['searching', 'driver_assigned', 'arrived', 'in_progress'] },
     })
+        .select('+otp')
         .sort({ createdAt: -1 })
         .lean();
 }

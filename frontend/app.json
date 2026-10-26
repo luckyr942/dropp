@@ -21,7 +21,14 @@
       "adaptiveIcon": {
         "backgroundColor": "#080808"
       },
-      "package": "com.dropp.app"
+      "package": "com.dropp.app",
+      "permissions": [
+        "RECORD_AUDIO",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/1.png"

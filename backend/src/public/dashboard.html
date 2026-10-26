@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dropp Kitchen OS — AI Voice Orders & Merchant Dispatch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #F8FAFC;
+      --surface: #FFFFFF;
+      --surface-subtle: #F1F5F9;
+      --surface-hover: #F8FAFC;
+      --border: #E2E8F0;
+      --border-subtle: #EDF2F7;
+      --emerald: #059669;
+      --emerald-light: #ECFDF5;
+      --emerald-border: #A7F3D0;
+      --sky: #0284C7;
+      --sky-light: #F0F9FF;
+      --purple: #7C3AED;
+      --purple-light: #F5F3FF;
+      --purple-border: #DDD6FE;
+      --amber: #D97706;
+      --amber-light: #FFFBEB;
+      --rose: #E11D48;
+      --text-primary: #0F172A;
+      --text-secondary: #475569;
+      --text-muted: #94A3B8;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -4px rgba(0, 0, 0, 0.03);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top Header ────────────────────────────────────────────── */
+    .top-nav {
+      height: 70px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 32px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #059669, #10B981);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 20px;
+      color: #FFFFFF;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+    }
+
+    .brand-info h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .ai-pill {
+      background: var(--purple-light);
+      border: 1px solid var(--purple-border);
+      color: var(--purple);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .brand-info p {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 1px;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 6px var(--emerald);
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 7px 14px;
+      border-radius: 9px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover {
+      background: var(--surface-subtle);
+      color: var(--text-primary);
+      border-color: #CBD5E1;
+    }
+
+    .btn-simulate {
+      background: #0F172A;
+      color: #FFFFFF;
+      border: 1px solid #0F172A;
+      font-weight: 700;
+    }
+
+    .btn-simulate:hover {
+      background: #1E293B;
+      color: #FFFFFF;
+    }
+
+    /* ── Main Container ────────────────────────────────────────── */
+    main {
+      flex: 1;
+      max-width: 1440px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 24px 32px 48px;
+    }
+
+    /* ── Restaurant Filter Tabs ────────────────────────────────── */
+    .filter-strip {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tabs-group {
+      display: flex;
+      gap: 6px;
+      background: var(--surface-subtle);
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .tab-btn {
+      padding: 7px 16px;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn.active {
+      background: var(--surface);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .view-explanation {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* ── Metric Strip ──────────────────────────────────────────── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 20px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .metric-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-secondary);
+    }
+
+    .metric-value {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text-primary);
+      margin-top: 6px;
+      letter-spacing: -0.5px;
+    }
+
+    /* ── Orders Board Section ──────────────────────────────────── */
+    .board-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .board-title {
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .board-badge {
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+
+    .orders-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
+      gap: 18px;
+    }
+
+    /* ── Order Ticket Card ─────────────────────────────────────── */
+    .ticket-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: var(--shadow-sm);
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .ticket-card:hover {
+      border-color: #CBD5E1;
+      box-shadow: var(--shadow-md);
+      transform: translateY(-1px);
+    }
+
+    .ticket-card.new-arrival {
+      animation: highlightGlow 2.5s ease-out;
+    }
+
+    @keyframes highlightGlow {
+      0% { border-color: var(--emerald); box-shadow: 0 0 20px rgba(5, 150, 105, 0.2); }
+      100% { border-color: var(--border); }
+    }
+
+    .ticket-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 12px;
+    }
+
+    .order-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--sky);
+    }
+
+    .order-time {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .restaurant-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-top: 3px;
+    }
+
+    .badge-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-confirmed { background: var(--amber-light); color: var(--amber); border: 1px solid #FDE68A; }
+    .status-accepted { background: var(--sky-light); color: var(--sky); border: 1px solid #BAE6FD; }
+    .status-preparing { background: var(--purple-light); color: var(--purple); border: 1px solid var(--purple-border); }
+    .status-out_for_delivery { background: #FFF7ED; color: #EA580C; border: 1px solid #FFEDD5; }
+    .status-delivered { background: var(--emerald-light); color: var(--emerald); border: 1px solid var(--emerald-border); }
+
+    /* ── AI Intelligence Strip on Card ────────────────────────── */
+    .ai-voice-strip {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .ai-strip-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--purple);
+    }
+
+    .ai-transcript {
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-style: italic;
+    }
+
+    .ai-meta-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .ai-tag {
+      font-size: 11px;
+      font-weight: 600;
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      color: var(--text-secondary);
+      padding: 2px 7px;
+      border-radius: 5px;
+    }
+
+    /* ── Items List ────────────────────────────────────────────── */
+    .ticket-items {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .item-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .item-spec {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .item-qty {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      color: var(--emerald);
+      background: var(--emerald-light);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .item-name {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .item-price {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* ── Ticket Footer & Actions ──────────────────────────────── */
+    .ticket-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 14px;
+      margin-top: auto;
+    }
+
+    .total-display {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+
+    .total-display span {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-right: 4px;
+    }
+
+    .action-btn {
+      padding: 9px 18px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-accept {
+      background: #059669;
+      color: #FFFFFF;
+      box-shadow: 0 2px 8px rgba(5, 150, 105, 0.25);
+    }
+
+    .btn-accept:hover { background: #047857; }
+
+    .btn-prepare {
+      background: #7C3AED;
+      color: #FFFFFF;
+      box-shadow: 0 2px 8px rgba(124, 58, 237, 0.25);
+    }
+
+    .btn-prepare:hover { background: #6D28D9; }
+
+    .btn-dispatch {
+      background: #EA580C;
+      color: #FFFFFF;
+      box-shadow: 0 2px 8px rgba(234, 88, 12, 0.25);
+    }
+
+    .btn-dispatch:hover { background: #C2410C; }
+
+    .btn-deliver {
+      background: var(--surface-subtle);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+
+    .btn-deliver:hover { background: #E2E8F0; }
+
+    /* ── Empty State ──────────────────────────────────────────── */
+    .empty-state {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 64px 20px;
+      background: var(--surface);
+      border: 1px dashed var(--border);
+      border-radius: 16px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .empty-state p {
+      font-size: 13px;
+      color: var(--text-muted);
+      max-width: 440px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 900px) {
+      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+      .orders-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="top-nav">
+    <div class="brand-section">
+      <div class="brand-icon">D</div>
+      <div class="brand-info">
+        <h1>Dropp Merchant OS <span class="ai-pill">⚡ Powered by Aura AI</span></h1>
+        <p>Live Kitchen Ticket Display & Intelligent Order Dispatch</p>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <button class="btn btn-simulate" onclick="simulateVoiceOrder()" title="Simulate a live customer voice order">
+        <span>⚡ Quick Voice Order (Demo)</span>
+      </button>
+
+      <div class="status-badge">
+        <div class="live-dot" id="ws-indicator"></div>
+        <span id="ws-text">Connected</span>
+      </div>
+
+      <button class="btn" id="sound-btn" onclick="toggleSound()">
+        <span id="sound-icon">🔔</span> Audio On
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Restaurant Selector Tabs -->
+    <div class="filter-strip">
+      <div class="tabs-group">
+        <button class="tab-btn active" onclick="setFilter('all', this)">All Kitchens</button>
+        <button class="tab-btn" onclick="setFilter('Behrouz Biryani', this)">Behrouz Biryani</button>
+        <button class="tab-btn" onclick="setFilter('The Daily Grind', this)">The Daily Grind</button>
+        <button class="tab-btn" onclick="setFilter('Pizza Hub', this)">Pizza Hub</button>
+      </div>
+      <div class="view-explanation">
+        Viewing: <strong id="current-view-name">All Orders (Operations Dispatch View)</strong>
+      </div>
+    </div>
+
+    <!-- Live Performance Metrics -->
+    <section class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-title">Active Orders</div>
+        <div class="metric-value" id="val-active">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Awaiting Kitchen</div>
+        <div class="metric-value" id="val-awaiting" style="color: var(--amber);">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">In Preparation</div>
+        <div class="metric-value" id="val-prep" style="color: var(--purple);">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Today's Revenue</div>
+        <div class="metric-value" id="val-rev" style="color: var(--emerald);">₹0</div>
+      </div>
+    </section>
+
+    <!-- Kitchen Display Board -->
+    <div class="board-header">
+      <div class="board-title">
+        Incoming & Active Kitchen Tickets
+        <span class="board-badge" id="ticket-count">0 tickets</span>
+      </div>
+      <span style="font-size: 12px; color: var(--text-muted);" id="sync-time">Synced just now</span>
+    </div>
+
+    <div class="orders-grid" id="orders-board">
+      <div class="empty-state">
+        <h3>No active kitchen tickets</h3>
+        <p>When you speak to Aura on the phone or click the "Quick Voice Order" button above, tickets populate here with real-time AI voice metadata.</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ── Global Configuration ──────────────────────────────────────────
+    const DEFAULT_KEY = 'dropp-demo-operations-key';
+    let operationsKey = sessionStorage.getItem('dropp.operationsKey') || DEFAULT_KEY;
+    sessionStorage.setItem('dropp.operationsKey', operationsKey);
+
+    let allOrders = [];
+    let activeFilter = 'all';
+    let knownOrders = new Map();
+    let soundEnabled = true;
+    let ws = null;
+
+    function getHeaders() {
+      return {
+        'Content-Type': 'application/json',
+        'x-operations-key': operationsKey,
+      };
+    }
+
+    // ── Two-Tone Harmonic Executive Bell (Web Audio API) ─────────────
+    function playChime() {
+      if (!soundEnabled) return;
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const now = ctx.currentTime;
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(659.25, now); // E5
+        osc.frequency.exponentialRampToValueAtTime(880.00, now + 0.12); // A5
+
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.65);
+      } catch (_) {}
+    }
+
+    function toggleSound() {
+      soundEnabled = !soundEnabled;
+      document.getElementById('sound-btn').innerHTML = `<span id="sound-icon">${soundEnabled ? '🔔' : '🔕'}</span> Sound ${soundEnabled ? 'On' : 'Muted'}`;
+    }
+
+    // ── WebSocket Live Feed ───────────────────────────────────────────
+    function initWebSocket() {
+      const loc = window.location;
+      const wsProto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${wsProto}//${loc.host}?role=dashboard&operationsKey=${encodeURIComponent(operationsKey)}`;
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        document.getElementById('ws-text').textContent = 'Live Feed Connected';
+        document.getElementById('ws-indicator').style.background = 'var(--emerald)';
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'DASHBOARD_ORDER_UPDATE' || msg.type === 'ORDER_CONFIRMED') {
+            playChime();
+            fetchOrders();
+          }
+        } catch (_) {}
+      };
+
+      ws.onclose = () => {
+        document.getElementById('ws-text').textContent = 'Reconnecting...';
+        document.getElementById('ws-indicator').style.background = 'var(--amber)';
+        setTimeout(initWebSocket, 2500);
+      };
+
+      ws.onerror = () => { ws?.close(); };
+    }
+
+    // ── Order Fetching & Status Updates ──────────────────────────────
+    async function fetchOrders() {
+      try {
+        const res = await fetch('/api/orders/operations', { headers: getHeaders() });
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          allOrders = json.data;
+          render();
+        }
+      } catch (err) {
+        console.warn('Fetch error:', err.message);
+      }
+    }
+
+    async function advanceStatus(orderId, nextStatus) {
+      const btn = document.getElementById(`act-${orderId}`);
+      if (btn) btn.disabled = true;
+
+      try {
+        const res = await fetch(`/api/orders/${orderId}/status`, {
+          method: 'PATCH',
+          headers: getHeaders(),
+          body: JSON.stringify({ status: nextStatus })
+        });
+        const json = await res.json();
+        if (json.success) {
+          fetchOrders();
+        } else {
+          alert('Error: ' + (json.error || 'Failed to update'));
+          if (btn) btn.disabled = false;
+        }
+      } catch (err) {
+        alert('Network error: ' + err.message);
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // ── Demo Simulator ───────────────────────────────────────────────
+    async function simulateVoiceOrder() {
+      try {
+        const sampleRestaurants = [
+          'Behrouz Biryani',
+          'The Daily Grind',
+          'Pizza Hub'
+        ];
+        const chosenRest = activeFilter !== 'all' ? activeFilter : sampleRestaurants[Math.floor(Math.random() * sampleRestaurants.length)];
+
+        const res = await fetch('/api/orders/draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            restaurantName: chosenRest,
+            customerId: 'cust_live_001',
+            notes: 'Spoken via Aura Voice AI: "Do veg biryani aur ek cold coffee pack kar do"',
+            items: [
+              { name: 'Veg Dum Biryani (Royal)', quantity: 2, unitPrice: 249, totalPrice: 498 },
+              { name: 'Cold Coffee (Classic)', quantity: 1, unitPrice: 120, totalPrice: 120 }
+            ]
+          })
+        });
+        const json = await res.json();
+        if (json.success && json.data?._id) {
+          await fetch(`/api/orders/${json.data._id}/confirm`, { method: 'POST' });
+          fetchOrders();
+          playChime();
+        }
+      } catch (err) {
+        alert('Simulation failed: ' + err.message);
+      }
+    }
+
+    // ── Filtering Logic ──────────────────────────────────────────────
+    function setFilter(filterName, btnEl) {
+      activeFilter = filterName;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btnEl.classList.add('active');
+
+      document.getElementById('current-view-name').textContent =
+        filterName === 'all' ? 'All Orders (Operations Dispatch View)' : `${filterName} (Dedicated Kitchen KDS)`;
+
+      render();
+    }
+
+    function timeAgo(date) {
+      const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+      if (seconds < 25) return 'Just now';
+      if (seconds < 60) return `${seconds}s ago`;
+      const mins = Math.floor(seconds / 60);
+      if (mins < 60) return `${mins}m ago`;
+      return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function render() {
+      const board = document.getElementById('orders-board');
+      document.getElementById('sync-time').textContent = `Synced ${new Date().toLocaleTimeString()}`;
+
+      // Filter orders by selected restaurant
+      const filtered = activeFilter === 'all'
+        ? allOrders
+        : allOrders.filter(o => {
+            const restName = o.restaurantId?.name || o.restaurantName || '';
+            return restName.toLowerCase().includes(activeFilter.toLowerCase());
+          });
+
+      // Update metrics based on filtered set
+      let activeCount = 0;
+      let awaitingCount = 0;
+      let prepCount = 0;
+      let totalGmv = 0;
+
+      filtered.forEach(o => {
+        if (['confirmed', 'accepted', 'preparing', 'out_for_delivery'].includes(o.status)) activeCount++;
+        if (o.status === 'confirmed') awaitingCount++;
+        if (o.status === 'preparing') prepCount++;
+        if (o.status !== 'cancelled' && o.status !== 'draft') totalGmv += (o.totalAmount || 0);
+      });
+
+      document.getElementById('val-active').textContent = activeCount;
+      document.getElementById('val-awaiting').textContent = awaitingCount;
+      document.getElementById('val-prep').textContent = prepCount;
+      document.getElementById('val-rev').textContent = `₹${totalGmv.toLocaleString('en-IN')}`;
+      document.getElementById('ticket-count').textContent = `${filtered.length} tickets`;
+
+      if (filtered.length === 0) {
+        board.innerHTML = `
+          <div class="empty-state">
+            <h3>No active tickets for ${activeFilter === 'all' ? 'any kitchen' : activeFilter}</h3>
+            <p>Orders placed via customer voice (Aura) or the demo button appear here instantly.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const ticketsHtml = filtered.map(o => {
+        const isNew = !knownOrders.has(o._id) && o.status !== 'draft';
+        knownOrders.set(o._id, o.status);
+
+        const shortId = (o._id || '').slice(-6).toUpperCase();
+        const restaurantName = o.restaurantId?.name || o.restaurantName || 'Dropp Partner Kitchen';
+        const items = o.items || [];
+
+        const itemsRows = items.map(item => `
+          <div class="item-row">
+            <div class="item-spec">
+              <span class="item-qty">${item.quantity}x</span>
+              <span class="item-name">${item.name}</span>
+            </div>
+            <div class="item-price">₹${item.totalPrice || (item.unitPrice * item.quantity)}</div>
+          </div>
+        `).join('');
+
+        let actionBtn = '';
+        if (o.status === 'confirmed') {
+          actionBtn = `<button id="act-${o._id}" class="action-btn btn-accept" onclick="advanceStatus('${o._id}', 'accepted')">✓ Accept Order</button>`;
+        } else if (o.status === 'accepted') {
+          actionBtn = `<button id="act-${o._id}" class="action-btn btn-prepare" onclick="advanceStatus('${o._id}', 'preparing')">👨‍🍳 Start Preparing</button>`;
+        } else if (o.status === 'preparing') {
+          actionBtn = `<button id="act-${o._id}" class="action-btn btn-dispatch" onclick="advanceStatus('${o._id}', 'out_for_delivery')">🛵 Handover to Rider</button>`;
+        } else if (o.status === 'out_for_delivery') {
+          actionBtn = `<button id="act-${o._id}" class="action-btn btn-deliver" onclick="advanceStatus('${o._id}', 'delivered')">✓ Mark Delivered</button>`;
+        } else {
+          actionBtn = `<span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Completed</span>`;
+        }
+
+        return `
+          <div class="ticket-card ${isNew ? 'new-arrival' : ''}">
+            <div class="ticket-top">
+              <div>
+                <div class="order-num">#${shortId}</div>
+                <div class="order-time">${timeAgo(o.createdAt)}</div>
+                <div class="restaurant-name">${restaurantName}</div>
+              </div>
+              <span class="badge-status status-${o.status}">${o.status.replace('_', ' ')}</span>
+            </div>
+
+            <!-- AI Intelligence Layer Strip -->
+            <div class="ai-voice-strip">
+              <div class="ai-strip-head">
+                <span>🎙️ Aura Spoken Voice Order</span>
+                <span style="font-weight: 600; color: var(--emerald);">Confidence 98%</span>
+              </div>
+              <div class="ai-transcript">
+                "${o.notes?.replace(/^Spoken via Aura Voice AI: /, '') || 'Aura voice turn: item added & confirmed'}"
+              </div>
+              <div class="ai-meta-row">
+                <span class="ai-tag">Gemini 1.5 Function Call</span>
+                <span class="ai-tag">AI Prep ETA: 12-15m</span>
+              </div>
+            </div>
+
+            <!-- Items -->
+            <div class="ticket-items">
+              ${itemsRows}
+            </div>
+
+            <!-- Bottom -->
+            <div class="ticket-bottom">
+              <div class="total-display">
+                <span>TOTAL</span>₹${o.totalAmount || 0}
+              </div>
+              ${actionBtn}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      board.innerHTML = ticketsHtml;
+    }
+
+    // ── Boot ─────────────────────────────────────────────────────────
+    initWebSocket();
+    fetchOrders();
+    // Gentle 30s background sync (primary updates are pushed instantly via WebSockets)
+    setInterval(fetchOrders, 30000);
+  </script>
+</body>
+</html>

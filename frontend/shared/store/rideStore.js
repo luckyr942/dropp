@@ -5,10 +5,12 @@ const initialTripState = {
     destination: "",
     selectedVehicleTier: "standard",
     fare: 18.50,
-    serviceType: 'ride', // 'ride' | 'package' | 'food' | 'shop'
-    rideStatus: 'IDLE', // 'IDLE' | 'SEARCHING' | 'DRIVER_ASSIGNED' | 'ON_TRIP' | 'COMPLETED'
+    serviceType: 'ride',
+    rideStatus: 'IDLE',
     deliveryOtp: '4821',
     quoteId: null,
+    rideId: null,          // MongoDB _id of the active Ride document
+    customerId: null,      // real customer ID — used for WebSocket room
     distanceKm: null,
     durationMins: null,
     allFares: [],
@@ -67,14 +69,18 @@ export const useRideStore = create((set) => ({
         driver: { ...state.driver, ...driverData },
     })),
     setDeliveryOtp: (otp) => set({ deliveryOtp: otp }),
+    setCustomerId: (id) => set({ customerId: id }),
+    setRideId: (id) => set({ rideId: id }),
     clearLocations: () => set({ pickupLocation: "", destination: "" }),
 
     // Reset whole trip state when completed or cancelled
     resetTripState: () => set({
         ...initialTripState,
+        customerId: useRideStore?.getState?.()?.customerId ?? null, // keep real user ID
         pickupLocation: "",
         destination: "",
         rideStatus: 'IDLE',
+        rideId: null,
         activeOffer: null,
     }),
 }));

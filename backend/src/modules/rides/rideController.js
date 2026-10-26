@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import {
     estimateRide,
     bookRide,
+    getRideById,
     getActiveRide,
     cancelRide,
     rateRide,
@@ -83,7 +84,7 @@ export async function handleEstimateRide(req, res, next) {
 // POST /api/rides/book 
 export async function handleBookRide(req, res, next) {
     try {
-        const { quoteId, rideType = 'cab_economy', pickup, drop } = req.body ?? {};
+        const { quoteId, rideType = 'cab_economy', pickup, drop, serviceType = 'RIDE', packageDetails = null } = req.body ?? {};
 
         if (!ALLOWED_RIDE_TYPES.has(rideType)) {
             return res.status(400).json({
@@ -115,7 +116,7 @@ export async function handleBookRide(req, res, next) {
             } catch (_) {}
         }
 
-        const ride = await bookRide({ customerId, quoteId, rideType, pickup, drop });
+        const ride = await bookRide({ customerId, quoteId, rideType, pickup, drop, serviceType, packageDetails });
         return res.status(201).json({ success: true, data: ride });
     } catch (err) {
         if (err.message?.includes('expired') || err.message?.includes('invalid')) {
@@ -131,6 +132,23 @@ export async function handleGetActiveRide(req, res, next) {
         const customerId = resolveCustomerId(req);
         const activeRide = await getActiveRide(customerId);
         return res.status(200).json({ success: true, data: activeRide || null });
+    } catch (err) {
+        next(err);
+    }
+}
+
+// GET /api/rides/:id
+export async function handleGetRide(req, res, next) {
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, error: 'Invalid ride ID format.' });
+        }
+        const ride = await getRideById(id);
+        if (!ride) {
+            return res.status(404).json({ success: false, error: 'Ride not found.' });
+        }
+        return res.status(200).json({ success: true, data: ride });
     } catch (err) {
         next(err);
     }

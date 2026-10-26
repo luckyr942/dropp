@@ -31,6 +31,7 @@ export default function App() {
   const [currentScreen, setCurrentScreen] = useState('Market');
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [cart, setCart] = useState({});
+  const [activeOrder, setActiveOrder] = useState(null);
 
   if (!fontsLoaded) {
     return (
@@ -123,9 +124,11 @@ export default function App() {
           {currentScreen === 'Cart' && (
             <CartScreen
               cart={cart}
+              restaurant={selectedRestaurant}
               onBack={() => setCurrentScreen(selectedRestaurant ? 'Detail' : 'Market')}
               onUpdateQuantity={handleUpdateQuantity}
-              onPlaceOrder={() => {
+              onPlaceOrder={(order) => {
+                setActiveOrder(order || null);
                 setCurrentScreen('Tracking');
               }}
             />
@@ -133,7 +136,7 @@ export default function App() {
 
           {currentScreen === 'Tracking' && (
             <OrderTrackingScreen
-              order={{
+              order={activeOrder || {
                 id: '#DRP-84920',
                 restaurantName: selectedRestaurant?.name || 'The Daily Grind',
                 etaMinutes: 18,

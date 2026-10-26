@@ -16,12 +16,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/themeContext';
 import RideOfferModal from './RideOfferModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
+import { useRideStore } from '../../../shared/store/rideStore';
+import { API_BASE, WS_BASE } from '../../../shared/utils/apiConfig';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
-// On a physical phone set EXPO_PUBLIC_WS_URL=ws://<LAN-IP>:4000 in frontend/.env
-const WS_URL = process.env.EXPO_PUBLIC_WS_URL || API_BASE.replace(/^http/, 'ws');
-
+const WS_URL = WS_BASE;
 const DRIVER_ID_KEY = '@dropp_driver_id';
+const DRIVER_PROFILE_KEY = '@dropp_driver_profile';
 
 export default function DriverHomeScreen({ onNavigate }) {
     const { theme, isDark } = useTheme();
@@ -50,47 +51,82 @@ export default function DriverHomeScreen({ onNavigate }) {
     const [earningsToday, setEarningsToday] = useState(0);
     const [tripsToday, setTripsToday] = useState(0);
 
-    // ── 1. Load saved driverId on mount ───────────────────────────
+    // ── 1. Load saved driver on mount (Instant Local Restore + Background Sync) ──
     useEffect(() => {
         let isMounted = true;
         async function loadDriver() {
             try {
-                let id = await AsyncStorage.getItem(DRIVER_ID_KEY);
-                if (!id) {
-                    // Auto-link to first seeded driver in MongoDB so testing works instantly
+                // 1. Instant local restore from AsyncStorage (Zero delay, never flashes modal)
+                const [savedId, savedProfileStr] = await Promise.all([
+                    AsyncStorage.getItem(DRIVER_ID_KEY),
+                    AsyncStorage.getItem(DRIVER_PROFILE_KEY),
+                ]);
+
+                let activeId = savedId;
+                if (savedProfileStr) {
                     try {
-                        const res = await fetch(`${API_BASE}/api/drivers`);
-                        const json = await res.json();
-                        if (json.success && json.data && json.data.length > 0) {
-                            const first = json.data[0];
-                            id = first._id;
-                            await AsyncStorage.setItem(DRIVER_ID_KEY, id);
-                            if (isMounted) {
-                                setDriverId(id);
-                                setDriverProfile(first);
-                                setIsOnline(true);
-                                setShowRegModal(false);
-                            }
-                            return;
+                        const parsed = JSON.parse(savedProfileStr);
+                        if (isMounted) {
+                            setDriverProfile(parsed);
+                            if (!activeId) activeId = parsed._id;
                         }
-                    } catch (_) { }
+                    } catch (_) {}
                 }
 
-                if (!isMounted) return;
-                if (id) {
-                    setDriverId(id);
-                    setIsOnline(true);
+                if (activeId) {
+                    if (isMounted) {
+                        setDriverId(activeId);
+                        setIsOnline(true);
+                        setShowRegModal(false);
+                    }
+
+                    // Background sync with MongoDB to keep profile fresh
                     try {
-                        const res = await fetch(`${API_BASE}/api/drivers/${id}`);
-                        const json = await res.json();
-                        if (isMounted && json.success) setDriverProfile(json.data);
-                    } catch (_) { }
-                } else {
+                        const res = await fetch(`${API_BASE}/api/drivers/${activeId}`);
+                        if (res.status === 404) {
+                            // Driver was explicitly deleted from DB; fall through to seed fallback
+                            activeId = null;
+                        } else {
+                            const json = await res.json();
+                            if (isMounted && json.success && json.data) {
+                                setDriverProfile(json.data);
+                                await AsyncStorage.setItem(DRIVER_PROFILE_KEY, JSON.stringify(json.data));
+                                return;
+                            }
+                        }
+                    } catch (_) {
+                        // Network error / offline — keep using local cached identity
+                        return;
+                    }
+                }
+
+                // 2. If no local driver, auto-link to existing MongoDB driver so testing is frictionless
+                try {
+                    const res = await fetch(`${API_BASE}/api/drivers`);
+                    const json = await res.json();
+                    if (json.success && json.data && json.data.length > 0) {
+                        // Prefer registered driver if present
+                        const picked = json.data.find(d => d.name === 'Lucky' || d.name === 'Rome') || json.data[0];
+                        await Promise.all([
+                            AsyncStorage.setItem(DRIVER_ID_KEY, picked._id),
+                            AsyncStorage.setItem(DRIVER_PROFILE_KEY, JSON.stringify(picked)),
+                        ]);
+                        if (isMounted) {
+                            setDriverId(picked._id);
+                            setDriverProfile(picked);
+                            setIsOnline(true);
+                            setShowRegModal(false);
+                        }
+                        return;
+                    }
+                } catch (_) {}
+
+                // 3. Only prompt registration if there are literally 0 drivers in database
+                if (isMounted && !activeId) {
                     setShowRegModal(true);
                 }
             } catch (err) {
-                console.warn('[DriverApp] Could not load saved driverId:', err.message);
-                if (isMounted) setShowRegModal(true);
+                console.warn('[DriverApp] Could not load driver:', err.message);
             }
         }
         loadDriver();
@@ -99,6 +135,12 @@ export default function DriverHomeScreen({ onNavigate }) {
 
     // ── 2. WebSocket listener ─────────────────────────────────────
     useEffect(() => {
+        // 🔒 Only connect WS & poll for offers when driver is ONLINE
+        if (!isOnline) {
+            setWsConnected(false);
+            return;
+        }
+
         let ws;
         let pollInterval;
         let isMounted = true;
@@ -108,7 +150,7 @@ export default function DriverHomeScreen({ onNavigate }) {
                 ws = new WebSocket(WS_URL);
                 ws.onopen = () => { if (isMounted) setWsConnected(true); };
                 ws.onclose = () => {
-                    if (isMounted) {
+                    if (isMounted && isOnline) {
                         setWsConnected(false);
                         setTimeout(connect, 3000);
                     }
@@ -134,9 +176,9 @@ export default function DriverHomeScreen({ onNavigate }) {
 
         connect();
 
-        // Polling fallback — catches offers if WS drops or on multi-device networks
+        // Polling fallback — gentle 4s interval only when online and not viewing an offer
         pollInterval = setInterval(async () => {
-            if (!isMounted) return;
+            if (!isMounted || !isOnline || showOffer) return;
             try {
                 const res = await fetch(`${API_BASE}/api/rides/driver/latest-offer`);
                 const json = await res.json();
@@ -144,14 +186,70 @@ export default function DriverHomeScreen({ onNavigate }) {
                     handleIncomingOffer(json.data);
                 }
             } catch (_) { }
-        }, 1500);
+        }, 4000);
 
         return () => {
             isMounted = false;
             ws?.close();
             clearInterval(pollInterval);
         };
-    }, [isOnline]);
+    }, [isOnline, showOffer]);
+
+    // ── 3. Real-time GPS location push (every 4s when Online) ──────
+    useEffect(() => {
+        if (!isOnline || !driverId) return;
+
+        let intervalId = null;
+        let isCancelled = false;
+
+        const pushLocation = async () => {
+            try {
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status !== 'granted') return;
+
+                const loc = await Location.getCurrentPositionAsync({
+                    accuracy: Location.Accuracy.High,
+                });
+
+                if (isCancelled || !loc?.coords) return;
+
+                const res = await fetch(`${API_BASE}/api/drivers/${driverId}/location`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        lat: loc.coords.latitude,
+                        lng: loc.coords.longitude,
+                        bearing: loc.coords.heading ?? 0,
+                    }),
+                });
+
+                if (res.status === 404) {
+                    // Stale ID in simulator storage; automatically re-link to active MongoDB driver
+                    try {
+                        const listRes = await fetch(`${API_BASE}/api/drivers`);
+                        const listJson = await listRes.json();
+                        if (listJson.success && listJson.data?.length > 0) {
+                            const active = listJson.data.find(d => d.name === 'Lucky' || d.name === 'Rome') || listJson.data[0];
+                            await AsyncStorage.setItem(DRIVER_ID_KEY, active._id);
+                            setDriverId(active._id);
+                            setDriverProfile(active);
+                        }
+                    } catch (_) {}
+                }
+            } catch (err) {
+                // Silently swallow GPS read errors if simulator location is toggling
+                console.warn('[DriverLocation] push error:', err.message);
+            }
+        };
+
+        pushLocation();
+        intervalId = setInterval(pushLocation, 4000);
+
+        return () => {
+            isCancelled = true;
+            if (intervalId) clearInterval(intervalId);
+        };
+    }, [isOnline, driverId]);
 
     function handleIncomingOffer(raw) {
         if (!raw) return;
@@ -194,10 +292,34 @@ export default function DriverHomeScreen({ onNavigate }) {
             if (json.success) {
                 setTripsToday((t) => t + 1);
                 setEarningsToday((e) => e + (json.data?.ride?.fare || 0));
-                Alert.alert('✅ Ride Accepted!', `Navigate to ${offer.pickup}`);
+
+                // Persist full multi-pillar trip context with real coordinates & route to shared store
+                const acceptedRide = json.data?.ride || {};
+                const pLoc = acceptedRide.pickupLocation || offer.pickup;
+                const dLoc = acceptedRide.dropLocation || offer.destination;
+
+                useRideStore.getState().setServiceType(acceptedRide.serviceType || offer.serviceType || 'RIDE');
+                useRideStore.getState().setPickupLocation(pLoc);
+                useRideStore.getState().setDestination(dLoc);
+                useRideStore.getState().setDeliveryOtp(acceptedRide.otp || offer.otp || '4821');
+                useRideStore.getState().setRideId(acceptedRide._id || offer.rideId);
+                if (acceptedRide.routeGeometry) {
+                    useRideStore.getState().setRoute(acceptedRide.routeGeometry, acceptedRide.distanceKm, acceptedRide.estimatedMins, [{ id: 'standard', fare: acceptedRide.fare }]);
+                }
+                useRideStore.getState().selectVehicle('standard', acceptedRide.fare || offer.fare || 180);
+
+                const taskLabel = offer.serviceType?.includes('FOOD')
+                    ? 'Food Delivery'
+                    : offer.serviceType?.includes('PARCEL')
+                    ? 'Parcel Delivery'
+                    : offer.serviceType?.includes('SHOP')
+                    ? 'Shopping Delivery'
+                    : 'Ride';
+
+                Alert.alert(`✅ ${taskLabel} Accepted!`, `Navigate to pickup: ${typeof offer.pickup === 'object' ? (offer.pickup?.label || offer.pickup?.address) : offer.pickup}`);
                 if (onNavigate) onNavigate('DriverNav');
             } else {
-                Alert.alert('Could Not Accept', json.error || 'The ride may have been cancelled.');
+                Alert.alert('Could Not Accept', json.error || 'The task may have been cancelled.');
             }
         } catch (err) {
             console.error('[DriverApp] Accept error:', err.message);
@@ -253,14 +375,18 @@ export default function DriverHomeScreen({ onNavigate }) {
             if (json.success) {
                 const id = json.data._id;
                 try {
-                    await AsyncStorage.setItem(DRIVER_ID_KEY, id);
+                    await Promise.all([
+                        AsyncStorage.setItem(DRIVER_ID_KEY, id),
+                        AsyncStorage.setItem(DRIVER_PROFILE_KEY, JSON.stringify(json.data)),
+                    ]);
                 } catch (err) {
                     console.warn('[DriverApp] Could not persist driverId:', err.message);
                 }
                 setDriverId(id);
                 setDriverProfile(json.data);
+                setIsOnline(true);
                 setShowRegModal(false);
-                Alert.alert('🎉 Welcome!', `Registered as ${json.data.name}. Tap GO ONLINE to start.`);
+                Alert.alert('🎉 Welcome!', `Registered as ${json.data.name}. You are now ONLINE.`);
             } else {
                 Alert.alert('Registration Failed', json.error || 'Try again.');
             }
@@ -363,7 +489,16 @@ export default function DriverHomeScreen({ onNavigate }) {
                 {/* Register / Edit Profile */}
                 <TouchableOpacity
                     style={[styles.editProfileBtn, { backgroundColor: theme.surface }]}
-                    onPress={() => setShowRegModal(true)}
+                    onPress={() => {
+                        if (driverProfile) {
+                            setRegName(driverProfile.name || '');
+                            setRegPhone(driverProfile.phone || '');
+                            setRegVehicleModel(driverProfile.vehicleModel || '');
+                            setRegVehicleNumber(driverProfile.vehicleNumber || '');
+                            setRegVehicleType(driverProfile.vehicleType || 'cab_economy');
+                        }
+                        setShowRegModal(true);
+                    }}
                 >
                     <Ionicons name="create-outline" size={18} color={theme.primaryGreen} />
                     <Text style={[styles.editProfileText, { color: theme.textPrimary }]}>
@@ -454,11 +589,13 @@ export default function DriverHomeScreen({ onNavigate }) {
                             }
                         </TouchableOpacity>
 
-                        {driverProfile && (
-                            <TouchableOpacity onPress={() => setShowRegModal(false)} style={{ marginTop: 12, alignItems: 'center' }}>
-                                <Text style={{ color: theme.textSecondary }}>Cancel</Text>
-                            </TouchableOpacity>
-                        )}
+                        <TouchableOpacity
+                            onPress={() => setShowRegModal(false)}
+                            style={{ marginTop: 14, alignItems: 'center', padding: 8 }}
+                            hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}
+                        >
+                            <Text style={{ color: theme.textSecondary, fontWeight: '600' }}>Cancel</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>

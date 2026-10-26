@@ -3,9 +3,9 @@
  * Backend IP: 192.168.1.33:4000 (same Wi-Fi required)
  */
 
-const BASE_URL = __DEV__
-  ? 'http://192.168.1.33:4000'
-  : 'https://api.dropp.app'; // swap with prod URL when deploying
+import { API_BASE } from '../../../shared/utils/apiConfig';
+
+const BASE_URL = API_BASE;
 
 // ─── Generic fetch helpers ──────────────────────────────────────────────────
 

@@ -2,9 +2,36 @@
 import { searchRestaurant, getMenuForSession, buildDraft } from './auraService.js';
 import { AuraSession } from './sessionModel.js';
 import { estimateRide, bookRide } from '../modules/rides/rideService.js';
+import { getLatestActiveOrder } from '../modules/orders/orderService.js';
 
 export const toolMap = {
   // ── Food Tools ──────────────────────────────────────────────
+  // Get real-time status of latest active order
+  get_order_status: async ({ sessionId }) => {
+    const order = await getLatestActiveOrder(sessionId);
+    if (!order) {
+      return { found: false, message: 'Aapka koi active order nahi mila.' };
+    }
+    const statusHindi =
+      order.status === 'confirmed' ? 'confirm ho chuka hai aur restaurant ko bhej diya gaya hai' :
+      order.status === 'accepted' ? 'restaurant ne accept kar liya hai' :
+      order.status === 'preparing' ? 'kitchen mein prepare ho raha hai' :
+      order.status === 'out_for_delivery' ? 'delivery partner ke sath nikal chuka hai' :
+      order.status === 'delivered' ? 'deliver ho chuka hai' : order.status;
+
+    const restaurantName = order.restaurantId?.name || 'Restaurant';
+    const itemsSummary = order.items?.map(i => `${i.quantity} ${i.name}`).join(', ') || 'Khaana';
+
+    return {
+      found: true,
+      orderId: order._id.toString(),
+      status: order.status,
+      restaurantName,
+      items: itemsSummary,
+      totalAmount: order.totalAmount,
+      spokenStatus: `Aapka ${restaurantName} se order ${statusHindi}. Total ${order.totalAmount} rupaye hai.`,
+    };
+  },
   // Search restaurants by cuisine, dish, or name
   search_restaurants: async ({ query, sessionId }) => {
     if (typeof query !== 'string' || !query.trim()) {
@@ -137,6 +164,15 @@ export const TOOL_DECLARATIONS = [
         },
       },
       required: ['restaurantId', 'items'],
+    },
+  },
+
+  {
+    name: 'get_order_status',
+    description: 'Check the real-time status of the customer\'s latest food order. Call when user asks "mera order kahan hai?", "order status kya hai?", "order kab aayega?", or "where is my order?".',
+    parameters: {
+      type: 'object',
+      properties: {},
     },
   },
 

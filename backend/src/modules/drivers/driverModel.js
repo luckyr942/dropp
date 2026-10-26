@@ -22,10 +22,11 @@ const driverSchema = new mongoose.Schema(
         // Availability
         isOnline: { type: Boolean, default: false, index: true },
 
-        // Real-time GPS location (updated by driver app every 10s)
+        // Real-time GPS location (updated by driver app every 4s)
         location: {
             lat:       { type: Number, default: null },
             lng:       { type: Number, default: null },
+            bearing:   { type: Number, default: 0 },
             updatedAt: { type: Date,   default: null },
         },
 

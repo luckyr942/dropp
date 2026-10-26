@@ -131,21 +131,18 @@ export default function FoodMarketScreen({
 
             {/* 3. Floating Bottom Navigation (Unified Universal Nav) */}
             <BottomNavBar
-                preset="food"
+                preset="main"
                 activeTab={activeNavTab}
-                cartBadge={2}
                 onTabPress={(tab) => {
                     setActiveNavTab(tab);
                     if (tab === 'Home') {
                         onNavigate?.('Home');
                     } else if (tab === 'Orders' || tab === 'Activity') {
                         onNavigate?.('Activity');
-                    } else if (tab === 'Cart') {
-                        onNavigate?.('Cart');
-                    } else if (tab === 'Profile') {
-                        onNavigate?.('Profile');
                     } else if (tab === 'Wallet') {
                         onNavigate?.('Wallet');
+                    } else if (tab === 'Profile') {
+                        onNavigate?.('Profile');
                     }
                 }}
             />

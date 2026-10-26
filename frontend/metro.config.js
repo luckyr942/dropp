@@ -14,11 +14,13 @@ config.watchFolders = [
 ];
 
 // Resolve packages from this root's node_modules first,
-// then fall back to sub-app node_modules (for any extras)
+// then fall back to sub-app and workspace node_modules
 config.resolver.nodeModulesPaths = [
     path.resolve(projectRoot, 'node_modules'),
+    path.resolve(projectRoot, 'driver/node_modules'),
     path.resolve(projectRoot, 'rider/node_modules'),
     path.resolve(projectRoot, 'food/node_modules'),
+    path.resolve(projectRoot, '../node_modules'),
 ];
 
 // Prevent picking up mismatched root-level react-native

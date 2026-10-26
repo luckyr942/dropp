@@ -56,37 +56,116 @@ export async function searchRestaurant(query){
     }
     const combined = Array.from(map.values()).slice(0, 5);
 
+    const ALL_FALLBACK_RESTAURANTS = [
+      {
+        id: 'rest_bawarchee_001',
+        name: 'Bawarchee Biryani House',
+        cuisine: 'Biryani, Mughlai, North Indian',
+        rating: 4.6,
+        deliveryTimeMins: 25,
+        minOrder: 149,
+        menuPreview: [
+          { name: 'Chicken Dum Biryani', price: 249 },
+          { name: 'Veg Dum Biryani', price: 179 },
+          { name: 'Cold Coffee', price: 90 },
+          { name: 'Chicken Tikka', price: 229 },
+        ],
+      },
+      {
+        id: 'rest_behrouz_002',
+        name: 'Behrouz Royal Biryani',
+        cuisine: 'Royal Biryani, Mughlai, Kebabs',
+        rating: 4.8,
+        deliveryTimeMins: 30,
+        minOrder: 199,
+        menuPreview: [
+          { name: 'Subz-e-Biryani', price: 229 },
+          { name: 'Dum Gosht Biryani', price: 349 },
+          { name: 'Gulab Jamun (2 pcs)', price: 69 },
+          { name: 'Mint Raita', price: 49 },
+        ],
+      },
+      {
+        id: 'rest_pizza_003',
+        name: 'Pizza Palace & Italian Hub',
+        cuisine: 'Pizza, Pasta, Italian, Fast Food',
+        rating: 4.7,
+        deliveryTimeMins: 20,
+        minOrder: 149,
+        menuPreview: [
+          { name: 'Margherita Pizza', price: 299 },
+          { name: 'Farmhouse Veg Pizza', price: 349 },
+          { name: 'Garlic Breadsticks', price: 119 },
+          { name: 'Choco Lava Cake', price: 99 },
+        ],
+      },
+      {
+        id: 'rest_daily_grind_004',
+        name: 'The Daily Grind Cafe',
+        cuisine: 'Coffee, Beverages, Sandwiches, Breakfast',
+        rating: 4.7,
+        deliveryTimeMins: 18,
+        minOrder: 99,
+        menuPreview: [
+          { name: 'Classic Cold Coffee', price: 120 },
+          { name: 'Hazelnut Frappe', price: 160 },
+          { name: 'Grilled Paneer Sandwich', price: 139 },
+          { name: 'Cappuccino', price: 110 },
+        ],
+      },
+      {
+        id: 'rest_burger_005',
+        name: 'Burger Singh & Fast Bites',
+        cuisine: 'Burgers, Fries, Fast Food, Shakes',
+        rating: 4.5,
+        deliveryTimeMins: 22,
+        minOrder: 99,
+        menuPreview: [
+          { name: 'Crispy Veg Burger', price: 129 },
+          { name: 'Chicken Snacker Burger', price: 169 },
+          { name: 'Peri Peri Fries', price: 89 },
+          { name: 'Thick Chocolate Shake', price: 119 },
+        ],
+      },
+      {
+        id: 'rest_haldiram_006',
+        name: "Haldiram's Sweets & Thali",
+        cuisine: 'Sweets, North Indian, Thali, Chaat',
+        rating: 4.7,
+        deliveryTimeMins: 25,
+        minOrder: 149,
+        menuPreview: [
+          { name: 'Special Deluxe Thali', price: 249 },
+          { name: 'Chole Bhature (2 pcs)', price: 159 },
+          { name: 'Rasgulla (2 pcs)', price: 60 },
+          { name: 'Raj Kachori', price: 110 },
+        ],
+      },
+      {
+        id: 'rest_dosa_007',
+        name: 'Dosa King South Indian',
+        cuisine: 'South Indian, Dosa, Idli, Filter Coffee',
+        rating: 4.6,
+        deliveryTimeMins: 20,
+        minOrder: 99,
+        menuPreview: [
+          { name: 'Masala Dosa', price: 129 },
+          { name: 'Rava Onion Dosa', price: 149 },
+          { name: 'Steamed Idli (2 pcs)', price: 69 },
+          { name: 'Authentic Filter Coffee', price: 50 },
+        ],
+      },
+    ];
+
     // Fallback catalog if DB returns empty or is disconnected
     if (combined.length === 0) {
-      return [
-        {
-          id: 'rest_bawarchee_001',
-          name: 'Bawarchee Biryani House',
-          cuisine: 'Biryani, Mughlai, North Indian',
-          rating: 4.6,
-          deliveryTimeMins: 25,
-          minOrder: 149,
-          menuPreview: [
-            { name: 'Chicken Dum Biryani', price: 280 },
-            { name: 'Veg Dum Biryani', price: 220 },
-            { name: 'Cold Coffee', price: 90 },
-            { name: 'Hot Coffee', price: 70 },
-          ],
-        },
-        {
-          id: 'rest_third_wave_002',
-          name: 'Third Wave Coffee & Cafe',
-          cuisine: 'Coffee, Cafe, Fast Food',
-          rating: 4.7,
-          deliveryTimeMins: 20,
-          minOrder: 99,
-          menuPreview: [
-            { name: 'Classic Cold Coffee', price: 150 },
-            { name: 'Cappuccino', price: 140 },
-            { name: 'Paneer Biryani', price: 210 },
-          ],
-        },
-      ];
+      const q = cleanQuery.toLowerCase();
+      const matched = ALL_FALLBACK_RESTAURANTS.filter((r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.cuisine.toLowerCase().includes(q) ||
+        r.menuPreview.some((m) => m.name.toLowerCase().includes(q))
+      );
+      return matched.length > 0 ? matched.slice(0, 4) : ALL_FALLBACK_RESTAURANTS.slice(0, 4);
     }
 
     // Attach menu preview so LLM can call build_draft directly without an extra get_menu call

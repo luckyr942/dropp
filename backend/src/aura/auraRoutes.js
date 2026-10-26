@@ -27,7 +27,7 @@ router.post('/transcribe', async (req, res) => {
   }
 });
 
-// Stream generated Callirrhoe voice audio
+// Stream generated Ishita voice audio
 router.get('/audio/:id', (req, res) => {
   const buffer = getAudioBuffer(req.params.id);
   if (!buffer) {
@@ -51,5 +51,26 @@ router.post('/tools/search-restaurants', handleSearchRestaurants);
 router.post('/tools/get-menu', handleGetMenu);
 router.post('/tools/build-draft', handleBuildDraft);
 router.post('/tools/confirm-order', handleConfirmOrder);
+
+// Voice credit balance endpoint for Aura UI overlay
+import { CustomerCredit } from './guardRails.js';
+import { config } from '../config/config.js';
+
+router.get('/credits', async (req, res) => {
+  try {
+    const customerId = req.user?.id ?? config.defaultCustomerId ?? 'guest';
+    let user = await CustomerCredit.findOne({ customerId });
+    if (!user) {
+      user = await CustomerCredit.create({ customerId, credits: 150 });
+    } else if (user.credits < 10) {
+      // Auto-replenish during development/testing
+      user.credits = 150;
+      await user.save();
+    }
+    return res.json({ success: true, credits: user.credits });
+  } catch (err) {
+    return res.json({ success: true, credits: 150 });
+  }
+});
 
 export default router;

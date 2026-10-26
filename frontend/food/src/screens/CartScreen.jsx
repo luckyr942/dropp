@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { API_BASE } from '../../../shared/utils/apiConfig';
 
 const { width } = Dimensions.get('window');
 
@@ -21,6 +22,7 @@ export default function CartScreen({
         '1': { id: '1', name: 'Signature Vanilla Cold Brew', price: 210, quantity: 2 },
         '3': { id: '3', name: 'Butter Croissant', price: 130, quantity: 1 },
     },
+    restaurant = null,
     onBack,
     onPlaceOrder,
     onUpdateQuantity,
@@ -30,12 +32,60 @@ export default function CartScreen({
     const [appliedCode, setAppliedCode] = useState('DROPP50');
     const [selectedPayment, setSelectedPayment] = useState('UPI');
     const [cookingInstructions, setCookingInstructions] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const items = Object.values(cart);
     const itemTotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
     const deliveryFee = itemTotal > 299 ? 0 : 35;
     const taxesAndPlatform = 24;
     const toPay = Math.max(0, itemTotal + deliveryFee + taxesAndPlatform - appliedDiscount);
+
+    const handlePressPlaceOrder = async () => {
+        setIsSubmitting(true);
+        try {
+            const draftRes = await fetch(`${API_BASE}/api/orders/draft`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    customerId: 'cust_live_001',
+                    orderType: 'FOOD',
+                    restaurantId: restaurant?._id || restaurant?.id || undefined,
+                    items: items.map(i => ({
+                        id: i.id,
+                        name: i.name,
+                        price: i.price,
+                        quantity: i.quantity,
+                        unitPrice: i.price,
+                        totalPrice: i.price * i.quantity,
+                    })),
+                    restaurantName: restaurant?.name || 'The Daily Grind',
+                    deliveryAddress: {
+                        street: 'Flat 402, Tower B, Sector 28',
+                        city: 'Gurugram',
+                        pincode: '122002',
+                    },
+                }),
+            });
+            const draftJson = await draftRes.json();
+            if (draftJson.success && draftJson.data?._id) {
+                const confirmRes = await fetch(`${API_BASE}/api/orders/${draftJson.data._id}/confirm`, {
+                    method: 'POST',
+                });
+                const confirmJson = await confirmRes.json();
+                const finalOrder = confirmJson.data || draftJson.data;
+                if (onPlaceOrder) {
+                    onPlaceOrder(finalOrder);
+                }
+                return;
+            }
+        } catch (err) {
+            console.warn('[CartScreen] Place order error fallback:', err.message);
+        } finally {
+            setIsSubmitting(false);
+        }
+
+        if (onPlaceOrder) onPlaceOrder();
+    };
 
     const handleApplyCoupon = (codeToApply) => {
         const code = (codeToApply || couponInput).trim().toUpperCase();
@@ -345,11 +395,14 @@ export default function CartScreen({
                     </View>
 
                     <TouchableOpacity
-                        style={styles.placeOrderBtn}
-                        onPress={onPlaceOrder}
+                        style={[styles.placeOrderBtn, isSubmitting && { opacity: 0.7 }]}
+                        onPress={handlePressPlaceOrder}
+                        disabled={isSubmitting}
                         activeOpacity={0.88}
                     >
-                        <Text style={styles.placeOrderBtnText}>Place Order</Text>
+                        <Text style={styles.placeOrderBtnText}>
+                            {isSubmitting ? 'Dispatching to Drivers...' : 'Place Order'}
+                        </Text>
                         <View style={styles.placeOrderArrowCircle}>
                             <Ionicons name="arrow-forward" size={16} color="#008744" />
                         </View>

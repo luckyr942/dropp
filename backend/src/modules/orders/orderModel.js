@@ -5,7 +5,8 @@ const orderItemSchema = new mongoose.Schema(
         menuItemId:{
             type: mongoose.Schema.Types.ObjectId,
             ref: 'MenuItem',
-            required: true,
+            required: false,
+            default: null,
         },
         name: {type: String, required: true },
         quantity: {type: Number, required: true},
@@ -26,7 +27,8 @@ const orderSchema = new mongoose.Schema(
         restaurantId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Restaurant',
-            required: true,
+            required: false,
+            default: null,
         },
         sessionId: { type: String, default: null },
         items: {
@@ -39,10 +41,20 @@ const orderSchema = new mongoose.Schema(
         totalAmount: { type: Number, required: true },
         status: {
             type: String,
-            enum: ['draft', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'],
+            enum: ['draft', 'confirmed', 'accepted', 'driver_assigned', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'],
             default: 'draft',
             index: true,
         },
+        driver: {
+            driverId: { type: String, default: null },
+            name: { type: String, default: null },
+            phone: { type: String, default: null },
+            vehicle: { type: String, default: null },
+            rating: { type: Number, default: 5.0 },
+            avatar: { type: String, default: null },
+            etaMinutes: { type: Number, default: 15 },
+        },
+        deliveryOtp: { type: String, default: '4821' },
         deliveryAddress: {
             street: { type: String, default: '' },
             city: { type: String, default: '' },

@@ -15,16 +15,34 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.dropp.driver"
+      "bundleIdentifier": "com.dropp.driver",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Dropp Driver needs your location to show your position on the map and send GPS to riders.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Dropp Driver uses your location in the background to keep riders updated on your position.",
+        "NSLocationAlwaysUsageDescription": "Dropp Driver uses background location to track your route."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#0B0F17"
       },
-      "package": "com.dropp.driver"
+      "package": "com.dropp.driver",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION"
+      ]
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Dropp Driver needs your location to track your route and share it with riders.",
+          "locationWhenInUsePermission": "Dropp Driver needs your location to show your current position.",
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ]
     ]
   }
 }

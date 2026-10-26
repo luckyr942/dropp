@@ -671,21 +671,23 @@ const styles = StyleSheet.create({
 
     // Add + Pill & Stepper
     actionCol: {
-        alignItems: 'center',
+        width: 94,
+        alignItems: 'flex-end',
         justifyContent: 'center',
     },
     addPill: {
+        width: 92,
+        height: 38,
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: 4,
         backgroundColor: '#008744',
-        paddingHorizontal: 18,
-        paddingVertical: 9,
-        borderRadius: 18,
+        borderRadius: 19,
         shadowColor: '#008744',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.28,
-        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 5,
         elevation: 3,
     },
     addPillText: {
@@ -694,13 +696,14 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
     },
     stepperPill: {
+        width: 92,
+        height: 38,
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
         backgroundColor: '#E8F5E9',
         paddingHorizontal: 8,
-        paddingVertical: 5,
-        borderRadius: 18,
-        gap: 10,
+        borderRadius: 19,
     },
     stepperTouch: {
         padding: 4,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -7,16 +7,22 @@ import {
     ScrollView,
     StyleSheet,
     Linking,
-    StatusBar
+    StatusBar,
+    Animated,
+    Alert,
 } from 'react-native';
+import * as Speech from 'expo-speech';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { WS_BASE } from '../../../shared/utils/apiConfig';
+
+const WS_URL = WS_BASE;
 
 const ORDER_STEPS = [
-    { id: 1, title: 'Order Confirmed', time: '6:02 PM', completed: true },
-    { id: 2, title: 'Kitchen Preparing', time: '6:05 PM', active: true },
-    { id: 3, title: 'Out for Delivery', time: 'Expected 6:18 PM' },
-    { id: 4, title: 'Delivered', time: 'Expected 6:25 PM' },
+    { id: 1, title: 'Order Confirmed', time: '6:02 PM' },
+    { id: 2, title: 'Driver Assigned & Kitchen Preparing', time: 'In Progress' },
+    { id: 3, title: 'Out for Delivery', time: 'Live GPS' },
+    { id: 4, title: 'Delivered', time: 'Expected' },
 ];
 
 export default function OrderTrackingScreen({
@@ -31,30 +37,162 @@ export default function OrderTrackingScreen({
         ],
         totalAmount: 514,
         deliveryAddress: 'Flat 402, Tower B, Sector 28, Gurugram',
+        deliveryOtp: '4821',
     },
     onBack,
 }) {
     const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
-    const [currentStepIndex, setCurrentStepIndex] = useState(1); // 0: Confirmed, 1: Preparing, 2: Out, 3: Delivered
+    const [assignedDriver, setAssignedDriver] = useState(order?.driver?.name ? order.driver : null);
+    const [currentStepIndex, setCurrentStepIndex] = useState(
+        order?.status === 'delivered' ? 3 :
+        order?.status === 'out_for_delivery' ? 2 :
+        (order?.driver?.name || order?.status === 'driver_assigned') ? 1 : 0
+    );
+    const [statusBannerText, setStatusBannerText] = useState(
+        order?.status === 'confirmed' ? 'Order confirmed. Waiting for the kitchen.' : 'Kitchen Preparing Your Meal'
+    );
+    const [driverPos, setDriverPos] = useState({ lat: 28.5427, lng: 77.0492, bearing: 0 });
 
-    // Driver simulation
-    const driver = {
-        name: 'Amit Kumar',
-        rating: '4.9',
-        trips: '1,420 trips',
-        vehicle: 'Honda Activa • HR 26 AB 1234',
+    const scooterAnim = useRef(new Animated.Value(0)).current;
+
+    // ── WebSocket Real-Time Listener ────────────────────────────────
+    useEffect(() => {
+        let ws;
+        let isMounted = true;
+
+        const custId = order?.customerId || 'cust_live_001';
+
+        function connect() {
+            try {
+                ws = new WebSocket(`${WS_URL}?customerId=${custId}`);
+
+                ws.onopen = () => {
+                    console.log('[FoodTracking] Connected to WS for customer:', custId);
+                };
+
+                ws.onmessage = (e) => {
+                    try {
+                        const msg = JSON.parse(e.data);
+                        const type = msg.type;
+                        const data = msg.data || {};
+
+                        if (type === 'ORDER_STATUS_UPDATE' && (!data.orderId || data.orderId === (order?._id || order?.id))) {
+                            const stepByStatus = {
+                                confirmed: 0,
+                                accepted: 1,
+                                driver_assigned: 1,
+                                preparing: 1,
+                                out_for_delivery: 2,
+                                delivered: 3,
+                            };
+                            const nextStep = stepByStatus[data.status];
+                            if (typeof nextStep === 'number') setCurrentStepIndex(nextStep);
+                            const message = data.message || `Your order is now ${String(data.status || '').replace(/_/g, ' ')}.`;
+                            setStatusBannerText(message);
+                            if (data.status === 'out_for_delivery') {
+                                Animated.timing(scooterAnim, { toValue: 1, duration: 15000, useNativeDriver: true }).start();
+                            }
+                            if (data.status === 'delivered') {
+                                Alert.alert('Order Delivered', 'Your meal has arrived. Enjoy your meal!');
+                            }
+                            // This is intentionally device TTS: it speaks even when the Aura overlay is closed.
+                            Speech.stop();
+                            Speech.speak(message, { language: 'en-IN', rate: 0.94 });
+                            return;
+                        }
+
+                        if (type === 'order.driver_confirmed' || type === 'ride.driver_confirmed') {
+                            if (data.driver) {
+                                setAssignedDriver(data.driver);
+                                setCurrentStepIndex(1);
+                                setStatusBannerText(`${data.driver.name} is on the way to pick up your order!`);
+                            }
+                        } else if (type === 'order.driver_arrived_pickup') {
+                            setCurrentStepIndex(1);
+                            setStatusBannerText('Delivery partner arrived at restaurant. Packing your food.');
+                        } else if (type === 'order.out_for_delivery') {
+                            setCurrentStepIndex(2);
+                            setStatusBannerText('Order collected! Your food is out for delivery 🛵');
+                            Animated.timing(scooterAnim, {
+                                toValue: 1,
+                                duration: 15000,
+                                useNativeDriver: true,
+                            }).start();
+                        } else if (type === 'driver.location_update') {
+                            setDriverPos({
+                                lat: data.lat,
+                                lng: data.lng,
+                                bearing: data.bearing || 0,
+                            });
+                            // Advance marker slightly on GPS updates
+                            if (currentStepIndex === 1) setCurrentStepIndex(2);
+                        } else if (type === 'order.delivered') {
+                            setCurrentStepIndex(3);
+                            setStatusBannerText('Order Delivered! Enjoy your meal 🍕');
+                            Alert.alert('🎉 Order Delivered!', 'Your meal has arrived. Enjoy your meal!');
+                        } else if (type === 'ORDER_STATUS_UPDATE') {
+                            const s = data.status;
+                            if (s === 'accepted') {
+                                setCurrentStepIndex(0);
+                                setStatusBannerText(data.message || 'Restaurant accepted your order!');
+                            } else if (s === 'preparing') {
+                                setCurrentStepIndex(1);
+                                setStatusBannerText(data.message || 'Kitchen preparing your meal 👨‍🍳');
+                            } else if (s === 'out_for_delivery') {
+                                setCurrentStepIndex(2);
+                                setStatusBannerText(data.message || 'Order collected! Out for delivery 🛵');
+                            } else if (s === 'delivered') {
+                                setCurrentStepIndex(3);
+                                setStatusBannerText('Order Delivered! Enjoy your meal 🍽️');
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('[FoodTracking] Parse error:', err.message);
+                    }
+                };
+
+                ws.onclose = () => {
+                    if (isMounted) setTimeout(connect, 3000);
+                };
+
+                ws.onerror = () => {
+                    try { ws.close(); } catch (_) {}
+                };
+            } catch (err) {
+                console.warn('[FoodTracking] WS error:', err.message);
+            }
+        }
+
+        connect();
+
+        return () => {
+            isMounted = false;
+            try { ws?.close(); } catch (_) {}
+        };
+    }, [order]);
+
+    // Active driver details (live or fallback placeholder)
+    const driver = assignedDriver || {
+        name: 'Searching for nearby partner...',
+        rating: '5.0',
+        trips: 'Top Rated',
+        vehicle: 'Dropp Courier Scooter',
         phone: '+91 98765 43210',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+        avatar: require('../../../assets/icon.png'),
     };
 
     const handleCallDriver = () => {
+        if (!assignedDriver) {
+            Alert.alert('Assigning Partner', 'We will assign a delivery partner shortly.');
+            return;
+        }
         Linking.openURL(`tel:${driver.phone}`).catch(() => {
-            alert(`Calling ${driver.name} at ${driver.phone}`);
+            Alert.alert('Calling Partner', `Calling ${driver.name} at ${driver.phone}`);
         });
     };
 
     const handleChatDriver = () => {
-        alert(`Opening chat with ${driver.name}...`);
+        Alert.alert('Chat Support', `Chat with ${driver.name} is ready.`);
     };
 
     return (
@@ -109,6 +247,34 @@ export default function OrderTrackingScreen({
                     {/* Live Tracking Floating Badge */}
                     <View style={styles.liveBadge}>
                         <Text style={styles.liveBadgeText}>⚡ Live GPS Tracking</Text>
+                    </View>
+                </View>
+
+                {/* 2.5 Live Status & Delivery Verification OTP */}
+                <View style={styles.liveOtpCard}>
+                    <View style={styles.liveStatusRow}>
+                        <View style={styles.liveDotRing}>
+                            <View style={styles.liveDotInner} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.liveStatusTitle}>{statusBannerText}</Text>
+                            <Text style={styles.liveStatusSub}>
+                                {assignedDriver ? `${assignedDriver.name} (${assignedDriver.vehicle || 'Courier'})` : 'Matching nearest delivery partner...'}
+                            </Text>
+                        </View>
+                    </View>
+
+                    <View style={styles.otpBox}>
+                        <View style={styles.otpLeft}>
+                            <Ionicons name="shield-checkmark" size={18} color="#00C96B" />
+                            <View>
+                                <Text style={styles.otpLabel}>DELIVERY OTP</Text>
+                                <Text style={styles.otpSub}>Share with partner at delivery</Text>
+                            </View>
+                        </View>
+                        <View style={styles.otpPill}>
+                            <Text style={styles.otpDigitText}>{order?.deliveryOtp || '4821'}</Text>
+                        </View>
                     </View>
                 </View>
 
@@ -250,6 +416,36 @@ export default function OrderTrackingScreen({
                         </View>
                     )}
                 </View>
+                {/* Cancel Order — visible while order is still pending or kitchen is preparing */}
+                {currentStepIndex < 2 && (
+                    <TouchableOpacity
+                        style={styles.cancelOrderBtn}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                            Alert.alert(
+                                'Cancel Order',
+                                'Are you sure you want to cancel? Cancellation charges may apply if kitchen has started preparing.',
+                                [
+                                    { text: 'Keep Order', style: 'cancel' },
+                                    {
+                                        text: 'Yes, Cancel',
+                                        style: 'destructive',
+                                        onPress: () => {
+                                            Alert.alert(
+                                                'Order Cancelled',
+                                                'Your order has been cancelled. Refund will be processed in 3-5 business days.',
+                                                [{ text: 'OK', onPress: () => { if (onBack) onBack(); } }]
+                                            );
+                                        },
+                                    },
+                                ]
+                            );
+                        }}
+                    >
+                        <Ionicons name="close-circle-outline" size={18} color="#EF4444" />
+                        <Text style={styles.cancelOrderText}>Cancel Order</Text>
+                    </TouchableOpacity>
+                )}
             </ScrollView>
         </SafeAreaView>
     );
@@ -259,6 +455,24 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#EEF9F1',
+    },
+    cancelOrderBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 14,
+        borderRadius: 14,
+        borderWidth: 1.5,
+        borderColor: '#FCA5A5',
+        backgroundColor: '#FFF5F5',
+        marginTop: 4,
+    },
+    cancelOrderText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#EF4444',
+        fontFamily: 'PlusJakartaSans_600SemiBold',
     },
     header: {
         flexDirection: 'row',
@@ -655,5 +869,87 @@ const styles = StyleSheet.create({
         fontFamily: 'PlusJakartaSans_500Medium',
         fontSize: 11,
         color: '#64748B',
+    },
+    liveOtpCard: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 20,
+        padding: 16,
+        gap: 14,
+        borderWidth: 1,
+        borderColor: '#E8EEE9',
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 6,
+        elevation: 2,
+    },
+    liveStatusRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    liveDotRing: {
+        width: 22,
+        height: 22,
+        borderRadius: 11,
+        backgroundColor: 'rgba(0, 201, 107, 0.15)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    liveDotInner: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: '#00C96B',
+    },
+    liveStatusTitle: {
+        fontFamily: 'PlusJakartaSans_800ExtraBold',
+        fontSize: 14,
+        color: '#0F172A',
+    },
+    liveStatusSub: {
+        fontFamily: 'PlusJakartaSans_500Medium',
+        fontSize: 12,
+        color: '#64748B',
+        marginTop: 2,
+    },
+    otpBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#F3FAF6',
+        borderRadius: 14,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderWidth: 1,
+        borderColor: 'rgba(0, 201, 107, 0.25)',
+    },
+    otpLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    otpLabel: {
+        fontFamily: 'PlusJakartaSans_800ExtraBold',
+        fontSize: 11,
+        color: '#00A859',
+        letterSpacing: 0.8,
+    },
+    otpSub: {
+        fontFamily: 'PlusJakartaSans_500Medium',
+        fontSize: 10.5,
+        color: '#64748B',
+    },
+    otpPill: {
+        backgroundColor: '#00C96B',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 10,
+    },
+    otpDigitText: {
+        fontFamily: 'PlusJakartaSans_800ExtraBold',
+        fontSize: 15,
+        color: '#FFFFFF',
+        letterSpacing: 3,
     },
 });

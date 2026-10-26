@@ -15,9 +15,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
 import { buildMapboxRouteUrl, extractLocationDetails, MAPBOX_TOKEN } from '../../../shared/utils/mapboxHelper';
+import { API_BASE, WS_BASE } from '../../../shared/utils/apiConfig';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
-const WS_URL = process.env.EXPO_PUBLIC_WS_URL || API_BASE.replace(/^http/, 'ws');
+const WS_URL = WS_BASE;
 
 // Nearby decoy cars scattered around the pickup point on the static map
 function buildFindingMapUrl(routeGeometry, pickup, destination) {
@@ -89,6 +89,8 @@ export default function FindingDriverScreen({ onNavigate, onCancel }) {
         setRideStatus,
         setDriver,
         setDeliveryOtp,
+        setRideId,
+        setCustomerId,
         resetTripState,
     } = useRideStore();
 
@@ -176,6 +178,8 @@ export default function FindingDriverScreen({ onNavigate, onCancel }) {
                         msg.type === 'DRIVER_ASSIGNED'
                     ) {
                         const payload = msg.data || msg;
+                        if (payload.rideId) setRideId(payload.rideId);
+                        if (payload.customerId) setCustomerId(payload.customerId);
                         handleMatch(payload.driver, payload.otp);
                     }
                 } catch (_) { }

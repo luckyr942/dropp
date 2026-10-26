@@ -1,20 +1,41 @@
 {
-    "expo": {
-        "name": "Dropp Rider",
-        "slug": "dropp-rider",
-        "version": "1.0.0",
-        "orientation": "portrait",
-        "userInterfaceStyle": "dark",
-        "splash": {
-            "backgroundColor": "#0B0E14"
-        },
-        "ios": {
-            "supportsTablet": true
-        },
-        "android": {
-            "adaptiveIcon": {
-                "backgroundColor": "#0B0E14"
-            }
+  "expo": {
+    "name": "Dropp Rider",
+    "slug": "dropp-rider",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0B0E14"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dropp.rider",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Dropp needs your location to find nearby drivers and show your pickup point on the map."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0E14"
+      },
+      "package": "com.dropp.rider",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Dropp needs your location to find nearby drivers."
         }
-    }
+      ]
+    ]
+  }
 }

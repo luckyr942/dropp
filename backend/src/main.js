@@ -1,9 +1,13 @@
-// Entry point for Dropp Backend & Aura AI Engine (Gemini Active)
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import http from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 import { config } from './config/config.js';
 import { connectMongo } from './infrastructure/database/db.js';
@@ -29,7 +33,7 @@ const server = http.createServer(app);
 // 1. Security & Hardening Middleware
 // -------------------------------------------------------------
 app.disable('x-powered-by'); // Don't advertise Express to attackers
-app.use(helmet()); // Secure HTTP headers (XSS, clickjacking protection)
+app.use(helmet({ contentSecurityPolicy: false })); // Secure headers without blocking dashboard inline script
 
 // CORS: allow mobile apps (which have no origin) + localhost web dev
 const allowedOrigins = new Set([
@@ -37,6 +41,8 @@ const allowedOrigins = new Set([
   'http://localhost:19006', // Expo Web legacy
   'http://localhost:5173', // Vite Web UI
   'http://localhost:3000',
+  'http://localhost:4000',
+  'http://127.0.0.1:4000',
 ]);
 
 app.use(
@@ -63,6 +69,9 @@ app.use(express.json({ limit: '10mb' }));
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
+    // Skip logging routine 304 Not Modified cache hits to keep dev console clean
+    if (res.statusCode === 304) return;
+
     const duration = Date.now() - start;
     const color = res.statusCode >= 400 ? '\x1b[31m' : '\x1b[32m';
     console.log(`📡 [${req.method}] ${req.originalUrl} - ${color}${res.statusCode}\x1b[0m (${duration}ms)`);
@@ -70,10 +79,20 @@ app.use((req, res, next) => {
   next();
 });
 
-// Tier 1: Loose rate limiter for standard catalog/order API traffic
+// Tier 1: Rate limiter for standard catalog/order API traffic
+// Driver GPS telemetry (/api/drivers) and dev traffic are skipped so real-time apps never hit 429
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 500,
+  max: process.env.NODE_ENV === 'production' ? 10000 : 100000,
+  skip: (req) => {
+    return (
+      process.env.NODE_ENV !== 'production' ||
+      req.originalUrl.includes('/api/drivers') ||
+      req.originalUrl.includes('/api/rides/driver') ||
+      req.ip === '127.0.0.1' ||
+      req.ip === '::1'
+    );
+  },
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many requests, please try again later.' },
@@ -111,6 +130,11 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', service: 'dropp-backend', time: new Date().toISOString() });
+});
+
+// Live Restaurant & Kitchen Operations Dashboard
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
 // -------------------------------------------------------------
@@ -160,14 +184,19 @@ async function start() {
   await connectRabbitMQ();
   setupWebSockets(server);
 
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n❌ [Dropp] Port ${config.port} is already in use by another running process!`);
+      console.error(`👉 To free port ${config.port}, run: lsof -ti :${config.port} | xargs kill -9\n`);
+    } else {
+      console.error('[Dropp] Server startup error:', err.message);
+    }
+    process.exit(1);
+  });
+
   server.listen(config.port, '0.0.0.0', () => {
     console.log(`[Dropp] Production-ready backend listening on port ${config.port}`);
     console.log(`[Dropp] Health → http://localhost:${config.port}/health`);
-  });
-
-  server.on('error', (err) => {
-    console.error('[Dropp] Server startup error:', err);
-    process.exitCode = 1;
   });
 }
 

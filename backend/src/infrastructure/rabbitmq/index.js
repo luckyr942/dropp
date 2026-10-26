@@ -6,16 +6,31 @@ const Message_Exchange = 'dropp.events';
 
 export async function connectRabbitMQ(){
     try{
-        const connection = await amqp.connect(config.rabbitmqUrl);
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timed out (dev fallback)')), 2000));
+        const connection = await Promise.race([
+            amqp.connect(config.rabbitmqUrl),
+            timeoutPromise,
+        ]);
+        connection.on('error', (err) => {
+            console.warn('[RabbitMQ] Connection error (non-fatal):', err.message);
+            channel = null;
+        });
+        connection.on('close', () => {
+            console.warn('[RabbitMQ] Connection closed, running in local fallback');
+            channel = null;
+        });
         channel = await connection.createChannel();
+        channel.on('error', (err) => {
+            console.warn('[RabbitMQ] Channel error (non-fatal):', err.message);
+        });
         await channel.assertExchange(
             Message_Exchange,
             'topic', 
             {durable:true}
         );
-        console.log('[RabbitMQ] Exchange active: Message_Exchange', Message_Exchange);
+        console.log('[RabbitMQ] Exchange active:', Message_Exchange);
     }catch(error){
-        console.error('[RabbitMQ] Connection error:', error.message);
+        console.warn('[RabbitMQ] Running without RabbitMQ (local mode):', error.message);
     }
 }
 

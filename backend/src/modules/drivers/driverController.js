@@ -98,16 +98,19 @@ export async function handleSetOffline(req, res, next) {
 export async function handleUpdateLocation(req, res, next) {
     try {
         const { id } = req.params;
-        const { lat, lng } = req.body;
+        const { lat, lng, bearing } = req.body;
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({ success: false, error: 'Invalid driver ID' });
         }
         if (!lat || !lng) {
             return res.status(400).json({ success: false, error: 'lat and lng required' });
         }
-        const driver = await updateDriverLocation(id, Number(lat), Number(lng));
+        const driver = await updateDriverLocation(id, Number(lat), Number(lng), bearing);
         return res.status(200).json({ success: true, data: driver });
     } catch (err) {
+        if (err.message === 'Driver not found') {
+            return res.status(404).json({ success: false, error: 'Driver not found' });
+        }
         next(err);
     }
 }
@@ -126,3 +129,24 @@ export async function handleAcceptRide(req, res, next) {
         next(err);
     }
 }
+
+// POST /api/drivers/:driverId/task/:taskId/status
+export async function handleUpdateTaskStatus(req, res, next) {
+    try {
+        const { driverId, taskId } = req.params;
+        const { status, otp } = req.body;
+        if (!mongoose.Types.ObjectId.isValid(driverId) || !mongoose.Types.ObjectId.isValid(taskId)) {
+            return res.status(400).json({ success: false, error: 'Invalid driverId or taskId' });
+        }
+        if (!status) {
+            return res.status(400).json({ success: false, error: 'status is required' });
+        }
+        const { updateTaskStatus } = await import('./driverService.js');
+        const result = await updateTaskStatus(driverId, taskId, status, otp);
+        return res.status(200).json({ success: true, data: result });
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ success: false, error: err.message });
+        next(err);
+    }
+}
+

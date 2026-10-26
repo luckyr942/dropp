@@ -139,7 +139,7 @@ const RECENT_ORDERS = [
 ];
 
 export default function PackageDetailsScreen({ onBack, onNavigate }) {
-    const { pickupLocation } = useRideStore();
+    const { pickupLocation, setServiceType, setPackageDetails } = useRideStore();
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [searchText, setSearchText] = useState('');
     const [activeTab, setActiveTab] = useState('Send');
@@ -149,6 +149,11 @@ export default function PackageDetailsScreen({ onBack, onNavigate }) {
         : 'Gurugram, Sector 28';
 
     const handleServicePress = (serviceId) => {
+        setServiceType('DELIVERY');
+        setPackageDetails({
+            serviceId,
+            description: serviceId === 'parcel' ? 'Documents & Parcels' : serviceId === 'medicine' ? 'Medicines' : 'Pickup Items',
+        });
         if (onNavigate) {
             onNavigate('Location');
         }
@@ -216,7 +221,7 @@ export default function PackageDetailsScreen({ onBack, onNavigate }) {
                         <TouchableOpacity
                             style={styles.sendNowBtn}
                             activeOpacity={0.88}
-                            onPress={() => onNavigate?.('Location')}
+                            onPress={() => handleServicePress('parcel')}
                         >
                             <Text style={styles.sendNowText}>Send Now</Text>
                             <Feather name="arrow-right" size={15} color="#FFF" />

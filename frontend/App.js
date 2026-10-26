@@ -16,6 +16,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useFonts } from 'expo-font';
+import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import {
     PlusJakartaSans_400Regular,
     PlusJakartaSans_500Medium,
@@ -46,6 +47,7 @@ import LocationSearchScreen from './rider/src/screens/LocationScreen.jsx';
 import PackageDetailsScreen from './rider/src/screens/PackageDetailsScreen.jsx';
 import FindingDriverScreen from './rider/src/screens/FindingDriverScreen.jsx';
 import TripTrackingScreen from './rider/src/screens/TripTrackingScreen.jsx';
+import RideCompletedScreen from './rider/src/screens/RideCompletedScreen.jsx';
 import FoodMarketScreen from './food/src/screens/FoodMarketScreen.jsx';
 import RestaurantDetailsScreen from './food/src/screens/restaurantDetailsScreen.jsx';
 import CartScreen from './food/src/screens/CartScreen.jsx';
@@ -64,18 +66,22 @@ import DriverEarningsScreen from './driver/src/screens/DriverEarningsScreen.jsx'
 import * as ExpoSplashScreen from 'expo-splash-screen';
 
 export default function App() {
-    const [fontsLoaded] = useFonts({
+        const [fontsLoaded] = useFonts({
         PlusJakartaSans_400Regular,
         PlusJakartaSans_500Medium,
         PlusJakartaSans_600SemiBold,
         PlusJakartaSans_700Bold,
         PlusJakartaSans_800ExtraBold,
         Caveat_600SemiBold,
+        ...Ionicons.font,
+        ...MaterialCommunityIcons.font,
+        ...Feather.font,
     });
 
     const [currentScreen, setCurrentScreen] = useState('Home');
     const [selectedRestaurant, setSelectedRestaurant] = useState(null);
     const [cart, setCart] = useState({});
+    const [activeOrder, setActiveOrder] = useState(null);
 
     if (!fontsLoaded) {
         return (
@@ -214,6 +220,13 @@ export default function App() {
                             />
                         )}
 
+                        {currentScreen === 'RideCompleted' && (
+                            <RideCompletedScreen
+                                onNavigate={navigate}
+                                onDone={() => navigate('Home')}
+                            />
+                        )}
+
                         {/* ── Food Sub-flow ── */}
                         {currentScreen === 'Food' && (
                             <FoodMarketScreen
@@ -239,17 +252,36 @@ export default function App() {
                         {currentScreen === 'Cart' && (
                             <CartScreen
                                 cart={cart}
+                                restaurant={selectedRestaurant}
                                 onBack={() =>
                                     navigate(selectedRestaurant ? 'RestaurantDetail' : 'Food')
                                 }
                                 onUpdateQuantity={handleUpdateQuantity}
-                                onPlaceOrder={() => navigate('FoodTracking')}
+                                onPlaceOrder={(orderData) => {
+                                    if (orderData) {
+                                        setActiveOrder({
+                                            id: `#DRP-${String(orderData._id || '').slice(-5).toUpperCase() || '84920'}`,
+                                            _id: orderData._id,
+                                            customerId: orderData.customerId,
+                                            restaurantName: selectedRestaurant?.name || 'The Daily Grind',
+                                            etaMinutes: 18,
+                                            etaTime: '6:25 PM',
+                                            items: Object.values(cart),
+                                            totalAmount: orderData.totalAmount || Math.max(0, cartTotal + 24 - 50),
+                                            deliveryAddress: orderData.deliveryAddress?.street || 'Flat 402, Tower B, Sector 28, Gurugram',
+                                            deliveryOtp: orderData.deliveryOtp || '4821',
+                                            driver: orderData.driver || null,
+                                            status: orderData.status || 'confirmed',
+                                        });
+                                    }
+                                    navigate('FoodTracking');
+                                }}
                             />
                         )}
 
                         {currentScreen === 'FoodTracking' && (
                             <OrderTrackingScreen
-                                order={{
+                                order={activeOrder || {
                                     id: '#DRP-84920',
                                     restaurantName: selectedRestaurant?.name || 'The Daily Grind',
                                     etaMinutes: 18,
@@ -257,9 +289,11 @@ export default function App() {
                                     items: Object.values(cart),
                                     totalAmount: Math.max(0, cartTotal + 24 - 50),
                                     deliveryAddress: 'Flat 402, Tower B, Sector 28, Gurugram',
+                                    deliveryOtp: '4821',
                                 }}
                                 onBack={() => {
                                     setCart({});
+                                    setActiveOrder(null);
                                     navigate('Home');
                                 }}
                             />

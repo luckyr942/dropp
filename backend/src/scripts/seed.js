@@ -12,20 +12,26 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/dropp_db';
 // ─── Restaurant image placeholders ───────────────────────────────────────────
 // When your app team adds image upload, replace these URLs with real ones.
 const IMAGES = {
-  biryani: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=700&auto=format&fit=crop&q=85',
-  thali:   'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=700&auto=format&fit=crop&q=85',
-  cafe:    'https://images.unsplash.com/photo-1442512595331-e89e73853f31?w=700&auto=format&fit=crop&q=85',
-  pizza:   'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=700&auto=format&fit=crop&q=85',
-  south:   'https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=700&auto=format&fit=crop&q=85',
-  chinese: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=700&auto=format&fit=crop&q=85',
+  biryani:  'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=700&auto=format&fit=crop&q=85',
+  thali:    'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=700&auto=format&fit=crop&q=85',
+  cafe:     'https://images.unsplash.com/photo-1442512595331-e89e73853f31?w=700&auto=format&fit=crop&q=85',
+  pizza:    'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=700&auto=format&fit=crop&q=85',
+  south:    'https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=700&auto=format&fit=crop&q=85',
+  chinese:  'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=700&auto=format&fit=crop&q=85',
+  burger:   'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=700&auto=format&fit=crop&q=85',
+  nonveg:   'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=700&auto=format&fit=crop&q=85',
+  brewery:  'https://images.unsplash.com/photo-1535958636474-b021ee887b13?w=700&auto=format&fit=crop&q=85',
 
   // Menu items
   chickenBiryani: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=300&auto=format&fit=crop&q=75',
-  pizza:          'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=300&auto=format&fit=crop&q=75',
+  pizzaItem:      'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=300&auto=format&fit=crop&q=75',
   coldBrew:       'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=300&auto=format&fit=crop&q=75',
   dosa:           'https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=300&auto=format&fit=crop&q=75',
   noodles:        'https://images.unsplash.com/photo-1569050467447-ce54b3bbc37d?w=300&auto=format&fit=crop&q=75',
-  thali:          'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=300&auto=format&fit=crop&q=75',
+  thaliItem:      'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=300&auto=format&fit=crop&q=75',
+  burgerItem:     'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300&auto=format&fit=crop&q=75',
+  kebabItem:      'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=300&auto=format&fit=crop&q=75',
+  beerItem:       'https://images.unsplash.com/photo-1535958636474-b021ee887b13?w=300&auto=format&fit=crop&q=75',
 };
 
 async function seed() {
@@ -717,17 +723,430 @@ async function seed() {
   ]);
   console.log('[Seed] ✅ Wok & Roll — 9 items');
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RESTAURANT 7 — Truffles (Bengaluru's legendary burger & sandwich place)
+  // Category: Burgers, Sandwiches, Milkshakes
+  // ═══════════════════════════════════════════════════════════════════════════
+  const truffles = await Restaurant.create({
+    name: 'Truffles — Bengaluru Burgers',
+    slug: 'truffles-bengaluru-burgers',
+    cuisine: ['Burgers', 'Sandwiches', 'Milkshakes', 'American'],
+    image: IMAGES.burger,
+    rating: 4.7,
+    deliveryTimeMins: 28,
+    isOpen: true,
+    pricing: { minOrder: 149, costForTwo: 600 },
+    address: { city: 'Bengaluru', pincode: '560025' },
+  });
+
+  await MenuItem.insertMany([
+    {
+      restaurantId: truffles._id,
+      name: 'Classic Truffle Burger',
+      nameAliases: ['truffle burger', 'classic burger', 'signature burger', 'cheese burger', 'best burger'],
+      category: 'Burgers',
+      price: 279,
+      isVeg: false,
+      isAvailable: true,
+      description: 'Juicy beef-style patty, truffle mayo, aged cheddar, caramelised onions in a brioche bun',
+      image: IMAGES.burgerItem,
+    },
+    {
+      restaurantId: truffles._id,
+      name: 'Spicy Chicken Burger',
+      nameAliases: ['spicy burger', 'chicken burger', 'hot burger', 'crispy chicken burger', 'nashville burger'],
+      category: 'Burgers',
+      price: 249,
+      isVeg: false,
+      isAvailable: true,
+      description: 'Nashville-style crispy fried chicken, sriracha slaw, pickles & spicy mayo',
+      image: IMAGES.burgerItem,
+    },
+    {
+      restaurantId: truffles._id,
+      name: 'Mushroom Swiss Burger',
+      nameAliases: ['mushroom burger', 'swiss burger', 'veg burger', 'mushroom swiss', 'veggie burger'],
+      category: 'Burgers',
+      price: 229,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Sautéed mushrooms, Swiss cheese, garlic aioli & arugula in a sesame bun',
+      image: IMAGES.burgerItem,
+    },
+    {
+      restaurantId: truffles._id,
+      name: 'Club Sandwich',
+      nameAliases: ['club sandwich', 'sandwich', 'toast sandwich', 'triple decker', 'chicken sandwich'],
+      category: 'Sandwiches',
+      price: 219,
+      isVeg: false,
+      isAvailable: true,
+      description: 'Triple-decker with chicken, bacon, egg, lettuce, tomato & chipotle mayo',
+      image: IMAGES.burgerItem,
+    },
+    {
+      restaurantId: truffles._id,
+      name: 'Loaded Fries',
+      nameAliases: ['fries', 'loaded fries', 'cheesy fries', 'cheese fries', 'french fries', 'potato fries'],
+      category: 'Sides',
+      price: 149,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Crispy fries loaded with cheddar sauce, jalapeños & caramelised onions',
+      image: IMAGES.burgerItem,
+    },
+    {
+      restaurantId: truffles._id,
+      name: 'Nutella Milkshake',
+      nameAliases: ['milkshake', 'nutella shake', 'chocolate milkshake', 'shake', 'thick shake'],
+      category: 'Shakes',
+      price: 199,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Thick blended Nutella milkshake with whipped cream & chocolate drizzle',
+      image: IMAGES.coldBrew,
+    },
+    {
+      restaurantId: truffles._id,
+      name: 'Oreo Cheesecake Shake',
+      nameAliases: ['oreo shake', 'oreo milkshake', 'cheesecake shake', 'cookie shake'],
+      category: 'Shakes',
+      price: 219,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Crushed Oreo blended with cheesecake ice cream & vanilla',
+      image: IMAGES.coldBrew,
+    },
+  ]);
+  console.log('[Seed] ✅ Truffles Bengaluru Burgers — 7 items');
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RESTAURANT 8 — CTR (Central Tiffin Room) — Iconic Bengaluru Breakfast
+  // Category: South Indian, Breakfast, Dosa, Filter Coffee
+  // ═══════════════════════════════════════════════════════════════════════════
+  const ctr = await Restaurant.create({
+    name: 'CTR — Central Tiffin Room',
+    slug: 'ctr-central-tiffin-room',
+    cuisine: ['South Indian', 'Breakfast', 'Tiffin', 'Filter Coffee'],
+    image: IMAGES.south,
+    rating: 4.8,
+    deliveryTimeMins: 22,
+    isOpen: true,
+    pricing: { minOrder: 79, costForTwo: 280 },
+    address: { city: 'Bengaluru', pincode: '560003' },
+  });
+
+  await MenuItem.insertMany([
+    {
+      restaurantId: ctr._id,
+      name: 'Benne Masala Dosa',
+      nameAliases: ['benne dosa', 'butter masala dosa', 'ctr dosa', 'malnad dosa', 'ghee dosa'],
+      category: 'Dosas',
+      price: 89,
+      isVeg: true,
+      isAvailable: true,
+      description: 'CTR-style crispy benne (butter) dosa with secret spiced potato masala. A Bengaluru legend.',
+      image: IMAGES.dosa,
+    },
+    {
+      restaurantId: ctr._id,
+      name: 'Rava Masala Dosa',
+      nameAliases: ['rava dosa', 'semolina dosa', 'rava masala', 'crispy rava dosa'],
+      category: 'Dosas',
+      price: 99,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Lacey semolina dosa with onion, green chilli & masala filling',
+      image: IMAGES.dosa,
+    },
+    {
+      restaurantId: ctr._id,
+      name: 'Set Dosa (3 pcs)',
+      nameAliases: ['set dosa', 'sponge dosa', 'soft dosa', '3 dosa', 'fluffy dosa'],
+      category: 'Dosas',
+      price: 79,
+      isVeg: true,
+      isAvailable: true,
+      description: '3 soft, spongy set dosas with vegetable sagu & coconut chutney',
+      image: IMAGES.dosa,
+    },
+    {
+      restaurantId: ctr._id,
+      name: 'Idli Vada Combo',
+      nameAliases: ['idli vada', 'combo', 'idli combo', 'breakfast combo', 'idli vada sambar'],
+      category: 'Combos',
+      price: 89,
+      isVeg: true,
+      isAvailable: true,
+      description: '2 steamed idlis + 1 crispy vada + piping hot sambar + 2 chutneys',
+      image: IMAGES.dosa,
+    },
+    {
+      restaurantId: ctr._id,
+      name: 'Kesari Bath',
+      nameAliases: ['kesari', 'kesari bath', 'semolina halwa', 'sweet rava', 'sheera'],
+      category: 'Sweets',
+      price: 59,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Soft saffron-yellow rava halwa with cashews & ghee — traditional Bengaluru tiffin sweet',
+      image: IMAGES.coldBrew,
+    },
+    {
+      restaurantId: ctr._id,
+      name: 'Davangere Benne Dose',
+      nameAliases: ['davangere dosa', 'benne dose', 'special dosa', 'davangere special'],
+      category: 'Dosas',
+      price: 119,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Thick, fluffy Davangere-style benne dosa with potato bhaji & mint chutney',
+      image: IMAGES.dosa,
+    },
+    {
+      restaurantId: ctr._id,
+      name: 'Filter Coffee (Tumbler)',
+      nameAliases: ['filter coffee', 'tumbler coffee', 'davara coffee', 'kaapi', 'south coffee', 'bangalore coffee'],
+      category: 'Beverages',
+      price: 29,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Authentic CTR decoction coffee — strong, frothy, poured between dabarah & tumbler',
+      image: IMAGES.coldBrew,
+    },
+  ]);
+  console.log('[Seed] ✅ CTR Central Tiffin Room — 7 items');
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RESTAURANT 9 — Empire Restaurant (Bengaluru's iconic non-veg kebab & biryani)
+  // Category: Non-Veg, Biryani, Kebabs, Rolls
+  // ═══════════════════════════════════════════════════════════════════════════
+  const empire = await Restaurant.create({
+    name: 'Empire Restaurant — Bengaluru',
+    slug: 'empire-restaurant-bengaluru',
+    cuisine: ['Mughlai', 'Biryani', 'Kebabs', 'Rolls', 'North Indian'],
+    image: IMAGES.nonveg,
+    rating: 4.5,
+    deliveryTimeMins: 30,
+    isOpen: true,
+    pricing: { minOrder: 149, costForTwo: 500 },
+    address: { city: 'Bengaluru', pincode: '560001' },
+  });
+
+  await MenuItem.insertMany([
+    {
+      restaurantId: empire._id,
+      name: 'Chicken Biryani (Empire Special)',
+      nameAliases: ['empire biryani', 'chicken biryani', 'bangalore biryani', 'empire chicken', 'special biryani'],
+      category: 'Biryani',
+      price: 229,
+      isVeg: false,
+      isAvailable: true,
+      description: 'Empire-style layered chicken biryani with saffron, caramelised onions & mint raita',
+      image: IMAGES.chickenBiryani,
+    },
+    {
+      restaurantId: empire._id,
+      name: 'Mutton Biryani',
+      nameAliases: ['mutton biryani', 'gosht biryani', 'lamb biryani', 'mutton empire'],
+      category: 'Biryani',
+      price: 319,
+      isVeg: false,
+      isAvailable: true,
+      description: 'Slow-cooked tender mutton in aromatic basmati — Empire signature',
+      image: IMAGES.chickenBiryani,
+    },
+    {
+      restaurantId: empire._id,
+      name: 'Chicken Tikka (Quarter)',
+      nameAliases: ['tikka', 'chicken tikka', 'empire tikka', 'tandoori', 'grilled chicken'],
+      category: 'Kebabs',
+      price: 199,
+      isVeg: false,
+      isAvailable: true,
+      description: 'Juicy bone-in chicken tikka marinated in spiced yoghurt & chargrilled',
+      image: IMAGES.kebabItem,
+    },
+    {
+      restaurantId: empire._id,
+      name: 'Shawarma Roll',
+      nameAliases: ['shawarma', 'chicken shawarma', 'roll', 'wrap', 'empire roll', 'shawarma wrap'],
+      category: 'Rolls',
+      price: 149,
+      isVeg: false,
+      isAvailable: true,
+      description: 'Spiced chicken shawarma in soft paratha with garlic sauce, pickled veggies & chilli',
+      image: IMAGES.kebabItem,
+    },
+    {
+      restaurantId: empire._id,
+      name: 'Paneer Tikka',
+      nameAliases: ['paneer tikka', 'veg tikka', 'cottage cheese tikka', 'paneer starter'],
+      category: 'Kebabs',
+      price: 179,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Cubes of paneer marinated in spiced tikka masala, grilled in tandoor',
+      image: IMAGES.kebabItem,
+    },
+    {
+      restaurantId: empire._id,
+      name: 'Butter Chicken',
+      nameAliases: ['butter chicken', 'murgh makhani', 'makhani chicken', 'creamy chicken curry'],
+      category: 'Curries',
+      price: 249,
+      isVeg: false,
+      isAvailable: true,
+      description: 'Tender chicken in a rich, velvety tomato-butter-cream curry with a hint of kasuri methi',
+      image: IMAGES.kebabItem,
+    },
+    {
+      restaurantId: empire._id,
+      name: 'Parotta (2 pcs)',
+      nameAliases: ['parotta', 'kerala parotta', 'parota', 'layered flatbread', 'parantha'],
+      category: 'Breads',
+      price: 39,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Flaky, layered Kerala-style parottas — best paired with chicken curry or salna',
+      image: IMAGES.thaliItem,
+    },
+    {
+      restaurantId: empire._id,
+      name: 'Sulaimani Chai',
+      nameAliases: ['sulaimani', 'black tea', 'sulaimani tea', 'kerala tea', 'lemon tea'],
+      category: 'Beverages',
+      price: 35,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Fragrant Kerala-style black tea with lemon, mint & cardamom',
+      image: IMAGES.coldBrew,
+    },
+  ]);
+  console.log('[Seed] ✅ Empire Restaurant Bengaluru — 8 items');
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RESTAURANT 10 — Toit Taproom (Bengaluru craft brewery + bar food)
+  // Category: Brewery, Burgers, Pizzas, Craft Drinks
+  // ═══════════════════════════════════════════════════════════════════════════
+  const toit = await Restaurant.create({
+    name: 'Toit Taproom — Craft Brewery',
+    slug: 'toit-taproom-bengaluru',
+    cuisine: ['Brewery', 'Burgers', 'Pizzas', 'Bar Food', 'Craft Drinks'],
+    image: IMAGES.brewery,
+    rating: 4.6,
+    deliveryTimeMins: 35,
+    isOpen: true,
+    pricing: { minOrder: 299, costForTwo: 1200 },
+    address: { city: 'Bengaluru', pincode: '560038' },
+  });
+
+  await MenuItem.insertMany([
+    {
+      restaurantId: toit._id,
+      name: 'Toit Craft Beer Flight',
+      nameAliases: ['beer flight', 'craft beer', 'beer tasting', 'toit beer', 'beer sampler', 'beer'],
+      category: 'Craft Drinks',
+      price: 599,
+      isVeg: true,
+      isAvailable: true,
+      description: '4 craft beer tasters — Tinsel Tripel, Bewitched Red Ale, Toit Weiss & Brut IPA',
+      image: IMAGES.beerItem,
+    },
+    {
+      restaurantId: toit._id,
+      name: 'Nachos Grande',
+      nameAliases: ['nachos', 'tortilla chips', 'loaded nachos', 'toit nachos', 'bar nachos'],
+      category: 'Bar Food',
+      price: 349,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Crispy tortilla chips with salsa, sour cream, jalapeños & beer cheese dip',
+      image: IMAGES.burgerItem,
+    },
+    {
+      restaurantId: toit._id,
+      name: 'Pulled Pork Burger',
+      nameAliases: ['pulled pork', 'pork burger', 'smoked pork burger', 'non veg burger'],
+      category: 'Burgers',
+      price: 379,
+      isVeg: false,
+      isAvailable: true,
+      description: 'Slow-smoked pulled pork, beer BBQ glaze, coleslaw & pickles in a toasted bun',
+      image: IMAGES.burgerItem,
+    },
+    {
+      restaurantId: toit._id,
+      name: 'Margherita Flatbread',
+      nameAliases: ['flatbread', 'toit pizza', 'margherita flatbread', 'veg flatbread'],
+      category: 'Flatbreads',
+      price: 299,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Wood-fired flatbread with San Marzano tomato, burrata & fresh basil',
+      image: IMAGES.pizzaItem,
+    },
+    {
+      restaurantId: toit._id,
+      name: 'Beer Battered Onion Rings',
+      nameAliases: ['onion rings', 'beer battered rings', 'rings', 'fried onion'],
+      category: 'Bar Food',
+      price: 199,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Jumbo onion rings dipped in Toit Weiss beer batter, served with chipotle dip',
+      image: IMAGES.burgerItem,
+    },
+    {
+      restaurantId: toit._id,
+      name: 'Toit Non-Alcoholic Sangria',
+      nameAliases: ['sangria', 'mocktail', 'non alcoholic sangria', 'fruit drink', 'red sangria'],
+      category: 'Craft Drinks',
+      price: 249,
+      isVeg: true,
+      isAvailable: true,
+      description: 'House-made red fruit sangria with orange, apple, cinnamon & hibiscus — no alcohol',
+      image: IMAGES.coldBrew,
+    },
+    {
+      restaurantId: toit._id,
+      name: 'Tenderloin Steak Bites',
+      nameAliases: ['steak bites', 'tenderloin', 'beef bites', 'steak', 'meat bites'],
+      category: 'Bar Food',
+      price: 499,
+      isVeg: false,
+      isAvailable: true,
+      description: 'Pan-seared tenderloin bites with garlic butter, peppercorn sauce & herb fries',
+      image: IMAGES.kebabItem,
+    },
+    {
+      restaurantId: toit._id,
+      name: 'Choco Brownie Sundae',
+      nameAliases: ['brownie', 'brownie sundae', 'chocolate brownie', 'dessert', 'ice cream brownie'],
+      category: 'Desserts',
+      price: 249,
+      isVeg: true,
+      isAvailable: true,
+      description: 'Warm Belgian chocolate brownie with vanilla bean ice cream & salted caramel',
+      image: IMAGES.coldBrew,
+    },
+  ]);
+  console.log('[Seed] ✅ Toit Taproom Craft Brewery — 8 items');
+
   // ─────────────────────────────────────────────────────────────────────────
-  const totalRestaurants = 6;
-  const totalItems = 8 + 8 + 11 + 7 + 8 + 9; // = 51
+  const totalRestaurants = 10;
+  const totalItems = 8 + 8 + 11 + 7 + 8 + 9 + 7 + 7 + 8 + 8; // = 81
   console.log(`\n[Seed] 🎉 Done! Created ${totalRestaurants} restaurants & ${totalItems} menu items`);
   console.log('[Seed] Categories covered:');
-  console.log('       🍗 Biryani (Chicken, Mutton, Veg)');
-  console.log('       🥘 North Indian Thali (Veg, Paneer, Chicken)');
-  console.log('       ☕ GenZ Café (Cold Brew, Matcha, Boba, Açaí Bowl)');
-  console.log('       🍕 Pizza & Fast Food (Margherita, Pepperoni, Paneer Tikka)');
-  console.log('       🥞 South Indian (Masala Dosa, Idli, Filter Coffee)');
-  console.log('       🥡 Chinese / Momos (Hakka Noodles, Chow Mein, Manchurian)');
+  console.log('       🍗 Biryani (Bawarchee, Empire — Chicken, Mutton, Veg)');
+  console.log('       🥘 North Indian Thali (Maa ka Dhaba)');
+  console.log('       ☕ GenZ Café (The Brew Room — Cold Brew, Matcha, Boba)');
+  console.log('       🍕 Pizza & Fast Food (Pizza Palace)');
+  console.log('       🥞 South Indian (Dosa King, CTR Central Tiffin Room)');
+  console.log('       🥡 Chinese / Momos (Wok & Roll)');
+  console.log('       🍔 Bengaluru Burgers (Truffles)');
+  console.log('       🥙 Empire Kebabs & Shawarma (Empire Restaurant)');
+  console.log('       🍺 Craft Brewery Bar Food (Toit Taproom)');
 
   await mongoose.disconnect();
   console.log('[Seed] MongoDB disconnected. Backend ready!');

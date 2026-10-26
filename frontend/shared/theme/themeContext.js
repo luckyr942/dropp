@@ -22,10 +22,10 @@ export const ThemeProvider = ({ children }) => {
 };
 
 //custom hook to consume theme in any component 
-export const useTheme = () =>{
+export const useTheme = () => {
     const context = useContext(ThemeContext);
-    if(!context){
-        throw new Error('useTheme must be used within a ThemeProvider');
+    if (!context) {
+        return { theme: lightTheme, isDark: false, toggleTheme: () => {} };
     }
     return context;
-}
+};

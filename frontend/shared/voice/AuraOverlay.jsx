@@ -51,7 +51,21 @@ export default function AuraOverlay() {
 
   const [inputText, setInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [selectedTier, setSelectedTier] = useState('cab_economy');
   const scrollRef = useRef(null);
+
+  // Synchronize selected tier when a new ride estimate is received
+  useEffect(() => {
+    if (rideEstimate) {
+      const fares = rideEstimate.fares || rideEstimate.tiers || [];
+      const hasEconomy = fares.some((f) => f.type === 'cab_economy');
+      const defaultTier = rideEstimate.selectedRideType || (hasEconomy ? 'cab_economy' : fares[0]?.type || 'cab_economy');
+      setSelectedTier(defaultTier);
+    }
+  }, [rideEstimate]);
+
+  const availableFares = rideEstimate?.fares || rideEstimate?.tiers || [];
+  const selectedTierObj = availableFares.find((t) => t.type === selectedTier) || availableFares[0];
 
   // ── Animation Drivers
   const orbPulse = useRef(new Animated.Value(1)).current;
@@ -169,52 +183,73 @@ export default function AuraOverlay() {
   };
 
   const recordingRef = useRef(null);
+  const silenceTimerRef = useRef(null);
+  const hasSpokenRef = useRef(false);
+  const isTranscribingRef = useRef(false);
+
+  // Stop recording, read audio base64, send to transcribe API safely (no double-trigger)
+  const stopAndTranscribe = async () => {
+    if (isTranscribingRef.current) return;
+    isTranscribingRef.current = true;
+
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    setIsListening(false);
+    if (!recordingRef.current) {
+      isTranscribingRef.current = false;
+      return;
+    }
+
+    try {
+      const rec = recordingRef.current;
+      recordingRef.current = null;
+      await rec.stopAndUnloadAsync().catch(() => {});
+      const uri = rec.getURI();
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      }).catch(() => {});
+
+      if (!uri) return;
+
+      const base64Audio = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      }).catch(() => null);
+
+      // If audio is too short or empty, don't waste STT credits
+      if (!base64Audio || base64Audio.length < 1500) {
+        return;
+      }
+
+      const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
+      const res = await fetch(`${BACKEND_URL}/api/aura/transcribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioBase64: base64Audio }),
+      });
+
+      const json = await res.json().catch(() => null);
+      const transcript = json?.transcript?.trim();
+
+      if (transcript) {
+        sendVoiceTurn(transcript, 'voice');
+      }
+    } catch (err) {
+      console.warn('[Aura] Mic transcription error:', err.message);
+    } finally {
+      isTranscribingRef.current = false;
+    }
+  };
 
   const handleMicPress = async () => {
-    // ── CASE A: Stop recording & transcribe voice
+    // If already recording, stop manually right away
     if (isListening) {
-      setIsListening(false);
-      if (!recordingRef.current) return;
-
-      try {
-        await recordingRef.current.stopAndUnloadAsync();
-        const uri = recordingRef.current.getURI();
-        recordingRef.current = null;
-
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: true,
-        });
-
-        if (!uri) return;
-
-        const base64Audio = await FileSystem.readAsStringAsync(uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
-        // If audio is too short or empty, don't waste tokens
-        if (!base64Audio || base64Audio.length < 500) {
-          return;
-        }
-
-        const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
-        const res = await fetch(`${BACKEND_URL}/api/aura/transcribe`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audioBase64: base64Audio }),
-        });
-
-        const json = await res.json().catch(() => null);
-        const transcript = json?.transcript?.trim();
-
-        if (transcript) {
-          sendVoiceTurn(transcript, 'voice');
-        }
-      } catch (err) {
-        console.warn('[Aura] Mic transcription error:', err.message);
-      }
+      await stopAndTranscribe();
     }
-    // ── CASE B: Start recording user voice
+    // Otherwise start listening with automatic silence detection
     else {
       try {
         const perm = await Audio.requestPermissionsAsync();
@@ -228,9 +263,39 @@ export default function AuraOverlay() {
           playsInSilentModeIOS: true,
         });
 
+        hasSpokenRef.current = false;
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = null;
+        }
+
         const { recording } = await Audio.Recording.createAsync(
-          Audio.RecordingOptionsPresets.HIGH_QUALITY
+          {
+            ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+            isMeteringEnabled: true,
+          },
+          (status) => {
+            if (!status.isRecording) return;
+            const metering = status.metering ?? -160;
+
+            // User began speaking: sound detected above -38 dB ambient threshold
+            if (metering > -38) {
+              hasSpokenRef.current = true;
+              if (silenceTimerRef.current) {
+                clearTimeout(silenceTimerRef.current);
+                silenceTimerRef.current = null;
+              }
+            }
+            // User had spoken and now paused for >= 1.4 seconds: auto-stop
+            else if (hasSpokenRef.current && !silenceTimerRef.current) {
+              silenceTimerRef.current = setTimeout(() => {
+                stopAndTranscribe();
+              }, 1400);
+            }
+          },
+          200
         );
+
         recordingRef.current = recording;
         setIsListening(true);
       } catch (err) {
@@ -277,52 +342,91 @@ export default function AuraOverlay() {
           </TouchableOpacity>
         </View>
 
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.keyboardContainer}
-        >
-          {/* ── 2. Compact Luminous AI Orb ────────────────────────── */}
-          <View style={styles.orbContainer}>
-            <View style={[styles.glowRing, styles.glowRingOuter]} />
-            <View style={[styles.glowRing, styles.glowRingMid]} />
-            <Animated.View
-              style={[
-                styles.orbSphere,
-                { transform: [{ scale: orbPulse }, { rotate: spin }] },
-              ]}
+        {/* Check if conversation has begun or cards are active */}
+        {(() => {
+          const hasContent =
+            (messages && messages.length > 0) ||
+            Boolean(rideEstimate) ||
+            Boolean(draftOrder) ||
+            Boolean(bookedRide) ||
+            (restaurants && restaurants.length > 0);
+
+          return (
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={styles.keyboardContainer}
             >
-              <LinearGradient
-                colors={['#55EFC4', '#38D9A9', '#0984E3', '#00CEC9']}
-                start={{ x: 0.1, y: 0.1 }}
-                end={{ x: 0.9, y: 0.9 }}
-                style={StyleSheet.absoluteFillObject}
-              />
-              <LinearGradient
-                colors={['rgba(255,255,255,0.7)', 'rgba(255,255,255,0.05)', 'transparent']}
-                start={{ x: 0.3, y: 0.0 }}
-                end={{ x: 0.7, y: 0.7 }}
-                style={styles.orbSpecular}
-              />
-            </Animated.View>
+              {/* ── 2. Luminous AI Orb (Hero size initially, sleek mini-badge when content active) ── */}
+              {hasContent ? (
+                <View style={styles.miniOrbRow}>
+                  <Animated.View
+                    style={[
+                      styles.miniOrbSphere,
+                      { transform: [{ scale: orbPulse }, { rotate: spin }] },
+                    ]}
+                  >
+                    <LinearGradient
+                      colors={['#55EFC4', '#38D9A9', '#0984E3', '#00CEC9']}
+                      start={{ x: 0.1, y: 0.1 }}
+                      end={{ x: 0.9, y: 0.9 }}
+                      style={StyleSheet.absoluteFillObject}
+                    />
+                  </Animated.View>
+                  <Text style={styles.miniStatusText}>
+                    {isThinking
+                      ? 'Thinking & finding best options...'
+                      : isSpeaking
+                        ? 'Aura speaking...'
+                        : isListening
+                          ? 'Listening to you...'
+                          : 'Dropp Aura ready'}
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.orbContainer}>
+                    <View style={[styles.glowRing, styles.glowRingOuter]} />
+                    <View style={[styles.glowRing, styles.glowRingMid]} />
+                    <Animated.View
+                      style={[
+                        styles.orbSphere,
+                        { transform: [{ scale: orbPulse }, { rotate: spin }] },
+                      ]}
+                    >
+                      <LinearGradient
+                        colors={['#55EFC4', '#38D9A9', '#0984E3', '#00CEC9']}
+                        start={{ x: 0.1, y: 0.1 }}
+                        end={{ x: 0.9, y: 0.9 }}
+                        style={StyleSheet.absoluteFillObject}
+                      />
+                      <LinearGradient
+                        colors={['rgba(255,255,255,0.7)', 'rgba(255,255,255,0.05)', 'transparent']}
+                        start={{ x: 0.3, y: 0.0 }}
+                        end={{ x: 0.7, y: 0.7 }}
+                        style={styles.orbSpecular}
+                      />
+                    </Animated.View>
 
-            {/* Central Sound Wave Bars */}
-            <View style={styles.waveformCenter}>
-              {[wave1, wave2, wave3, wave4, wave5].map((waveAnim, idx) => (
-                <Animated.View key={idx} style={[styles.soundBar, { height: waveAnim }]} />
-              ))}
-            </View>
-          </View>
+                    {/* Central Sound Wave Bars */}
+                    <View style={styles.waveformCenter}>
+                      {[wave1, wave2, wave3, wave4, wave5].map((waveAnim, idx) => (
+                        <Animated.View key={idx} style={[styles.soundBar, { height: waveAnim }]} />
+                      ))}
+                    </View>
+                  </View>
 
-          {/* Status Label */}
-          <Text style={styles.statusSub}>
-            {isThinking
-              ? 'Thinking & finding best options...'
-              : isSpeaking
-                ? 'Speaking...'
-                : isListening
-                  ? 'Listening to you...'
-                  : 'What would you like to do?'}
-          </Text>
+                  {/* Status Label */}
+                  <Text style={styles.statusSub}>
+                    {isThinking
+                      ? 'Thinking & finding best options...'
+                      : isSpeaking
+                        ? 'Speaking...'
+                        : isListening
+                          ? 'Listening to you...'
+                          : 'What would you like to do?'}
+                  </Text>
+                </>
+              )}
 
           {/* ── 3. Live Transcripts & Action Cards ScrollArea ─────── */}
           <ScrollView
@@ -408,21 +512,61 @@ export default function AuraOverlay() {
                     📍 {rideEstimate.distanceKm} km • ~{rideEstimate.durationMins} mins road journey
                   </Text>
                 ) : null}
-                <View style={styles.tierRow}>
-                  {(rideEstimate.fares || rideEstimate.tiers || []).map((t, idx) => (
-                    <View key={idx} style={styles.tierBox}>
-                      <Text style={styles.tierName}>{t.name}</Text>
-                      <Text style={styles.tierPrice}>₹{t.fare}</Text>
-                      <Text style={styles.tierEta}>{t.etaMins || t.eta || 3} min</Text>
-                    </View>
-                  ))}
-                </View>
+                {/* Horizontal Scroll for Ride Tiers: Tap to choose vehicle */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.tierScrollContent}
+                  style={styles.tierScrollView}
+                >
+                  {availableFares.map((t, idx) => {
+                    const isSelected = selectedTier === t.type;
+                    return (
+                      <TouchableOpacity
+                        key={t.type || idx}
+                        style={[styles.tierBox, isSelected && styles.tierBoxSelected]}
+                        onPress={() => setSelectedTier(t.type)}
+                        activeOpacity={0.75}
+                      >
+                        <View style={styles.tierHeaderRow}>
+                          <Ionicons
+                            name={t.icon === 'bicycle' ? 'bicycle' : t.type === 'auto' ? 'car-outline' : 'car-sport'}
+                            size={18}
+                            color={isSelected ? '#00A859' : '#64748B'}
+                            style={{ marginBottom: 3 }}
+                          />
+                          {isSelected && <View style={styles.tierSelectedDot} />}
+                        </View>
+                        <Text style={[styles.tierName, isSelected && styles.tierNameSelected]} numberOfLines={1}>
+                          {t.name}
+                        </Text>
+                        <Text
+                          style={[styles.tierPrice, isSelected && styles.tierPriceSelected]}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit={true}
+                          minimumFontScale={0.7}
+                        >
+                          ₹{Number(t.fare).toLocaleString('en-IN')}
+                        </Text>
+                        <Text style={[styles.tierEta, isSelected && styles.tierEtaSelected]}>
+                          {t.etaMins || t.eta || 3} min
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
                 <View style={styles.actionRow}>
                   <TouchableOpacity style={styles.cancelBtn} onPress={cancelRideAction} activeOpacity={0.85}>
                     <Text style={styles.cancelBtnText}>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.confirmBtn} onPress={confirmRide} activeOpacity={0.85}>
-                    <Text style={styles.confirmBtnText}>Confirm Cab</Text>
+                  <TouchableOpacity
+                    style={styles.confirmBtn}
+                    onPress={() => confirmRide(selectedTier)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.confirmBtnText}>
+                      {selectedTierObj ? `Book ${selectedTierObj.name} • ₹${selectedTierObj.fare}` : 'Confirm Ride'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -433,11 +577,18 @@ export default function AuraOverlay() {
               <View style={[styles.card, { borderColor: '#00A859' }]}>
                 <View style={styles.cardHeader}>
                   <Ionicons name="checkmark-circle" size={22} color="#00A859" />
-                  <Text style={[styles.cardTitle, { color: '#00A859' }]}>Cab Confirmed!</Text>
+                  <Text style={[styles.cardTitle, { color: '#00A859' }]}>
+                    {bookedRide.rideType === 'bike' ? 'Bike Confirmed!' : bookedRide.rideType === 'auto' ? 'Auto Confirmed!' : 'Cab Confirmed!'}
+                  </Text>
                 </View>
                 <Text style={styles.cardSub}>
-                  Driver: {bookedRide.driverName || 'Rajesh Kumar'} • {bookedRide.vehicleModel || 'Swift Dzire'}
+                  Driver: {bookedRide.driver?.name || bookedRide.driverName || 'Rajesh Kumar'} • {bookedRide.driver?.vehicle || bookedRide.vehicleModel || 'Swift Dzire'}
                 </Text>
+                {bookedRide.fare ? (
+                  <Text style={{ fontSize: 13, color: '#00A859', fontWeight: '700', marginTop: 2 }}>
+                    Fare: ₹{bookedRide.fare}
+                  </Text>
+                ) : null}
                 <View style={styles.otpBadge}>
                   <Text style={styles.otpText}>START OTP: {bookedRide.otp || '4821'}</Text>
                 </View>
@@ -556,7 +707,9 @@ export default function AuraOverlay() {
               </LinearGradient>
             </TouchableOpacity>
           </View>
-        </KeyboardAvoidingView>
+            </KeyboardAvoidingView>
+          );
+        })()}
       </View>
     </Modal>
   );
@@ -792,23 +945,92 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 4,
   },
-  tierRow: {
+  // Mini Orb Row when content/conversation is active
+  miniOrbRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignSelf: 'center',
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: '#E7F2EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  miniOrbSphere: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    overflow: 'hidden',
+  },
+  miniStatusText: {
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 12,
+    color: '#00A859',
+  },
+  tierScrollView: {
+    marginVertical: 10,
+  },
+  tierScrollContent: {
     flexDirection: 'row',
     gap: 8,
-    marginVertical: 12,
+    paddingHorizontal: 2,
   },
   tierBox: {
-    flex: 1,
+    minWidth: 92,
     backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
   },
+  tierBoxSelected: {
+    backgroundColor: '#E8F8F0',
+    borderColor: '#00A859',
+    borderWidth: 2,
+    shadowColor: '#00A859',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  tierHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  tierSelectedDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#00A859',
+    marginBottom: 3,
+  },
   tierName: { fontSize: 11, color: '#64748B', fontWeight: '600' },
-  tierPrice: { fontSize: 16, color: '#00A859', fontWeight: '800', marginTop: 2 },
+  tierNameSelected: { color: '#00A859', fontWeight: '700' },
+  tierPrice: {
+    fontSize: 15,
+    color: '#00A859',
+    fontWeight: '800',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  tierPriceSelected: {
+    color: '#007B3E',
+    fontWeight: '800',
+  },
   tierEta: { fontSize: 10, color: '#94A3B8', marginTop: 2 },
+  tierEtaSelected: { color: '#00A859', fontWeight: '600' },
   actionRow: {
     flexDirection: 'row',
     gap: 10,

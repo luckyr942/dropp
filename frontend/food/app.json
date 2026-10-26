@@ -9,9 +9,34 @@
       "resizeMode": "contain",
       "backgroundColor": "#EEF9F1"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.dropp.food"
-    }
+      "bundleIdentifier": "com.dropp.food",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Dropp Food needs your location to deliver to your address."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#EEF9F1"
+      },
+      "package": "com.dropp.food",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Dropp Food uses your location to deliver orders to your address."
+        }
+      ]
+    ]
   }
 }

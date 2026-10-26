@@ -9,6 +9,7 @@ import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
 import { useAuraContext } from '../../../shared/voice/AuraContext';
 import AuraOverlay from '../../../shared/voice/AuraOverlay';
+import BottomNavBar from '../../../shared/components/bottomNavBar';
 
 const { width } = Dimensions.get('window');
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
@@ -381,32 +382,25 @@ export default function HomeScreen({ navigation, onNavigate }) {
                 <View style={{ height: 110 }} />
             </ScrollView>
 
-            {/* ── 6. BOTTOM NAV ── */}
-            <View style={s.bottomNav}>
-                <TouchableOpacity style={s.navItem} onPress={() => { setActiveNavTab('Home'); handleNavigate('Home'); }}>
-                    <Ionicons name="home" size={21} color="#00C96B" />
-                    <Text style={[s.navLabel, s.navLabelActive]}>Home</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={s.navItem} onPress={() => handleNavigate('Bookings')}>
-                    <Ionicons name="receipt-outline" size={21} color="#8A95A0" />
-                    <Text style={s.navLabel}>Orders</Text>
-                </TouchableOpacity>
-                <View style={s.navCenter}>
-                    <TouchableOpacity style={s.auraBtn} onPress={openAura}>
-                        <LinearGradient colors={['#00E57B', '#00B055']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.auraBtnGrad}>
-                            <MaterialCommunityIcons name="microphone" size={23} color="#FFF" />
-                        </LinearGradient>
-                    </TouchableOpacity>
-                </View>
-                <TouchableOpacity style={s.navItem} onPress={() => handleNavigate('Wallet')}>
-                    <Ionicons name="wallet-outline" size={21} color="#8A95A0" />
-                    <Text style={s.navLabel}>Wallet</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={s.navItem} onPress={() => handleNavigate('Profile')}>
-                    <Ionicons name="person-outline" size={21} color="#8A95A0" />
-                    <Text style={s.navLabel}>Profile</Text>
-                </TouchableOpacity>
-            </View>
+            {/* ── 6. FLOATING BOTTOM NAV BAR (Universal) ── */}
+            <BottomNavBar
+                preset="main"
+                activeTab={activeNavTab}
+                onTabPress={(tabId) => {
+                    setActiveNavTab(tabId);
+                    if (tabId === 'Home') handleNavigate('Home');
+                    else if (tabId === 'Activity' || tabId === 'Orders') handleNavigate('Bookings');
+                    else if (tabId === 'Wallet') handleNavigate('Wallet');
+                    else if (tabId === 'Profile') handleNavigate('Profile');
+                }}
+                centerAction={{
+                    icon: 'microphone-outline',
+                    family: 'MaterialCommunityIcons',
+                    size: 28,
+                    colors: ['#00E57B', '#00AD57'],
+                    onPress: openAura,
+                }}
+            />
 
             {/* ── Aura Voice Overlay ── */}
             <AuraOverlay />

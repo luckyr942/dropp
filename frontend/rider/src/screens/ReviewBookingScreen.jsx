@@ -4,11 +4,9 @@ import {
     StatusBar, Image, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
+import { API_BASE } from '../../../shared/utils/apiConfig';
 
 const Images = {
     logo: require('../../../assets/logo.png'),
@@ -35,8 +33,9 @@ export default function ReviewBookingScreen({ onBack, onNavigate }) {
         pickupLocation, destination,
         selectedVehicleTier, fare,
         quoteId, distanceKm, durationMins,
-        routeGeometry,
+        routeGeometry, serviceType, packageDetails,
         setDriver, setDeliveryOtp,
+        setRideId, setCustomerId,
         resetTripState,
     } = useRideStore();
 
@@ -72,9 +71,13 @@ export default function ReviewBookingScreen({ onBack, onNavigate }) {
         setBooking(true);
         setBookErr(null);
         try {
-            const body = quoteId
-                ? { quoteId, rideType: vehicle }
-                : { pickup, drop, rideType: vehicle };
+            const body = {
+                ...(quoteId
+                    ? { quoteId, rideType: vehicle }
+                    : { pickup, drop, rideType: vehicle }),
+                serviceType: serviceType || 'RIDE',
+                packageDetails: packageDetails || null,
+            };
 
             const res = await fetch(`${API_BASE}/api/rides/book`, {
                 method: 'POST',
@@ -82,6 +85,12 @@ export default function ReviewBookingScreen({ onBack, onNavigate }) {
                 body: JSON.stringify(body),
             });
             const json = await res.json();
+            if (json.data?._id) {
+                setRideId(json.data._id);
+            }
+            if (json.data?.customerId) {
+                setCustomerId(json.data.customerId);
+            }
             if (json.data?.driver) {
                 const d = json.data.driver;
                 const vehicleParts = (d.vehicle || '').split('•').map(p => p.trim());

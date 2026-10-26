@@ -2,21 +2,31 @@ import {
   createDraftOrder,
   getOrderById,
   getOrdersForCustomer,
+  getOrdersForOperations,
   confirmOrder,
   cancelOrder,
+  updateOrderStatus,
 } from './orderService.js';
 
 export async function handleCreateDraft(req, res, next) {
   try {
-    const { restaurantId, sessionId, items, customerId } = req.body;
-    if (!restaurantId || !Array.isArray(items) || items.length === 0) {
+    const { restaurantId, sessionId, items, customerId, orderType, deliveryAddress, restaurantName } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'restaurantId and items[] are required',
+        error: 'items[] array is required',
       });
     }
     const realCustomerId = req.user?.id || req.headers['x-customer-id'] || customerId;
-    const order = await createDraftOrder({ restaurantId, sessionId, items, customerId: realCustomerId });
+    const order = await createDraftOrder({
+      restaurantId,
+      sessionId,
+      items,
+      customerId: realCustomerId,
+      orderType,
+      deliveryAddress,
+      restaurantName,
+    });
     res.status(201).json({ success: true, data: order });
   } catch (err) {
     next(err);
@@ -45,6 +55,15 @@ export async function handleGetOrder(req, res, next) {
   }
 }
 
+export async function handleGetOperationsOrders(req, res, next) {
+  try {
+    const orders = await getOrdersForOperations();
+    res.json({ success: true, data: orders });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function handleConfirmOrder(req, res, next) {
   try {
     const order = await confirmOrder(req.params.id);
@@ -62,3 +81,17 @@ export async function handleCancelOrder(req, res, next) {
     next(err);
   }
 }
+
+export async function handleUpdateOrderStatus(req, res, next) {
+  try {
+    const { status } = req.body;
+    if (!status) {
+      return res.status(400).json({ success: false, error: 'Status is required in request body' });
+    }
+    const result = await updateOrderStatus(req.params.id, status);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+

@@ -1,9 +1,11 @@
 import { WebSocketServer, WebSocket } from 'ws';
+import { config } from '../../config/config.js';
 
 let wss = null;
 
 // Maps customerId → Set of WebSocket clients (one customer can have multiple tabs/devices)
 const customerRooms = new Map();
+const dashboardClients = new Set();
 
 export function setupWebSockets(httpServer) {
     wss = new WebSocketServer({ server: httpServer });
@@ -12,25 +14,36 @@ export function setupWebSockets(httpServer) {
         // Extract customerId from query string: ws://host:4000?customerId=cust_123
         const url = new URL(req.url, 'http://localhost');
         const customerId = url.searchParams.get('customerId') || 'anonymous';
+        const isDashboard =
+            url.searchParams.get('role') === 'dashboard' &&
+            Boolean(config.operationsKey) &&
+            url.searchParams.get('operationsKey') === config.operationsKey;
 
         ws.customerId = customerId;
 
-        // Register in room
-        if (!customerRooms.has(customerId)) {
-            customerRooms.set(customerId, new Set());
+        if (isDashboard) {
+            dashboardClients.add(ws);
+        } else {
+            // Register in a customer-specific room. Operations clients are never
+            // placed here, so customer events cannot leak to the dashboard.
+            if (!customerRooms.has(customerId)) customerRooms.set(customerId, new Set());
+            customerRooms.get(customerId).add(ws);
         }
-        customerRooms.get(customerId).add(ws);
 
         console.log(`[WS] Client connected. customerId=${customerId}. Total:`, wss.clients.size);
 
         // Send a welcome ping so client knows the connection is alive
-        ws.send(JSON.stringify({ type: 'ws.connected', data: { customerId }, at: new Date().toISOString() }));
+        ws.send(JSON.stringify({ type: 'ws.connected', data: { customerId, role: isDashboard ? 'dashboard' : 'customer' }, at: new Date().toISOString() }));
 
         ws.on('close', () => {
-            const room = customerRooms.get(customerId);
-            if (room) {
-                room.delete(ws);
-                if (room.size === 0) customerRooms.delete(customerId);
+            if (isDashboard) {
+                dashboardClients.delete(ws);
+            } else {
+                const room = customerRooms.get(customerId);
+                if (room) {
+                    room.delete(ws);
+                    if (room.size === 0) customerRooms.delete(customerId);
+                }
             }
             console.log(`[WS] Client disconnected. customerId=${customerId}. Total:`, wss.clients.size);
         });
@@ -68,5 +81,14 @@ export function emitToCustomer(customerId, eventType, data) {
         if (ws.readyState === WebSocket.OPEN) {
             ws.send(message);
         }
+    });
+}
+
+// Operations updates are deliberately sent only to authenticated dashboard
+// sockets, never broadcast to every connected customer device.
+export function emitToDashboard(eventType, data) {
+    const message = JSON.stringify({ type: eventType, data, at: new Date().toISOString() });
+    dashboardClients.forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(message);
     });
 }

@@ -8,6 +8,7 @@ import {
     handleSetOffline,
     handleUpdateLocation,
     handleAcceptRide,
+    handleUpdateTaskStatus,
 } from './driverController.js';
 
 const router = Router();
@@ -22,5 +23,6 @@ router.post('/:id/offline', handleSetOffline);
 router.patch('/:id/location', handleUpdateLocation);
 
 router.post('/:driverId/accept/:rideId', handleAcceptRide);
+router.post('/:driverId/task/:taskId/status', handleUpdateTaskStatus);
 
 export default router;

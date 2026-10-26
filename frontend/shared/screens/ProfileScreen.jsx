@@ -148,15 +148,13 @@ export default function ProfileScreen({ onNavigate }) {
             </ScrollView>
 
             <BottomNavBar
-                preset="profile"
+                preset="main"
                 activeTab="Profile"
-                onTabPress={(tab) => onNavigate && onNavigate(tab)}
-                centerAction={{
-                    icon: 'headset',
-                    family: 'MaterialCommunityIcons',
-                    size: 24,
-                    colors: ['#00E57B', '#00AD57'],
-                    onPress: () => alert('24/7 Dropp Customer Support'),
+                onTabPress={(tab) => {
+                    if (tab === 'Home') onNavigate?.('Home');
+                    else if (tab === 'Activity') onNavigate?.('Activity');
+                    else if (tab === 'Wallet') onNavigate?.('Wallet');
+                    else if (tab === 'Profile') onNavigate?.('Profile');
                 }}
             />
         </SafeAreaView>

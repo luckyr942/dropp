@@ -3,6 +3,7 @@ import {
   handleEstimateRide,
   handleBookRide,
   handleGetActiveRide,
+  handleGetRide,
   handleCancelRide,
   handleRateRide,
   handleGetLatestDriverOffer,
@@ -22,7 +23,8 @@ router.post('/estimate', handleEstimateRide);   // Get fare quote
 router.post('/book', handleBookRide);         // Confirm booking
 router.get('/active', handleGetActiveRide);  // Get current active ride
 
-// Cancel an ongoing ride
+// Ride details & Actions
+router.get('/:id', handleGetRide);
 router.post('/:id/cancel', handleCancelRide);
 router.post('/:id/rate', handleRateRide); 
 
