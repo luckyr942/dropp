@@ -193,7 +193,12 @@ export function prepareTextForIshita(rawText) {
   const isHindi = hasDevanagari || hindiCount > englishCount || (hindiCount > 0 && englishCount === 0);
   const lang = isHindi ? 'hi-IN' : 'en-IN';
 
-  // 1. Distances: 459.55 km -> 460 kilometer (rounds to natural integer, eliminates "point paanch paanch")
+  // 0. Clean address noise: Strip 6-digit Indian PIN codes (e.g. 560049), ", India", etc.
+  t = t.replace(/,\s*\d{6}\b/g, '');
+  t = t.replace(/\b\d{6}\b/g, '');
+  t = t.replace(/,\s*India\b/gi, '');
+
+  // 1. Distances: 459.55 km -> 460 kilometer
   t = t.replace(/(\d+)\.(\d+)\s*km\b/gi, (m, d, dec) => {
     const rounded = Math.round(Number(`${d}.${dec}`));
     const spoken = isHindi ? numberToHindiWords(rounded) : numberToEnglishWords(rounded);
@@ -213,26 +218,17 @@ export function prepareTextForIshita(rawText) {
     return `${spoken || val} ${isHindi ? 'minute' : 'minutes'}`;
   });
 
-  // 3. Fares & Money: Spoken as natural full words (e.g. 4395 -> "chaar hazaar teen sau pachaanve rupaye")
+  // 3. Fares & Money: ONLY convert when explicitly preceded by ₹ or followed by rs/inr/rupaye/rupees.
+  // NEVER convert bare quantities like "2 coffee" or "1 pizza" to rupees!
   if (isHindi) {
-    t = t.replace(/(?:₹\s*|\b)(\d{1,5})\s*(?:rs|inr|rupaye|rupees)?(?=\s*(?:hai|mein|hoga|lagega|padega|confirm|\.|\,|$|\s))/gi, (m, num) => {
-      const val = Number(num);
-      const spoken = numberToHindiWords(val);
-      return spoken ? `${spoken} rupaye` : `${val.toLocaleString('en-IN')} rupaye`;
-    });
-    t = t.replace(/₹\s*(\d+)/g, (m, num) => {
-      const val = Number(num);
+    t = t.replace(/(?:₹\s*(\d{1,5})|(\d{1,5})\s*(?:rs\.?|inr|rupaye|rupees))/gi, (m, g1, g2) => {
+      const val = Number(g1 || g2);
       const spoken = numberToHindiWords(val);
       return spoken ? `${spoken} rupaye` : `${val.toLocaleString('en-IN')} rupaye`;
     });
   } else {
-    t = t.replace(/(?:₹\s*|\b)(\d{1,5})\s*(?:rs|inr|rupaye|rupees)?(?=\s*(?:is|for|total|confirm|\.|\,|$|\s))/gi, (m, num) => {
-      const val = Number(num);
-      const spoken = numberToEnglishWords(val);
-      return spoken ? `${spoken} rupees` : `${val.toLocaleString('en-US')} rupees`;
-    });
-    t = t.replace(/₹\s*(\d+)/g, (m, num) => {
-      const val = Number(num);
+    t = t.replace(/(?:₹\s*(\d{1,5})|(\d{1,5})\s*(?:rs\.?|inr|rupaye|rupees))/gi, (m, g1, g2) => {
+      const val = Number(g1 || g2);
       const spoken = numberToEnglishWords(val);
       return spoken ? `${spoken} rupees` : `${val.toLocaleString('en-US')} rupees`;
     });
@@ -259,44 +255,55 @@ async function generateIshitaTts(text, targetLang = 'en-IN') {
     return null;
   }
   const t0 = Date.now();
+  const langsToTry = [targetLang, targetLang === 'hi-IN' ? 'en-IN' : 'hi-IN'];
 
-  try {
-    const res = await fetch('https://api.sarvam.ai/text-to-speech', {
-      method: 'POST',
-      headers: {
-        'api-subscription-key': config.sarvamApiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        inputs: [text],
-        target_language_code: targetLang,
-        speaker: 'ishita',
-        pitch: 0,
-        pace: 1.0,
-        loudness: 1.5,
-        speech_sample_rate: 16000,
-        enable_preprocessing: true,
-        model: config.sarvamModel || 'bulbul:v3',
-      }),
-    });
+  for (const lang of langsToTry) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 6000);
 
-    if (!res.ok) {
-      const err = await res.text().catch(() => '');
-      console.warn(`[ttsService] Ishita TTS error ${res.status}:`, err.slice(0, 120));
-      return null;
+        const res = await fetch('https://api.sarvam.ai/text-to-speech', {
+          method: 'POST',
+          headers: {
+            'api-subscription-key': config.sarvamApiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            inputs: [text],
+            target_language_code: lang,
+            speaker: config.sarvamSpeaker || 'ishita',
+            pitch: 0,
+            pace: 1.0,
+            loudness: 1.5,
+            speech_sample_rate: 16000,
+            enable_preprocessing: true,
+            model: config.sarvamModel || 'bulbul:v3',
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        if (!res.ok) {
+          const err = await res.text().catch(() => '');
+          console.warn(`[ttsService] Ishita TTS error (lang: ${lang}, attempt ${attempt}) status ${res.status}:`, err.slice(0, 100));
+          if (res.status === 400) break; // Try next language code
+          continue;
+        }
+
+        const data = await res.json();
+        const base64Audio = data.audios?.[0];
+        if (!base64Audio) continue;
+
+        const wavBuffer = Buffer.from(base64Audio, 'base64');
+        console.log(`[ttsService] ✅ Ishita TTS (lang: ${lang}) | ${Date.now() - t0}ms | ${wavBuffer.length} bytes`);
+        return wavBuffer;
+      } catch (err) {
+        console.warn(`[ttsService] Ishita attempt ${attempt} failed:`, err.message);
+      }
     }
-
-    const data = await res.json();
-    const base64Audio = data.audios?.[0];
-    if (!base64Audio) return null;
-
-    const wavBuffer = Buffer.from(base64Audio, 'base64');
-    console.log(`[ttsService] ✅ Ishita TTS (lang: ${targetLang}) | ${Date.now() - t0}ms | ${wavBuffer.length} bytes`);
-    return wavBuffer;
-  } catch (err) {
-    console.warn('[ttsService] Ishita exception:', err.message);
-    return null;
   }
+  return null;
 }
 
 /**
@@ -393,9 +400,8 @@ export async function textToSpeech(text) {
   // 4. Synthesize speech using Ishita (primary)
   let audioBuffer = await generateIshitaTts(cleanText, lang);
 
-  // 5. If Ishita fails or Sarvam API is unavailable/exhausted, fallback to Callirrhoe (Gemini voice)
-  if (!audioBuffer) {
-    console.log('[ttsService] 🔄 Ishita unavailable, falling back to Callirrhoe voice...');
+  // 5. If Ishita is unavailable, do NOT switch to an American voice; keep voice identity locked to Ishita
+  if (!audioBuffer && !config.sarvamApiKey) {
     audioBuffer = await generateCallirrhoeTts(cleanText);
   }
 

@@ -27,18 +27,18 @@ const DRIVER_PROFILE_KEY = '@dropp_driver_profile';
 export default function DriverHomeScreen({ onNavigate }) {
     const { theme, isDark } = useTheme();
 
-    // ── Driver Identity ────────────────────────────────────────────
+    // Driver Identity
     const [driverId, setDriverId] = useState(null);   // MongoDB _id from registration
     const [driverProfile, setDriverProfile] = useState(null);
     const [isOnline, setIsOnline] = useState(false);
     const [wsConnected, setWsConnected] = useState(false);
 
-    // ── Offer State ────────────────────────────────────────────────
+    // Offer State
     const [currentOffer, setCurrentOffer] = useState(null);
     const [showOffer, setShowOffer] = useState(false);
     const lastHandledOfferId = useRef(null);
 
-    // ── Registration Modal ─────────────────────────────────────────
+    // Registration Modal 
     const [showRegModal, setShowRegModal] = useState(false);
     const [regName, setRegName] = useState('');
     const [regPhone, setRegPhone] = useState('');
@@ -51,7 +51,7 @@ export default function DriverHomeScreen({ onNavigate }) {
     const [earningsToday, setEarningsToday] = useState(0);
     const [tripsToday, setTripsToday] = useState(0);
 
-    // ── 1. Load saved driver on mount (Instant Local Restore + Background Sync) ──
+    // 1. Load saved driver on mount (Instant Local Restore + Background Sync)
     useEffect(() => {
         let isMounted = true;
         async function loadDriver() {
@@ -70,7 +70,7 @@ export default function DriverHomeScreen({ onNavigate }) {
                             setDriverProfile(parsed);
                             if (!activeId) activeId = parsed._id;
                         }
-                    } catch (_) {}
+                    } catch (_) { }
                 }
 
                 if (activeId) {
@@ -119,7 +119,7 @@ export default function DriverHomeScreen({ onNavigate }) {
                         }
                         return;
                     }
-                } catch (_) {}
+                } catch (_) { }
 
                 // 3. Only prompt registration if there are literally 0 drivers in database
                 if (isMounted && !activeId) {
@@ -133,14 +133,8 @@ export default function DriverHomeScreen({ onNavigate }) {
         return () => { isMounted = false; };
     }, []);
 
-    // ── 2. WebSocket listener ─────────────────────────────────────
+    // 2. WebSocket listener 
     useEffect(() => {
-        // 🔒 Only connect WS & poll for offers when driver is ONLINE
-        if (!isOnline) {
-            setWsConnected(false);
-            return;
-        }
-
         let ws;
         let pollInterval;
         let isMounted = true;
@@ -150,7 +144,7 @@ export default function DriverHomeScreen({ onNavigate }) {
                 ws = new WebSocket(WS_URL);
                 ws.onopen = () => { if (isMounted) setWsConnected(true); };
                 ws.onclose = () => {
-                    if (isMounted && isOnline) {
+                    if (isMounted) {
                         setWsConnected(false);
                         setTimeout(connect, 3000);
                     }
@@ -176,9 +170,9 @@ export default function DriverHomeScreen({ onNavigate }) {
 
         connect();
 
-        // Polling fallback — gentle 4s interval only when online and not viewing an offer
+        // Polling fallback — catches offers if WS drops or on multi-device networks
         pollInterval = setInterval(async () => {
-            if (!isMounted || !isOnline || showOffer) return;
+            if (!isMounted) return;
             try {
                 const res = await fetch(`${API_BASE}/api/rides/driver/latest-offer`);
                 const json = await res.json();
@@ -186,16 +180,16 @@ export default function DriverHomeScreen({ onNavigate }) {
                     handleIncomingOffer(json.data);
                 }
             } catch (_) { }
-        }, 4000);
+        }, 1500);
 
         return () => {
             isMounted = false;
             ws?.close();
             clearInterval(pollInterval);
         };
-    }, [isOnline, showOffer]);
+    }, [isOnline]);
 
-    // ── 3. Real-time GPS location push (every 4s when Online) ──────
+    // 3. Real-time GPS location push (every 4s when Online) 
     useEffect(() => {
         if (!isOnline || !driverId) return;
 
@@ -234,7 +228,7 @@ export default function DriverHomeScreen({ onNavigate }) {
                             setDriverId(active._id);
                             setDriverProfile(active);
                         }
-                    } catch (_) {}
+                    } catch (_) { }
                 }
             } catch (err) {
                 // Silently swallow GPS read errors if simulator location is toggling
@@ -271,7 +265,7 @@ export default function DriverHomeScreen({ onNavigate }) {
         setShowOffer(true);
     }
 
-    // ── Accept Offer ───────────────────────────────────────────────
+    // Accept Offer
     // Calls real backend: POST /api/drivers/:driverId/accept/:rideId
     // Backend updates the ride with real driver data and emits to customer
     const handleAcceptOffer = async (offer) => {
@@ -311,10 +305,10 @@ export default function DriverHomeScreen({ onNavigate }) {
                 const taskLabel = offer.serviceType?.includes('FOOD')
                     ? 'Food Delivery'
                     : offer.serviceType?.includes('PARCEL')
-                    ? 'Parcel Delivery'
-                    : offer.serviceType?.includes('SHOP')
-                    ? 'Shopping Delivery'
-                    : 'Ride';
+                        ? 'Parcel Delivery'
+                        : offer.serviceType?.includes('SHOP')
+                            ? 'Shopping Delivery'
+                            : 'Ride';
 
                 Alert.alert(`✅ ${taskLabel} Accepted!`, `Navigate to pickup: ${typeof offer.pickup === 'object' ? (offer.pickup?.label || offer.pickup?.address) : offer.pickup}`);
                 if (onNavigate) onNavigate('DriverNav');
@@ -332,7 +326,7 @@ export default function DriverHomeScreen({ onNavigate }) {
         setCurrentOffer(null);
     };
 
-    // ── Online / Offline Toggle ────────────────────────────────────
+    // Online / Offline Toggle 
     const handleToggleOnline = async () => {
         if (!driverId) {
             setShowRegModal(true);
@@ -352,7 +346,7 @@ export default function DriverHomeScreen({ onNavigate }) {
         }
     };
 
-    // ── Register Driver ────────────────────────────────────────────
+    // Register Driver 
     const handleRegister = async () => {
         if (!regName.trim() || !regPhone.trim() || !regVehicleModel.trim() || !regVehicleNumber.trim()) {
             Alert.alert('Missing Fields', 'Fill in all fields to continue.');

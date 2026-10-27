@@ -345,6 +345,29 @@ export function AuraProvider({ children, onNavigate }) {
       }
 
       switch (screenAction?.type) {
+        case 'MULTI_ACTION':
+          setRestaurants(null);
+          if (screenAction.data?.rideEstimate) {
+            setRideEstimate(screenAction.data.rideEstimate);
+          }
+          if (screenAction.data?.draftOrder) {
+            setDraftOrder(screenAction.data.draftOrder);
+          }
+          if (screenAction.data?.restaurants && !screenAction.data?.draftOrder) {
+            setRestaurants(screenAction.data.restaurants);
+          }
+          break;
+        case 'MULTI_CONFIRMED':
+          setDraftOrder(null);
+          setRideEstimate(null);
+          setRestaurants(null);
+          if (screenAction.data?.ride) {
+            setBookedRide(screenAction.data.ride);
+          }
+          if (screenAction.data?.order) {
+            setPlacedOrder(screenAction.data.order);
+          }
+          break;
         case 'SHOW_RESTAURANTS':
           setRestaurants(screenAction.data ?? []);
           setRideEstimate(null);

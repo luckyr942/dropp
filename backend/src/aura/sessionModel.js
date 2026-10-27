@@ -34,7 +34,7 @@ const sessionSchema = new mongoose.Schema(
         // 'awaiting_confirmation' → draft exists, waiting for "haan"
         stage: {
             type: String,
-            enum: [null, 'awaiting_confirmation', 'awaiting_ride_confirmation'],
+            enum: [null, 'awaiting_confirmation', 'awaiting_ride_confirmation', 'awaiting_multi_confirmation'],
             default: null,
         },
 
@@ -45,8 +45,7 @@ const sessionSchema = new mongoose.Schema(
             default: [],
         },
         activeQuoteId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'RideQuote',
+            type: String,
             default: null,
         },
         selectedRideType: {

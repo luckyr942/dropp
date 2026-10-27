@@ -653,6 +653,35 @@ export default function AuraOverlay() {
               </View>
             )}
 
+            {/* ── Multi-Intent Action: Confirm Both (Ride + Food) ── */}
+            {rideEstimate && draftOrder && (
+              <TouchableOpacity
+                style={[
+                  styles.confirmBtn,
+                  {
+                    backgroundColor: '#0F172A',
+                    borderColor: '#00A859',
+                    borderWidth: 1.5,
+                    marginHorizontal: 16,
+                    marginBottom: 12,
+                    paddingVertical: 14,
+                    flexDirection: 'row',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    gap: 8,
+                    borderRadius: 14,
+                  },
+                ]}
+                onPress={() => sendVoiceTurn('haan dono confirm kar do', 'text')}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="sparkles" size={18} color="#00A859" />
+                <Text style={[styles.confirmBtnText, { fontSize: 15, fontWeight: '700', color: '#FFFFFF' }]}>
+                  Confirm Both (Ride + Food)
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {/* ── Action Card: Placed Food Order ────────────────── */}
             {placedOrder && (
               <View style={[styles.card, { borderColor: '#00A859' }]}>

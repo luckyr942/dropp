@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     StyleSheet,
     Text,
@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/themeContext';
 import BottomNavBar from '../components/bottomNavBar';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const MENU_SECTIONS = [
     {
@@ -33,8 +34,29 @@ const MENU_SECTIONS = [
     },
 ];
 
+
+
 export default function ProfileScreen({ onNavigate }) {
     const { theme, isDark, toggleTheme } = useTheme();
+    const [userName, setUserName] = useState('Dropp Rider');
+    const [userPhone, setUserPhone] = useState('');
+    const [userInitials, setUserInitials] = useState('DR');
+    useEffect(() => {
+        async function loadProfile() {
+            try {
+                const raw = await AsyncStorage.getItem('@dropp_driver_profile');
+                if (raw) {
+                    const profile = JSON.parse(raw);
+                    if (profile.name) {
+                        setUserName(profile.name);
+                        setUserInitials(profile.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2));
+                    }
+                    if (profile.phone) setUserPhone(profile.phone);
+                }
+            } catch (err) { }
+        }
+        loadProfile();
+    }, []);
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -48,22 +70,25 @@ export default function ProfileScreen({ onNavigate }) {
 
                 {/* Profile Card */}
                 <View style={[styles.profileCard, { backgroundColor: theme.surface }]}>
-                    <Image
-                        source={{ uri: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80' }}
-                        style={styles.avatar}
-                    />
+                    {/* Green initials circle instead of stock photo */}
+                    <View style={[styles.avatar, { backgroundColor: '#00C96B', alignItems: 'center', justifyContent: 'center' }]}>
+                        <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '700' }}>{userInitials}</Text>
+                    </View>
                     <View style={styles.profileMeta}>
                         <View style={styles.nameRow}>
-                            <Text style={[styles.name, { color: theme.textPrimary }]}>Alex Rivera</Text>
+                            <Text style={[styles.name, { color: theme.textPrimary }]}>{userName}</Text>
                             <View style={[styles.goldBadge, { backgroundColor: theme.tierCardActiveBg }]}>
                                 <Ionicons name="star" size={12} color={theme.starGold} />
                                 <Text style={[styles.goldText, { color: theme.primaryGreen }]}>Gold Member</Text>
                             </View>
                         </View>
-                        <Text style={[styles.phone, { color: theme.textSecondary }]}>+1 (555) 234-5678</Text>
-                        <Text style={[styles.email, { color: theme.textSecondary }]}>alex.rivera@dropp.com</Text>
+                        {Boolean(userPhone) && <Text style={[styles.phone, { color: theme.textSecondary }]}>{userPhone}</Text>}
+                        <Text style={[styles.email, { color: theme.textSecondary }]}>
+                            {userName.toLowerCase().replace(/\s/g, '.')}@dropp.com
+                        </Text>
                     </View>
                 </View>
+
 
                 {/* Driver Mode Banner Switch */}
                 <TouchableOpacity

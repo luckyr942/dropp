@@ -13,28 +13,50 @@ const SYSTEM_PROMPT = `You are Aura, the ultra-fast friendly voice assistant for
 Your voice output will be read aloud to the user through text-to-speech.
 
 CRITICAL VOICE RULES:
-1. Speak in warm, natural everyday conversational Hinglish (like a friendly Indian assistant, e.g. "Haanji! Cyber Hub se Rajiv Chowk tak cab 478 rupaye hai. Book kar doon?").
+1. Speak in warm, natural everyday conversational Hinglish (like a friendly Indian assistant).
 2. NEVER use markdown symbols like **, *, _, #, bullets, or dashes. Plain conversational text only.
 3. NEVER use currency symbols like ₹. Always say "rupaye" (e.g. "250 rupaye").
 4. NEVER use emojis in replies because the text-to-speech engine reads them aloud awkwardly.
-5. Keep replies strictly under 8 to 12 words. Be ultra-punchy, brief, and direct (e.g. "Biryani add ho gayi, 279 rupaye. Confirm karein?"). Every single extra word burns Sarvam credits and adds latency. Never use conversational filler like "Main aapki sahayata kar sakta hoon".
-6. Only use real data from tools. Never invent restaurants, prices, fares, or distances.
+5. NEVER speak postal addresses, road numbers, PIN codes (like 560049, 560035), or "India". ALWAYS speak short, clean landmark/city names (e.g. "Bengaluru Airport", "Railway Station", "Cyber Hub").
+6. Keep replies strictly under 10 to 14 words. Be ultra-punchy, brief, and direct.
+   - Ride Example: "Bengaluru Airport se Railway Station cab 542 rupaye hai. Book kar doon?"
+   - Food Example: "2 cold coffee aur 1 pizza add ho gaya 447 rupaye mein. Confirm kar doon?"
+   - Multi-intent Example: "Bengaluru Airport se Railway Station cab 542 rupaye, aur 2 coffee, 1 pizza 447 rupaye. Dono confirm kar doon?"
+7. Only use real data from tools. Never invent restaurants, prices, fares, or distances.
 
 FOOD ORDERING RULES:
-7. If the user asks for food, search restaurants and call build_draft. State the items and total in rupaye, and ask for confirmation. Never confirm on the user's behalf.
+8. If the user asks for food, search restaurants and call build_draft. State the items and total in rupaye, and ask for confirmation. Never confirm on the user's behalf.
 
 RIDE HAILING RULES:
-8. When the user asks for a ride, cab, auto, or bike (e.g. "Cab chahiye Cyber Hub se Rajiv Chowk" or "Airport kitna lagega"), call "estimate_ride".
-9. In your reply, state the distance in kilometre, the fare in rupaye, and ask for confirmation to book.
-10. When the user confirms (e.g. "Haan cab book kardo"), call "book_ride" with the quoteId and rideType.
-11. Once booked, announce the driver name, vehicle, and 4-digit OTP clearly (e.g. "Aapki cab book ho gayi! Driver Vikram aa rahe hain. OTP hai 4421.").
+9. When the user asks for a ride, cab, auto, or bike, call "estimate_ride".
+10. In your reply, state the clean pickup and drop name and fare in rupaye, and ask for confirmation to book.
+11. When the user confirms (e.g. "Haan cab book kardo"), call "book_ride" with the quoteId and rideType.
+12. Once booked, announce the driver name and 4-digit OTP clearly (e.g. "Aapki cab book ho gayi! Driver Vikram aa rahe hain. OTP hai 4421.").
+
+MULTI-INTENT RULES (RIDE + FOOD IN ONE UTTERANCE):
+13. When the user asks for BOTH a ride and food (e.g. "Book a cab from X to Y and also order 2 coffee and 1 pizza"):
+    - You MUST call BOTH "estimate_ride" and "search_restaurants" (and then "build_draft").
+    - In your reply, announce the short route & cab fare, and food items & total.
+    - Ask simply: "Dono confirm kar doon?"
 
 ORDER STATUS RULES:
-12. When the user asks where their order is or asks for status (e.g. "Mera order kahan hai?", "Order kab aayega?", "Where is my order?"), immediately call "get_order_status". State the spokenStatus returned by the tool.`;
+14. When the user asks where their order is or asks for status, immediately call "get_order_status". State the spokenStatus returned by the tool.`;
 
-const MAX_STEPS = 3;
+const MAX_STEPS = 4;
 const MODEL_TIMEOUT_MS = 15000;
-const COOLDOWN_MS = 30_000;
+const COOLDOWN_MS = 5_000;
+
+// Helper: extract short friendly location name without postal address or pincode
+function shortPlace(raw, originalInput) {
+  if (originalInput && originalInput.length >= 3 && originalInput.length <= 40) {
+    return originalInput.trim().replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  return String(raw || '')
+    .replace(/,\s*\d{6}\b/g, '')
+    .replace(/,\s*India\b/gi, '')
+    .split(',')[0]
+    .trim();
+}
 
 // CIRCUIT breaker after a provider failure, skip Gemini for a while
 let geminiCooldownUntil = 0;
@@ -51,16 +73,31 @@ const isProviderError = (err) =>
     String(err?.message ?? '')
   );
 
-// Rejects history that does not start with a user turn
+// Ensures history starts with user, strictly alternates, and ends with model
 function cleanHistory(history) {
-  const h = [...history];
-  while (h.length && h[0].role !== 'user') h.shift();
+  const h = [];
+  let expectedRole = 'user';
+  for (const turn of history || []) {
+    if (!turn?.parts?.[0]?.text) continue;
+    if (turn.role === expectedRole) {
+      h.push(turn);
+      expectedRole = expectedRole === 'user' ? 'model' : 'user';
+    }
+  }
+  // History passed to startChat must end with model so the next sendMessage is user
+  while (h.length && h[h.length - 1].role !== 'model') {
+    h.pop();
+  }
   return h;
 }
 
 // Tier 2: Deterministic fallback for when Gemini is offline or rate-limited
 async function runDeterministicFallback({ text, sessionId }) {
-  const clean = String(text ?? '').toLowerCase().trim();
+  const clean = String(text ?? '')
+    .toLowerCase()
+    .replace(/[.,!?;]+$/g, '')
+    .trim();
+
   const isEnglish =
     !/[\u0900-\u097F]/.test(clean) &&
     !/\b(kya|hai|hain|hoon|chahiye|karo|bhai|dhoondh|mila|mile|rupaye|dekho|dikhao|batao|kiska|aapka|aur|kuch|theek|haan|nahi|karna|le|lo)\b/i.test(clean);
@@ -86,26 +123,102 @@ async function runDeterministicFallback({ text, sessionId }) {
   }
 
   // ── 1. Check for Ride Intent in Fallback ──
-  const isRideRequest = /\b(cab|ride|auto|taxi|bike|gaadi|jana hai|jaana hai|dropp go)\b/i.test(clean);
-  if (isRideRequest) {
-    // Check if user specified "se" and "tak" or "to"
-    const match = clean.match(/(?:from\s+|)(.+?)\s+(?:se|to)\s+(.+?)(?:\s+tak|\s+cab|\s+chahiye|\s+book|$)/i);
-    if (match && match[1] && match[2]) {
-      const pickup = match[1].replace(/\b(cab|ride|auto|book|chahiye|mujhe)\b/g, '').trim();
-      const drop = match[2].replace(/\b(cab|ride|auto|book|chahiye|tak|jaana hai)\b/g, '').trim();
+  const isRideRequest = /\b(cab|ride|auto|taxi|bike|gaadi|jana hai|jaana hai|dropp go|book.*ride|ride.*book)\b/i.test(clean);
+  const hasFoodInSameUtterance = /\b(coffee|pizza|biryani|chai|tea|burger|food|khana)\b/i.test(clean);
 
-      if (pickup && drop) {
-        try {
-          const estimate = await toolMap.estimate_ride({ pickup, drop, sessionId });
-          const cabFare = estimate.fares.find((f) => f.type === 'cab_economy')?.fare || 150;
+  if (isRideRequest) {
+    let pickup = null;
+    let drop = null;
+
+    // Pattern A: "from X to Y" (English / Hinglish)
+    const fromToMatch = clean.match(/(?:from\s+)(.+?)\s+(?:to\s+)(.+?)(?=\s+(?:and|aur|mein|par|chahiye|please|order|bhi|\d)|$)/i);
+    if (fromToMatch) {
+      pickup = fromToMatch[1].trim();
+      drop = fromToMatch[2].trim();
+    } else {
+      // Pattern B: "X se Y ke liye" or "X se Y tak"
+      const seTakMatch = clean.match(/(?:(?:book|order|chahiye|mujhe|humein|mera|ab)?\s*)(.+?)\s+se\s+(.+?)(?=\s+(?:ke\s+liye|tak|cab|ride|book|jaana|jana|and|aur|order)|\s*$)/i);
+      if (seTakMatch) {
+        const noiseWords = /\b(cab|ride|auto|book|chahiye|mujhe|aur|ab|ek|mera|please|order|kar do|karo)\b/gi;
+        pickup = seTakMatch[1].replace(noiseWords, '').trim();
+        drop = seTakMatch[2].replace(noiseWords, '').trim();
+      }
+    }
+
+    if (pickup && drop) {
+      try {
+        const estimate = await toolMap.estimate_ride({ pickup, drop, sessionId });
+        const cabFare = (estimate.fares || []).find((f) => f.type === 'cab_economy')?.fare || 150;
+        const pickName = shortPlace(estimate.pickup.address, pickup);
+        const dropName = shortPlace(estimate.drop.address, drop);
+
+        // ── Multi-Intent: also build food draft if mentioned in same utterance ──
+        if (hasFoodInSameUtterance) {
+          try {
+            const foodQuery = clean.includes('coffee') ? 'coffee' : clean.includes('pizza') ? 'pizza' : clean.includes('biryani') ? 'biryani' : 'food';
+            const restResult = await toolMap.search_restaurants({ query: foodQuery, sessionId });
+            const rest = (restResult.items ?? [])[0];
+
+            if (rest) {
+              const itemsToAdd = [];
+              const parseQty = (pat) => {
+                const m = clean.match(new RegExp(`(\\d+|do|teen|char|paanch|ek|two|three|four|one)\\s+(?:${pat})`, 'i'));
+                if (!m) return 1;
+                const w = m[1].toLowerCase();
+                return ({ do: 2, two: 2, teen: 3, three: 3, char: 4, four: 4, paanch: 5, five: 5, ek: 1, one: 1 }[w] ?? parseInt(w, 10)) || 1;
+              };
+              if (/coffee/i.test(clean)) itemsToAdd.push({ name: 'Cold Coffee', quantity: parseQty('coffee') });
+              if (/pizza/i.test(clean)) itemsToAdd.push({ name: 'Margherita Pizza', quantity: parseQty('pizza') });
+              if (/biryani/i.test(clean)) itemsToAdd.push({ name: 'Veg Dum Biryani', quantity: parseQty('biryani') });
+              if (itemsToAdd.length === 0) itemsToAdd.push({ name: 'Cold Coffee', quantity: 1 });
+
+              const draft = await toolMap.build_draft({
+                restaurantId: rest._id || rest.id,
+                items: itemsToAdd,
+                sessionId,
+              });
+
+              const itemSummary = itemsToAdd.map((i) => `${i.quantity} ${i.name}`).join(' aur ');
+              const reply = isEnglish
+                ? `Cab from ${pickName} to ${dropName} is ${cabFare} rupees, and ${itemSummary} added for ${draft.totalAmount} rupees. Confirm both?`
+                : `${pickName} se ${dropName} cab ${cabFare} rupaye, aur ${itemSummary} ${draft.totalAmount} rupaye add ho gaya. Dono confirm kar doon?`;
+
+              return {
+                reply,
+                toolCallsMade: ['estimate_ride', 'search_restaurants', 'build_draft'],
+                screenAction: {
+                  type: 'MULTI_ACTION',
+                  data: {
+                    rideEstimate: estimate,
+                    draftOrder: draft,
+                  },
+                },
+              };
+            }
+          } catch (multiErr) {
+            console.warn('[Fallback] Multi-intent food build failed:', multiErr.message);
+          }
+
+          // Fallback if food search failed but ride succeeded
+          const rideReply = isEnglish
+            ? `Cab from ${pickName} to ${dropName} is ${cabFare} rupees. Confirm the ride?`
+            : `${pickName} se ${dropName} cab ${cabFare} rupaye hai. Confirm kar doon?`;
           return {
-            reply: isEnglish
-              ? `Ride from ${estimate.pickup.address} to ${estimate.drop.address} is ${estimate.distanceKm} km. Cab fare is ${cabFare} rupees. Should I book it?`
-              : `${estimate.pickup.address} se ${estimate.drop.address} tak cab ka kiraaya ${cabFare} rupaye hai. Confirm kar doon?`,
+            reply: rideReply,
             toolCallsMade: ['estimate_ride'],
             screenAction: { type: 'SHOW_RIDE_ESTIMATE', data: estimate },
           };
-        } catch (_) {}
+        }
+
+        return {
+          reply: isEnglish
+            ? `Cab from ${pickName} to ${dropName} is ${estimate.distanceKm} km, fare ${cabFare} rupees. Should I book it?`
+            : `${pickName} se ${dropName} tak ${estimate.distanceKm} km, cab ${cabFare} rupaye. Confirm kar doon?`,
+          toolCallsMade: ['estimate_ride'],
+          screenAction: { type: 'SHOW_RIDE_ESTIMATE', data: estimate },
+        };
+      } catch (err) {
+        console.warn('[Fallback] estimate_ride failed:', err.message);
       }
     }
 
@@ -134,21 +247,32 @@ async function runDeterministicFallback({ text, sessionId }) {
     const result = await toolMap.search_restaurants({ query, sessionId });
     const items = result.items ?? [];
     if (items.length > 0) {
-      // If the customer specifically requested to ORDER or ADD items:
       if (wantsOrder) {
         try {
           const targetRest = items[0];
           const itemsToAdd = [];
 
+          function parseQty(keywordPattern) {
+            const m = clean.match(new RegExp(`(\\d+|do|teen|char|paanch|ek|two|three|four|one)\\s+(?:${keywordPattern})`, 'i'));
+            if (!m) return 1;
+            const w = m[1].toLowerCase();
+            return ({ do: 2, two: 2, teen: 3, three: 3, char: 4, four: 4, paanch: 5, five: 5, ek: 1, one: 1 }[w] ?? parseInt(w, 10)) || 1;
+          }
+
           if (/biryani|briyani|biriyani/i.test(clean)) {
-            const qtyMatch = clean.match(/\b(do|two|2)\b/i);
-            itemsToAdd.push({ name: 'Veg Dum Biryani', quantity: qtyMatch ? 2 : 1 });
+            itemsToAdd.push({ name: 'Veg Dum Biryani', quantity: parseQty('biryani|briyani|biriyani') });
           }
           if (/coffee/i.test(clean)) {
-            itemsToAdd.push({ name: 'Cold Coffee', quantity: 1 });
+            itemsToAdd.push({ name: 'Cold Coffee', quantity: parseQty('coffee') });
+          }
+          if (/\b(chai|tea)\b/i.test(clean)) {
+            itemsToAdd.push({ name: 'Masala Chai', quantity: parseQty('chai|tea') });
           }
           if (/pizza/i.test(clean)) {
-            itemsToAdd.push({ name: 'Margherita Pizza', quantity: 1 });
+            itemsToAdd.push({ name: 'Margherita Pizza', quantity: parseQty('pizza') });
+          }
+          if (/burger/i.test(clean)) {
+            itemsToAdd.push({ name: 'Veg Burger', quantity: parseQty('burger') });
           }
           if (itemsToAdd.length === 0 && foodMatch) {
             itemsToAdd.push({ name: foodMatch[0], quantity: 1 });
@@ -201,12 +325,21 @@ async function runDeterministicFallback({ text, sessionId }) {
   };
 }
 
-// Brain model priority list (using verified production Gemini models)
+// Helper: format Gemini error for readable console logging without massive URLs or chopping off error codes
+function formatGeminiError(err) {
+  const msg = String(err?.message || err || '');
+  return msg
+    .replace(/https:\/\/generativelanguage\.googleapis\.com[^\s:]*/g, 'GeminiAPI')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Brain model priority list — fast, low-latency models with verified function-calling support
 const BRAIN_MODELS = [
-  config.geminiModel || 'gemini-1.5-flash',
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-8b',
-  'gemini-2.0-flash-exp',
+  config.geminiModel || 'gemini-3.1-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-3.1-flash-lite-preview',
+  'gemini-flash-lite-latest',
 ];
 
 const isBrainRetryable = (err) =>
@@ -214,7 +347,7 @@ const isBrainRetryable = (err) =>
     String(err?.message ?? '')
   );
 
-// ── Tier 1: Gemini tool-calling loop 
+// Tier 1: Gemini tool-calling loop 
 export async function runBrain({ conversation, sessionId }) {
   const lastUserMessage = conversation[conversation.length - 1];
   const userText = lastUserMessage.parts[0].text;
@@ -228,7 +361,6 @@ export async function runBrain({ conversation, sessionId }) {
 
   let draftResult = null;
   const toolCallsMade = [];
-  let screenAction = null;
 
   const modelsToTry = [...new Set(BRAIN_MODELS)];
   let lastErr = null;
@@ -236,7 +368,10 @@ export async function runBrain({ conversation, sessionId }) {
   for (const brainModel of modelsToTry) {
     draftResult = null;
     toolCallsMade.length = 0;
-    screenAction = null;
+    let rideEstimateResult = null;
+    let rideBookedResult = null;
+    let draftOrderResult = null;
+    let restaurantsResult = null;
 
     try {
       const model = ai.getGenerativeModel({
@@ -282,19 +417,19 @@ export async function runBrain({ conversation, sessionId }) {
 
           const safeResult = Array.isArray(result) ? { items: result } : result;
 
-          // ── Update Screen Actions for Frontend UI ──
-          if (name === 'search_restaurants' && !result.error && !draftResult) {
-            screenAction = { type: 'SHOW_RESTAURANTS', data: safeResult.items ?? [] };
+          // Track results for Screen Actions
+          if (name === 'search_restaurants' && !result.error) {
+            restaurantsResult = safeResult.items ?? [];
           }
           if (name === 'build_draft' && !result.error) {
             draftResult = result;
-            screenAction = { type: 'SHOW_DRAFT', data: result };
+            draftOrderResult = result;
           }
           if (name === 'estimate_ride' && !result.error) {
-            screenAction = { type: 'SHOW_RIDE_ESTIMATE', data: safeResult };
+            rideEstimateResult = safeResult;
           }
           if (name === 'book_ride' && !result.error) {
-            screenAction = { type: 'RIDE_BOOKED', data: safeResult };
+            rideBookedResult = safeResult;
           }
 
           functionResponses.push({
@@ -308,6 +443,29 @@ export async function runBrain({ conversation, sessionId }) {
       const textPart = response.response.candidates?.[0]?.content?.parts?.find((p) => p.text);
       const reply = textPart?.text ?? 'Aapki request process ho gayi hai.';
       console.log(`[brain] ✅ ${brainModel} replied`);
+
+      // Determine combined screenAction for frontend UI
+      let screenAction = null;
+      if ((rideEstimateResult || rideBookedResult) && (draftOrderResult || restaurantsResult)) {
+        screenAction = {
+          type: 'MULTI_ACTION',
+          data: {
+            rideEstimate: rideEstimateResult,
+            bookedRide: rideBookedResult,
+            draftOrder: draftOrderResult,
+            restaurants: restaurantsResult,
+          },
+        };
+      } else if (rideBookedResult) {
+        screenAction = { type: 'RIDE_BOOKED', data: rideBookedResult };
+      } else if (rideEstimateResult) {
+        screenAction = { type: 'SHOW_RIDE_ESTIMATE', data: rideEstimateResult };
+      } else if (draftOrderResult) {
+        screenAction = { type: 'SHOW_DRAFT', data: draftOrderResult };
+      } else if (restaurantsResult) {
+        screenAction = { type: 'SHOW_RESTAURANTS', data: restaurantsResult };
+      }
+
       return { reply, toolCallsMade, screenAction };
 
     } catch (err) {
@@ -319,8 +477,9 @@ export async function runBrain({ conversation, sessionId }) {
         };
       }
       if (isBrainRetryable(err)) {
-        console.warn(`[brain] ${brainModel} failed (retryable), trying next:`, err.message.slice(0, 80));
+        console.warn(`[brain] ${brainModel} failed (retryable), trying next:`, formatGeminiError(err));
         lastErr = err;
+        await new Promise((r) => setTimeout(r, 300));
         continue;
       }
       throw err;
@@ -329,7 +488,7 @@ export async function runBrain({ conversation, sessionId }) {
 
   // All models failed -> cooldown & fallback
   if (lastErr) {
-    console.warn('[Aura Brain] All models failed, cooling down 60s:', lastErr.message.slice(0, 80));
+    console.warn(`[Aura Brain] All models failed, cooling down ${COOLDOWN_MS / 1000}s:`, formatGeminiError(lastErr));
     geminiCooldownUntil = Date.now() + COOLDOWN_MS;
   }
   return runDeterministicFallback({ text: userText, sessionId });

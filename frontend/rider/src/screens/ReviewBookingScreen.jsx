@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
 import { API_BASE } from '../../../shared/utils/apiConfig';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const Images = {
     logo: require('../../../assets/logo.png'),

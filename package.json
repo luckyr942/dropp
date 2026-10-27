@@ -28,5 +28,12 @@
     "react": "19.1.0",
     "react-native": "0.81.5"
   },
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "description": "# 🚕 Dropp — Distributed Mobility, Delivery & Commerce Platform",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "author": "",
+  "license": "ISC"
 }

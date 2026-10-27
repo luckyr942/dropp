@@ -23,7 +23,7 @@ async function transcribeWithSarvam(audioBuffer) {
     'speech.m4a'
   );
   formData.append('model', 'saarika:v2.5');
-  formData.append('language_code', 'unknown');
+  formData.append('language_code', 'en-IN');
 
   const response = await fetch('https://api.sarvam.ai/speech-to-text', {
     method: 'POST',
@@ -38,7 +38,31 @@ async function transcribeWithSarvam(audioBuffer) {
     throw new Error(data?.error?.message || `Sarvam STT status ${response.status}`);
   }
 
-  return data.transcript?.trim() || null;
+  let transcript = data.transcript?.trim() || null;
+
+  // If Sarvam transcribed into Devanagari Hindi, automatically transliterate to Hinglish (Roman English alphabet)
+  if (transcript && /[\u0900-\u097F]/.test(transcript)) {
+    try {
+      const transRes = await fetch('https://api.sarvam.ai/transliterate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-subscription-key': config.sarvamApiKey,
+        },
+        body: JSON.stringify({
+          input: transcript,
+          source_language_code: 'hi-IN',
+          target_language_code: 'en-IN',
+        }),
+      });
+      const transData = await transRes.json();
+      if (transData.transliterated_text) {
+        transcript = transData.transliterated_text.trim();
+      }
+    } catch (_) {}
+  }
+
+  return transcript;
 }
 
 /**
@@ -48,7 +72,7 @@ async function transcribeWithGemini(base64Audio) {
   const genAI = getGemini();
   if (!genAI) return null;
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  const model = genAI.getGenerativeModel({ model: config.geminiModel || 'gemini-3.5-flash-lite' });
   const result = await model.generateContent([
     {
       inlineData: {

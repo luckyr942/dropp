@@ -94,6 +94,7 @@ export async function searchRestaurant(query){
         minOrder: 149,
         menuPreview: [
           { name: 'Margherita Pizza', price: 299 },
+          { name: 'Cold Coffee', price: 99 },
           { name: 'Farmhouse Veg Pizza', price: 349 },
           { name: 'Garlic Breadsticks', price: 119 },
           { name: 'Choco Lava Cake', price: 99 },
@@ -304,22 +305,25 @@ export async function buildDraft(sessionId, requestedItems, restaurantId = null,
   };
 }
 
-//5. Explicit Commit Phase only when user says "HAAN", "confirm karo", "order karo"
-export async function confirmSessionOrder(sessionId) {
-  const session = await AuraSession.findOne({ sessionId });
-  if (!session || !session.draftOrderId) {
+export async function confirmSessionOrder(sessionId, explicitDraftOrderId = null) {
+  let draftId = explicitDraftOrderId;
+  if (!draftId) {
+    const session = await AuraSession.findOne({ sessionId });
+    draftId = session?.draftOrderId;
+  }
+  if (!draftId) {
     throw Object.assign(
       new Error('No draft order found to confirm for this session. Please add items to cart first.'),
       { status: 400 }
     );
   }
 
-  const order = await confirmOrder(session.draftOrderId.toString());
+  const order = await confirmOrder(draftId.toString());
 
-    await AuraSession.findOneAndUpdate(
-        {sessionId},
-        {status: 'order_placed'}
-    );
+  await AuraSession.findOneAndUpdate(
+    { sessionId },
+    { status: 'order_placed', draftOrderId: null, stage: null }
+  );
 
      // Live Screen Broadcast: opens live order tracking on user's phone!
     broadcast('ORDER_PLACED_VOICE', {

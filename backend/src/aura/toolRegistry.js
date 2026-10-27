@@ -68,9 +68,11 @@ export const toolMap = {
 
     const draft = await buildDraft(sessionId, items, restaurantId);
 
+    const existingSession = await AuraSession.findOne({ sessionId }).lean();
+    const newStage = existingSession?.activeQuoteId ? 'awaiting_multi_confirmation' : 'awaiting_confirmation';
     await AuraSession.findOneAndUpdate(
       { sessionId },
-      { $set: { stage: 'awaiting_confirmation' } }
+      { $set: { stage: newStage } }
     );
     return draft;
   },
@@ -89,11 +91,13 @@ export const toolMap = {
 
     // 🧠 Production State Locking: Remember this quote on the session!
     // When the user says "Haan" in the next turn, the fast-path locks this exact fare.
+    const existingSession = await AuraSession.findOne({ sessionId }).lean();
+    const newStage = existingSession?.draftOrderId ? 'awaiting_multi_confirmation' : 'awaiting_ride_confirmation';
     await AuraSession.findOneAndUpdate(
       { sessionId },
       {
         $set: {
-          stage: 'awaiting_ride_confirmation',
+          stage: newStage,
           activeQuoteId: quote.quoteId,
           selectedRideType: 'cab_economy',
         },

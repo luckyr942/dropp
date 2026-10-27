@@ -10,6 +10,8 @@ import { useRideStore } from '../../../shared/store/rideStore';
 import { useAuraContext } from '../../../shared/voice/AuraContext';
 import AuraOverlay from '../../../shared/voice/AuraOverlay';
 import BottomNavBar from '../../../shared/components/bottomNavBar';
+import * as Location from 'expo-location';
+import { MAPBOX_TOKEN, extractLocationDetails } from '../../../shared/utils/mapboxHelper';
 
 const { width } = Dimensions.get('window');
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
@@ -72,6 +74,43 @@ export default function HomeScreen({ navigation, onNavigate }) {
         }
     }, [pickupLocation, destination]);
 
+    const [deviceGpsFetched, setDeviceGpsFetched] = useState(false);
+
+    useEffect(() => {
+        if (pickupLocation && typeof pickupLocation === 'object' &&
+            pickupLocation.lat) return;
+
+        async function fetchDeviceGPS() {
+            try {
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status !== 'granted') return;
+
+                const loc = await Location.getCurrentPositionAsync({
+                    accuracy: Location.Accuracy.Balanced,
+                });
+
+                const { latitude: lat, longitude: lng } = loc.coords;
+
+                // Reverse geocode with Mapbox to get a real place name
+                const token = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || '';
+
+                const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${token}&types=neighborhood,locality,place&limit=1`;
+
+                const res = await fetch(url);
+                const json = await res.json();
+                const shortName = json?.features?.[0]?.text || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+                const fullAddress = json?.features?.[0]?.place_name || shortName;
+                const locationObj = { label: shortName, address: fullAddress, lat, lng };
+                setPickup(shortName);           // display text
+                setPickupLocation(locationObj); // Zustand store
+                setDeviceGpsFetched(true);
+            } catch (err) {
+                console.warn('[HomeScreen] GPS error:', err.message);
+            }
+        }
+        fetchDeviceGPS();
+    }, [deviceGpsFetched, pickupLocation]);
+
     const [quoteData, setQuoteData] = useState(null);
     const [loadingEstimate, setLoadingEstimate] = useState(false);
     const [estimateError, setEstimateError] = useState(null);
@@ -124,6 +163,7 @@ export default function HomeScreen({ navigation, onNavigate }) {
         });
     };
 
+
     // Build tiers from live quote or fallback
     const availableTiers = (quoteData?.fares?.length > 0)
         ? quoteData.fares.map(f => {
@@ -134,6 +174,22 @@ export default function HomeScreen({ navigation, onNavigate }) {
             type, name: m.name, sub: m.sub, image: m.image,
             fare: m.fallbackFare, eta: m.eta, live: false,
         }));
+
+    //real mapbox map
+    const homeMapUrl = (() => {
+        const pu = extractLocationDetails(pickupLocation);
+        const pLng = pu.lng ?? 77.0492;
+        const pLat = pu.lat ?? 28.5427;
+
+        if (destination) {
+            const dp = extractLocationDetails(destination);
+            const dLng = dp.lng ?? (pLng + 0.03);
+            const dLat = dp.lat ?? (pLat + 0.025);
+            return `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-s-a+00c96b(${pLng},${pLat}),pin-s-b+ef4444(${dLng},${dLat})/auto/800x400@2x?padding=60,60,80,60&access_token=${MAPBOX_TOKEN}`;
+        }
+        return `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-s-a+00c96b(${pLng},${pLat})/${pLng},${pLat},14/800x400@2x?access_token=${MAPBOX_TOKEN}`;
+    })();
+
 
     return (
         <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
@@ -191,37 +247,11 @@ export default function HomeScreen({ navigation, onNavigate }) {
 
                 {/* ── 3. MAP CANVAS ── */}
                 <View style={s.mapCanvas}>
-                    {/* Roads */}
-                    <View style={[s.roadH, { top: '30%' }]} />
-                    <View style={[s.roadH, { top: '70%' }]} />
-                    <View style={[s.roadV, { left: '25%' }]} />
-                    <View style={[s.roadV, { left: '68%' }]} />
-                    {/* Blocks */}
-                    {[
-                        { top: '8%', left: '8%', width: '14%', height: '18%' },
-                        { top: '8%', left: '30%', width: '34%', height: '18%' },
-                        { top: '8%', right: '6%', width: '22%', height: '18%' },
-                        { top: '36%', left: '30%', width: '34%', height: '28%' },
-                        { top: '76%', left: '8%', width: '14%', height: '18%' },
-                        { top: '76%', right: '6%', width: '22%', height: '18%' },
-                    ].map((b, i) => <View key={i} style={[s.block, b]} />)}
-
-                    {/* Green route */}
-                    <View style={s.route1} />
-                    <View style={s.route2} />
-
-                    {/* Ambient cars */}
-                    {[
-                        { top: '12%', left: '6%' }, { top: '12%', left: '50%' },
-                        { top: '12%', right: '4%' }, { top: '50%', right: '4%' },
-                        { top: '80%', left: '30%' }, { top: '80%', right: '4%' },
-                    ].map((pos, i) => (
-                        <View key={i} style={[s.ambientCar, pos]}>
-                            <MaterialCommunityIcons name="car-side" size={13} color="#788896" />
-                        </View>
-                    ))}
-
-                    {/* Pickup pin pill */}
+                    {homeMapUrl ? (
+                        <Image source={{ uri: homeMapUrl }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                    ) : (
+                        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#E2F2E9' }]} />
+                    )}
                     <View style={s.pickupPill}>
                         <View style={s.pickupDot} />
                         <View>
@@ -229,37 +259,25 @@ export default function HomeScreen({ navigation, onNavigate }) {
                             <Text style={s.pinSub}>Pickup location</Text>
                         </View>
                     </View>
-
-                    {/* Drop pin pill */}
-                    <View style={s.dropPill}>
-                        <Ionicons name="location-sharp" size={18} color="#FF3B30" />
-                        <View>
-                            <Text style={s.pinTitle}>{typeof dropoff === 'string' ? dropoff.split(',')[0] : (dropoff?.label || 'Where to?')}</Text>
-                            <Text style={s.pinSub}>Destination</Text>
+                    {Boolean(dropoff) && (
+                        <View style={s.dropPill}>
+                            <Ionicons name="location-sharp" size={18} color="#FF3B30" />
+                            <View>
+                                <Text style={s.pinTitle}>{typeof dropoff === 'string' ? dropoff.split(',')[0] : (dropoff?.label || 'Where to?')}</Text>
+                                <Text style={s.pinSub}>Destination</Text>
+                            </View>
                         </View>
-                    </View>
-
-                    {/* 3 min away badge */}
-                    <View style={s.etaMarker}>
-                        <View style={s.etaBadge}><Text style={s.etaBadgeText}>3 min{'\n'}away</Text></View>
-                    </View>
-
-                    {/* Distance tag */}
-                    {Boolean(quoteData?.distanceKm) ? (
-                        <View style={s.distTag}>
-                            <Ionicons name="navigate-outline" size={10} color="#00C96B" />
-                            <Text style={s.distTagText}>{quoteData.distanceKm} km · {quoteData.durationMins} min</Text>
+                    )}
+                    {Boolean(quoteData?.durationMins) && (
+                        <View style={s.etaMarker}>
+                            <View style={s.etaBadge}><Text style={s.etaBadgeText}>{Math.round(quoteData.durationMins)} min{'\n'}away</Text></View>
                         </View>
-                    ) : null}
-
-                    {/* Recenter */}
+                    )}
                     <TouchableOpacity style={s.recenter} onPress={() => fetchEstimate(pickup, dropoff)}>
-                        {loadingEstimate
-                            ? <ActivityIndicator size="small" color="#00C96B" />
-                            : <Ionicons name="locate" size={18} color="#1A1D20" />
-                        }
+                        {loadingEstimate ? <ActivityIndicator size="small" color="#00C96B" /> : <Ionicons name="locate" size={18} color="#1A1D20" />}
                     </TouchableOpacity>
                 </View>
+
 
                 {/* ── 4. WHERE ARE YOU GOING CARD ── */}
                 <View style={s.card}>

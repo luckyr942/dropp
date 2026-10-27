@@ -28,8 +28,14 @@ export const KNOWN_LANDMARKS = {
   'electronic city': { lat: 12.8452, lng: 77.6602, address: 'Electronic City Phase 1, Bengaluru' },
   'manyata tech park': { lat: 13.0500, lng: 77.6200, address: 'Manyata Embassy Business Park, Bengaluru' },
   'marathahalli': { lat: 12.9591, lng: 77.6974, address: 'Marathahalli Bridge, Outer Ring Road, Bengaluru' },
-  'bangalore airport': { lat: 13.1986, lng: 77.7066, address: 'Kempegowda International Airport (BLR), Devanahalli' },
-  'kempegowda airport': { lat: 13.1986, lng: 77.7066, address: 'Kempegowda International Airport (BLR), Bengaluru' },
+  'bangalore airport': { lat: 13.1986, lng: 77.7066, address: 'Bengaluru Airport' },
+  'bengaluru airport': { lat: 13.1986, lng: 77.7066, address: 'Bengaluru Airport' },
+  'kempegowda airport': { lat: 13.1986, lng: 77.7066, address: 'Bengaluru Airport' },
+  'bengaluru railway station': { lat: 12.9778, lng: 77.5707, address: 'Bengaluru Railway Station' },
+  'bangalore railway station': { lat: 12.9778, lng: 77.5707, address: 'Bengaluru Railway Station' },
+  'new delhi railway station': { lat: 28.6429, lng: 77.2195, address: 'New Delhi Railway Station' },
+  'delhi airport': { lat: 28.5562, lng: 77.1000, address: 'Delhi Airport' },
+  'new delhi airport': { lat: 28.5562, lng: 77.1000, address: 'Delhi Airport' },
 
   // Mumbai
   'bkc': { lat: 19.0657, lng: 77.8687, address: 'Bandra Kurla Complex (BKC), Mumbai' },
@@ -112,10 +118,19 @@ export async function resolveLocation(point, label = 'Location') {
           const data = await res.json();
           const feature = data.features?.[0];
           if (feature?.center) {
+            const cleanFull = (feature.place_name || point)
+              .replace(/,\s*\d{6}\b/g, '')
+              .replace(/,\s*India\b/gi, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            const friendlyName =
+              point && point.length >= 3 && point.length <= 40
+                ? point.trim().replace(/\b\w/g, (c) => c.toUpperCase())
+                : feature.text || cleanFull.split(',')[0].trim();
             return {
               lat: feature.center[1],
               lng: feature.center[0],
-              address: feature.place_name || point,
+              address: friendlyName || cleanFull,
             };
           }
         }
