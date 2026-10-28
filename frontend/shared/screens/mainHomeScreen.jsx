@@ -15,7 +15,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import BottomNavBar from '../components/bottomNavBar';
 import { useAuraContext } from '../voice/AuraContext';
-import AuraOverlay from '../voice/AuraOverlay';
 
 const { width } = Dimensions.get('window');
 
@@ -324,9 +323,6 @@ export default function MainHomeScreen({ onNavigate }) {
                     onPress: openAura,
                 }}
             />
-
-            {/* ── Aura Voice Overlay ── */}
-            <AuraOverlay />
         </SafeAreaView>
     );
 }

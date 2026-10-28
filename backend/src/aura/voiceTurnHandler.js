@@ -33,11 +33,76 @@ async function getAudioUrl(reply) {
 // Whole utterance must be a short confirmation — must start with yes/haan/ok/theek/confirm.
 // Bare 'book' or 'kar do' at the start are NOT confirmations (they are new requests).
 const CONFIRM_REGEX =
-  /^\s*(haan|han|yes|ok|theek hai|theek|chalega|confirm)(\s+(dono|both|all|confirm|kar do|kardo|karo|ji|place karo|order kar do|book kar do|cab|bike|auto|premier|premium|economy|go|car|please))*[.!?\s]*$/i;
+  /^\s*(haan|han|yes|ok|theek hai|theek|chalega|confirm|proceed|sure|yep|yup)(\s+(the|it|both|dono|all|confirm|confirmed|order|ride|cab|bike|auto|premier|premium|economy|go|car|book|kar|do|kardo|karo|ji|please))*[.!?\s]*$/i;
 
-// Whole utterance must be a cancellation (e.g., "nahi", "cancel karo", "rehne do")
+// Whole utterance must be a cancellation (e.g., "nahi", "cancel karo", "rehne do", "no")
 const CANCEL_REGEX =
-  /^\s*(nahi|nahin|no|cancel|rehne do|mat karo|cancel karo)\s*[.!?]*\s*$/i;
+  /^\s*(nahi|nahin|no|cancel|rehne do|mat karo|cancel karo|dont|stop)\s*[.!?]*\s*$/i;
+
+// Language Detector: Detects if user spoke in English or Hindi/Hinglish
+export function detectUserLanguage(text) {
+  if (!text) return 'hinglish';
+  if (/[\u0900-\u097F]/.test(text)) return 'hindi';
+
+  const clean = text.toLowerCase().trim();
+  const hindiMarkers = /\b(hai|hain|hoon|se|tak|ka|ki|ke|ko|karo|karein|karna|kar|kardo|rahe|raha|rahi|gayi|gaya|gaye|aaya|bolein|dhoondh|liya|mila|mile|aapka|aapki|aapke|chahiye|theek|haan|han|nahi|nahin|kya|aur|bhai|batao|dikhao|le|lo|matlab|kaunsa|kiraya|kiraaya|yahan|mere|meri|mera|liye|ek|do|teen|chaar|paanch|chheh|saat|aath|nau|das|kuch|bhejo|mangwa|mangvao|karo|kardo|jana|jaana|chalo)\b/i;
+
+  if (hindiMarkers.test(clean)) {
+    return 'hinglish';
+  }
+
+  const englishMarkers = /\b(i|me|my|you|your|we|they|the|a|an|book|order|ride|cab|car|bike|auto|from|to|and|also|please|can|could|would|want|need|get|show|find|for|at|is|are|have|has|do|does|with|coffee|tea|pizza|burger|dosa|idli)\b/i;
+
+  if (englishMarkers.test(clean)) {
+    return 'english';
+  }
+
+  return 'hinglish';
+}
+
+// Food items extractor for fast-path order drafting
+export function extractFoodItems(txt) {
+  const clean = (txt || '').toLowerCase();
+  const items = [];
+  const parseQty = (pat) => {
+    const m = clean.match(new RegExp(`(\\d+|do|teen|char|chaar|paanch|chheh|ek|two|three|four|five|one)\\s*(?:ta|plate|cup|glass|botal|pcs)?\\s*(?:${pat})`, 'i'));
+    if (!m) return 1;
+    const w = m[1].toLowerCase();
+    return ({ do: 2, two: 2, teen: 3, three: 3, char: 4, chaar: 4, four: 4, paanch: 5, five: 5, ek: 1, one: 1 }[w] ?? parseInt(w, 10)) || 1;
+  };
+
+  if (/dosa/i.test(clean)) items.push({ name: 'Masala Dosa', quantity: parseQty('dosa') });
+  if (/idli/i.test(clean)) items.push({ name: 'Steamed Idli', quantity: parseQty('idli') });
+  if (/coffee/i.test(clean)) items.push({ name: /filter/i.test(clean) ? 'Filter Coffee' : 'Cold Coffee', quantity: parseQty('coffee') });
+  if (/chai|tea/i.test(clean)) items.push({ name: 'Masala Chai', quantity: parseQty('chai|tea') });
+  if (/pizza/i.test(clean)) items.push({ name: 'Margherita Pizza', quantity: parseQty('pizza') });
+  if (/burger/i.test(clean)) items.push({ name: 'Crispy Veg Burger', quantity: parseQty('burger') });
+  if (/biryani/i.test(clean)) items.push({ name: /chicken/i.test(clean) ? 'Chicken Dum Biryani' : 'Veg Dum Biryani', quantity: parseQty('biryani') });
+  if (/sandwich/i.test(clean)) items.push({ name: 'Grilled Paneer Sandwich', quantity: parseQty('sandwich') });
+  if (/fries/i.test(clean)) items.push({ name: 'Peri Peri Fries', quantity: parseQty('fries') });
+
+  return items;
+}
+
+export function getBestRestaurantQuery(items, text = '') {
+  const clean = text.toLowerCase();
+  if (/dosa|idli|vada|uttapam|south indian|filter coffee/i.test(clean)) return 'dosa';
+  if (/biryani|mughlai|kebab/i.test(clean)) return 'biryani';
+  if (/pizza|garlic bread|pasta/i.test(clean)) return 'pizza';
+  if (/burger|fries/i.test(clean)) return 'burger';
+  if (/coffee|cold coffee|frappe|sandwich/i.test(clean)) return 'coffee';
+  if (/chai|tea|samosa|chaat/i.test(clean)) return 'chai';
+
+  for (const item of items) {
+    if (/dosa|idli/i.test(item.name)) return 'dosa';
+    if (/biryani/i.test(item.name)) return 'biryani';
+    if (/pizza/i.test(item.name)) return 'pizza';
+    if (/burger/i.test(item.name)) return 'burger';
+    if (/coffee/i.test(item.name)) return 'coffee';
+    if (/chai/i.test(item.name)) return 'chai';
+  }
+  return 'food';
+}
 
 // Helper: Save both user message and AI reply to MongoDB
 async function saveConversationHistory(sessionId, userMessage, aiReply) {
@@ -81,6 +146,8 @@ export async function handleVoiceTurn(req, res, next) {
 
     const cleanText = text.trim();
     const customerId = req.user?.id ?? config.defaultCustomerId;
+    const userLang = detectUserLanguage(cleanText);
+    const isEnglish = userLang === 'english';
 
     // Look up existing session to check if user is already in an active multi-turn flow
     const existingSession = await AuraSession.findOne({ sessionId }).lean();
@@ -172,7 +239,9 @@ export async function handleVoiceTurn(req, res, next) {
 
         const vehicleLabels = { bike: 'bike', auto: 'auto', cab_economy: 'cab', cab_premium: 'premier cab' };
         const vLabel = vehicleLabels[chosenRideType] || 'cab';
-        const reply = `Aapki ${vLabel} aur khana dono confirm ho gaye! Cab OTP ${ride?.otp || '4821'} hai aur khana prepare ho raha hai.`;
+        const reply = isEnglish
+          ? `Your ${vLabel} and food are both confirmed! Cab OTP is ${ride?.otp || '4821'} and your food is being prepared.`
+          : `Aapki ${vLabel} aur khana dono confirm ho gaye! Cab OTP ${ride?.otp || '4821'} hai aur khana prepare ho raha hai.`;
 
         await saveConversationHistory(sessionId, cleanText, reply);
         const audioUrl = await getAudioUrl(reply);
@@ -210,7 +279,9 @@ export async function handleVoiceTurn(req, res, next) {
           } catch (err) {
             console.error('[voiceTurnHandler] Order confirmation failed:', err.message);
             await AuraSession.updateOne({ sessionId }, { $set: { stage: 'awaiting_confirmation' } });
-            const reply = 'Order place nahi ho paya. Dobara "haan" bolein ya try karein.';
+            const reply = isEnglish
+              ? 'Could not place order. Please say "yes" to try again.'
+              : 'Order place nahi ho paya. Dobara "haan" bolein ya try karein.';
             const audioUrl = await getAudioUrl(reply);
             return res.json({
               success: true,
@@ -224,7 +295,9 @@ export async function handleVoiceTurn(req, res, next) {
             });
           }
 
-          const reply = 'Aapka order confirm ho gaya! Details app mein track karein.';
+          const reply = isEnglish
+            ? 'Your order has been confirmed! Track details in the app.'
+            : 'Aapka order confirm ho gaya! Details app mein track karein.';
           await saveConversationHistory(sessionId, cleanText, reply);
           const audioUrl = await getAudioUrl(reply);
 
@@ -270,7 +343,9 @@ export async function handleVoiceTurn(req, res, next) {
           } catch (err) {
             console.error('[voiceTurnHandler] Ride booking failed:', err.message);
             await AuraSession.updateOne({ sessionId }, { $set: { stage: 'awaiting_ride_confirmation' } });
-            const reply = 'Ride book nahi ho payi. Dobara "haan" bolein ya try karein.';
+            const reply = isEnglish
+              ? 'Could not book ride. Please say "yes" to try again.'
+              : 'Ride book nahi ho payi. Dobara "haan" bolein ya try karein.';
             const audioUrl = await getAudioUrl(reply);
             return res.json({
               success: true,
@@ -291,7 +366,9 @@ export async function handleVoiceTurn(req, res, next) {
             cab_premium: 'premier cab',
           };
           const vehicleLabel = vehicleLabels[chosenRideType] || 'cab';
-          const reply = `Aapki ${vehicleLabel} book ho gayi! Driver aur OTP screen par check karein.`;
+          const reply = isEnglish
+            ? `Your ${vehicleLabel} is booked! Check driver details and OTP on screen.`
+            : `Aapki ${vehicleLabel} book ho gayi! Driver aur OTP screen par check karein.`;
           await saveConversationHistory(sessionId, cleanText, reply);
           const audioUrl = await getAudioUrl(reply);
 
@@ -311,7 +388,9 @@ export async function handleVoiceTurn(req, res, next) {
       }
 
       // If user said "haan" but no draft or ride was pending
-      const reply = 'Haanji boliye, kya chahiye? Khana ya cab?';
+      const reply = isEnglish
+        ? 'Hello! How can I help you? Would you like food or a cab?'
+        : 'Haanji boliye, kya chahiye? Khana ya cab?';
       await saveConversationHistory(sessionId, cleanText, reply);
       const audioUrl = mode === 'voice' ? await getAudioUrl(reply) : null;
       return res.json({
@@ -334,7 +413,9 @@ export async function handleVoiceTurn(req, res, next) {
       );
 
       // Standardized cancellation hits disk cache (0 Sarvam API credits, 0ms audio)
-      const reply = 'Theek hai, cancel kar diya gaya hai. Kuch aur chahiye?';
+      const reply = isEnglish
+        ? 'Cancelled. Would you like anything else?'
+        : 'Theek hai, cancel kar diya gaya hai. Kuch aur chahiye?';
       await saveConversationHistory(sessionId, cleanText, reply);
       const audioUrl = mode === 'voice' ? await getAudioUrl(reply) : null;
       return res.json({
@@ -366,7 +447,11 @@ export async function handleVoiceTurn(req, res, next) {
           try {
             const estimate = await toolMap.estimate_ride({ pickup, drop, sessionId });
             const cabFare = estimate.fares?.find((f) => f.type === 'cab_economy')?.fare || 150;
-            const reply = `${estimate.pickup.address} se ${estimate.drop.address} cab ${cabFare} rupaye hai. Confirm kar doon?`;
+            const pickName = estimate.pickup.address.split(',')[0];
+            const dropName = estimate.drop.address.split(',')[0];
+            const reply = isEnglish
+              ? `Cab from ${pickName} to ${dropName} is ${cabFare} rupees. Should I book it?`
+              : `${pickName} se ${dropName} cab ${cabFare} rupaye hai. Confirm kar doon?`;
             await saveConversationHistory(sessionId, cleanText, reply);
             const audioUrl = mode === 'voice' ? await getAudioUrl(reply) : null;
 
@@ -383,6 +468,177 @@ export async function handleVoiceTurn(req, res, next) {
             });
           } catch (err) {
             console.warn('[voiceTurnHandler] Ride fastpath error, falling back to LLM:', err.message);
+          }
+        }
+      }
+    }
+
+    // ── 2C / 2D Check: Distinguish Direct Dish Order vs Pure Restaurant Discovery ──
+    const requestedFoodItems = extractFoodItems(cleanText);
+
+    let specificRestName = null;
+    const seMatch = cleanText.match(/(?:order\s+|mangwa\s+|kuch\s+)?(.+?)\s+se\s+(.+?)(?:\s+order\s+kar\s+do|\s+mangwa\s+do|\s+bhej\s+do|\s+pack\s+kar\s+do|\s+kar\s+do|\s+kardo|\s+chahiye|\s+karo|$)/i);
+    if (seMatch && seMatch[1] && seMatch[2]) {
+      const candidate = seMatch[1].replace(/\b(mujhe|humein|please|bhai|aura|hey|mere|liye)\b/gi, '').trim();
+      if (candidate.length >= 2 && candidate.length <= 40 && !/\b(do|ek|teen|coffee|chai|dosa|pizza|burger)\b/i.test(candidate)) {
+        specificRestName = candidate;
+      }
+    }
+
+    const hasExplicitQuantity = /\b(\d+|do|teen|chaar|char|paanch|chheh|saat|aath|nau|das|ek|two|three|four|five|one)\s*(?:ta|plate|cup|glass|botal|pcs)?\s*(coffee|chai|tea|dosa|idli|pizza|burger|biryani|sandwich|fries)\b/i.test(cleanText);
+    const hasSpecificRestaurant = Boolean(specificRestName);
+    const isExplicitDiscovery = /\b(places|options|restaurants?|cafes?|dhoondho|dikhao|show|find|list|explore|order karne hain|order karna hai|kuch khana hai|peeni hai|peena hai)\b/i.test(cleanText);
+    const isPureDiscovery = !isRideRequest && isExplicitDiscovery && !hasExplicitQuantity && !hasSpecificRestaurant;
+
+    // ── 2D. Instant Food / Cafe Discovery Fast-Path (~20ms) ──
+    // Triggers when user asks to discover or browse cafes/places without specific dish quantities
+    if (isPureDiscovery) {
+      try {
+        const query = /coffee|cafe/i.test(cleanText)
+          ? 'coffee'
+          : /pizza/i.test(cleanText)
+          ? 'pizza'
+          : /dosa|south indian/i.test(cleanText)
+          ? 'dosa'
+          : /biryani/i.test(cleanText)
+          ? 'biryani'
+          : /burger/i.test(cleanText)
+          ? 'burger'
+          : 'food';
+
+        const restResult = await toolMap.search_restaurants({ query, sessionId });
+        const items = restResult.items ?? [];
+        const reply = isEnglish
+          ? 'Here are the best cafes and restaurants near you. What would you like to order?'
+          : 'Yeh rahe aapke aas paas ke best cafes aur restaurants. Kya order karna chahenge?';
+
+        await saveConversationHistory(sessionId, cleanText, reply);
+        const audioUrl = mode === 'voice' ? await getAudioUrl(reply) : null;
+
+        console.log('[voice-turn-fastpath] ⚡ Food Discovery served in', Date.now() - startTime, 'ms');
+        return res.json({
+          success: true,
+          data: {
+            reply,
+            toolCallsMade: ['search_restaurants'],
+            screenAction: { type: 'SHOW_RESTAURANTS', data: items },
+            audioUrl,
+            creditsLeft: guard.creditsLeft,
+          },
+        });
+      } catch (discErr) {
+        console.warn('[voiceTurnHandler] Food discovery fastpath error, falling back to LLM:', discErr.message);
+      }
+    }
+
+    // ── 2C. Instant Direct Food Draft Fast-Path (~30ms) ──
+    // Triggers when user specifies dishes, quantities, or a specific restaurant to order from
+    if (!isRideRequest && (hasExplicitQuantity || hasSpecificRestaurant || requestedFoodItems.length > 0 || /(?:se\s+)(?:coffee|pizza|chai|tea|biryani|burger|snacks|sandwich|dosa|idli|khana|food|order)/i.test(cleanText))) {
+      const itemsToAdd = requestedFoodItems.length > 0 ? requestedFoodItems : [
+        { name: 'Cold Coffee', quantity: 1 }
+      ];
+
+      try {
+        const searchQuery = specificRestName || getBestRestaurantQuery(itemsToAdd, cleanText);
+        const restResult = await toolMap.search_restaurants({ query: searchQuery, sessionId });
+        const rest = (restResult.items ?? [])[0];
+
+        if (rest) {
+          const draft = await toolMap.build_draft({
+            restaurantId: rest.id || rest._id,
+            items: itemsToAdd,
+            sessionId,
+          });
+
+          const itemSummary = itemsToAdd.map((i) => `${i.quantity} ${i.name}`).join(isEnglish ? ', ' : ' aur ');
+          const reply = isEnglish
+            ? `I have drafted ${itemSummary} from ${rest.name}. Total is ${draft.totalAmount} rupees. Confirm the order?`
+            : `${rest.name} se ${itemSummary} draft ho gaya. Total ${draft.totalAmount} rupaye. Confirm kar doon?`;
+
+          await saveConversationHistory(sessionId, cleanText, reply);
+          const audioUrl = mode === 'voice' ? await getAudioUrl(reply) : null;
+
+          console.log('[voice-turn-fastpath] ⚡ Direct Food Draft served in', Date.now() - startTime, 'ms, items:', itemsToAdd.length);
+          return res.json({
+            success: true,
+            data: {
+              reply,
+              toolCallsMade: ['search_restaurants', 'build_draft'],
+              screenAction: { type: 'SHOW_DRAFT', data: draft },
+              audioUrl,
+              creditsLeft: guard.creditsLeft,
+            },
+          });
+        }
+      } catch (foodFastErr) {
+        console.warn('[voiceTurnHandler] Food draft fastpath error, falling back to LLM:', foodFastErr.message);
+      }
+    }
+
+    // ── 2E. Instant Multi-Intent (Ride + Food) Fast-Path (~40ms) ──
+    if (isRideRequest && hasMultiIntent) {
+      const match = cleanText.match(/(?:from\s+|)(.+?)\s+(?:se|to)\s+(.+?)(?=\s+(?:and|aur|mein|par|chahiye|please|order|bhi|\d)|$)/i);
+      if (match && match[1] && match[2]) {
+        const rawPickup = match[1].replace(/\b(cab|ride|auto|book|chahiye|mujhe|humein|jana|jaana)\b/gi, '').trim();
+        const drop = match[2].replace(/\b(cab|ride|auto|book|chahiye|tak|jaana hai|jana hai|distance)\b/gi, '').trim();
+        const pickup = rawPickup.replace(/.*(?:order|biryani|coffee|pizza|pack|chahiye)\s*(?:kr do|kar do|karo|do|hai)?\s*/gi, '').trim() || rawPickup;
+
+        if (pickup.length >= 2 && drop.length >= 2 && pickup.length < 60) {
+          try {
+            const foodQuery = /coffee/i.test(cleanText) ? 'coffee' : /chai|tea/i.test(cleanText) ? 'chai' : /dosa/i.test(cleanText) ? 'dosa' : /pizza/i.test(cleanText) ? 'pizza' : /biryani/i.test(cleanText) ? 'biryani' : 'food';
+
+            const [estimate, restResult] = await Promise.all([
+              toolMap.estimate_ride({ pickup, drop, sessionId }),
+              toolMap.search_restaurants({ query: foodQuery, sessionId }),
+            ]);
+
+            const rest = (restResult.items ?? [])[0];
+            let draft = null;
+
+            if (rest) {
+              const itemsToAdd = requestedFoodItems.length > 0 ? requestedFoodItems : [
+                { name: 'Cold Coffee', quantity: 1 }
+              ];
+
+              draft = await toolMap.build_draft({
+                restaurantId: rest.id || rest._id,
+                items: itemsToAdd,
+                sessionId,
+              });
+            }
+
+            const cabFare = estimate.fares?.find((f) => f.type === 'cab_economy')?.fare || 150;
+            const pickName = estimate.pickup.address.split(',')[0];
+            const dropName = estimate.drop.address.split(',')[0];
+            const itemText = draft ? draft.items.map((i) => `${i.quantity} ${i.name}`).join(isEnglish ? ', ' : ' aur ') : 'food';
+            const draftTotal = draft ? draft.totalAmount : 200;
+            const reply = isEnglish
+              ? `Cab from ${pickName} to ${dropName} is ${cabFare} rupees, and ${itemText} for ${draftTotal} rupees. Should I confirm both?`
+              : `${pickName} se ${dropName} cab ${cabFare} rupaye, aur ${itemText} ${draftTotal} rupaye. Dono confirm kar doon?`;
+
+            await saveConversationHistory(sessionId, cleanText, reply);
+            const audioUrl = mode === 'voice' ? await getAudioUrl(reply) : null;
+
+            console.log('[voice-turn-fastpath] ⚡ Multi-Intent Fast-Path served in', Date.now() - startTime, 'ms');
+            return res.json({
+              success: true,
+              data: {
+                reply,
+                toolCallsMade: ['estimate_ride', 'search_restaurants', 'build_draft'],
+                screenAction: {
+                  type: 'MULTI_ACTION',
+                  data: {
+                    rideEstimate: estimate,
+                    draftOrder: draft,
+                    restaurants: restResult.items ?? [],
+                  },
+                },
+                audioUrl,
+                creditsLeft: guard.creditsLeft,
+              },
+            });
+          } catch (multiFastErr) {
+            console.warn('[voiceTurnHandler] Multi fastpath error, falling back to LLM:', multiFastErr.message);
           }
         }
       }

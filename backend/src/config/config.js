@@ -14,7 +14,7 @@ export const config = Object.freeze({
   operationsKey: process.env.OPERATIONS_API_KEY || (process.env.NODE_ENV === 'production' ? null : 'dropp-demo-operations-key'),
   defaultCustomerId: process.env.DEFAULT_CUSTOMER_ID || 'cust_default',
   geminiApiKey: process.env.GEMINI_API_KEY || null,
-  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite-preview',
   geminiVoice: process.env.GEMINI_VOICE || 'Callirrhoe',
   // gemini-3.8-flash-tts has better quota; 3.1-flash-tts-preview exhausts at 10 req/day
   geminiTtsModel: process.env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-tts',

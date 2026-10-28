@@ -13,17 +13,17 @@ import { useTheme } from '../theme/themeContext';
 import BottomNavBar from '../components/bottomNavBar';
 
 const PAYMENT_METHODS = [
-    { id: 'dropp_pay', title: 'Dropp Pay Balance', sub: '$142.50 Available', icon: 'wallet-outline', isDefault: true },
+    { id: 'dropp_pay', title: 'Dropp Pay Balance', sub: '₹450 Available', icon: 'wallet-outline', isDefault: true },
+    { id: 'upi_gpay', title: 'Google Pay / PhonePe', sub: 'UPI Linked', icon: 'phone-portrait-outline', isDefault: false },
     { id: 'card_visa', title: 'Visa •••• 4821', sub: 'Expires 08/28', icon: 'card-outline', isDefault: false },
-    { id: 'apple_pay', title: 'Apple Pay', sub: 'Linked to Device', icon: 'logo-apple', isDefault: false },
     { id: 'cash', title: 'Cash on Delivery / Ride', sub: 'Pay driver directly', icon: 'cash-outline', isDefault: false },
 ];
 
 const TRANSACTIONS = [
-    { id: 't1', title: 'Top-Up via UPI', date: 'Today, 1:20 PM', amount: '+$50.00', positive: true, icon: 'add-circle-outline' },
-    { id: 't2', title: 'Ride to Airport', date: 'Yesterday, 3:45 PM', amount: '-$24.50', positive: false, icon: 'car-sport-outline' },
-    { id: 't3', title: 'Dropp CashBack Reward', date: 'Oct 4, 10:00 AM', amount: '+$5.00', positive: true, icon: 'gift-outline' },
-    { id: 't4', title: 'Courier Delivery Fee', date: 'Oct 2, 7:15 PM', amount: '-$18.50', positive: false, icon: 'cube-outline' },
+    { id: 't1', title: 'Top-Up via UPI', date: 'Today, 1:20 PM', amount: '+₹500', positive: true, icon: 'add-circle-outline' },
+    { id: 't2', title: 'Ride to Airport', date: 'Yesterday, 3:45 PM', amount: '-₹384', positive: false, icon: 'car-sport-outline' },
+    { id: 't3', title: 'Dropp CashBack Reward', date: 'Oct 4, 10:00 AM', amount: '+₹50', positive: true, icon: 'gift-outline' },
+    { id: 't4', title: 'Food Order - Dosa King', date: 'Oct 2, 7:15 PM', amount: '-₹230', positive: false, icon: 'fast-food-outline' },
 ];
 
 export default function WalletScreen({ onNavigate }) {
@@ -49,7 +49,7 @@ export default function WalletScreen({ onNavigate }) {
                         <Text style={styles.cardBadge}>Active</Text>
                     </View>
 
-                    <Text style={styles.balanceAmount}>$142.50</Text>
+                    <Text style={styles.balanceAmount}>₹450</Text>
                     <Text style={styles.balanceSub}>Auto-refill enabled • 5% CashBack Active</Text>
 
                     <View style={styles.quickActions}>

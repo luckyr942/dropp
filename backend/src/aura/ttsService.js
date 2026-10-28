@@ -185,12 +185,12 @@ export function prepareTextForIshita(rawText) {
   let t = String(rawText).replace(/[*_#`~]/g, '');
 
   const hasDevanagari = /[\u0900-\u097F]/.test(t);
-  const hindiGrammar = /\b(hai|hain|hoon|se|tak|ka|ki|ke|ko|karo|karein|karna|kar|rahe|raha|rahi|gayi|gaya|gaye|aaya|bolein|dhoondh|liya|mila|mile|aapka|aapki|aapke|chahiye|theek|haan|nahi|nahin|kya|aur|bhai|batao|dikhao|le|lo|matlab|kaunsa|kiraya|kiraaya|yahan)\b/gi;
-  const englishGrammar = /\b(is|are|am|from|to|for|with|your|the|this|that|should|would|can|could|please|confirm|book|order|ride|cab|fare|distance|total|ready|found|search|which|where)\b/gi;
+  const hindiGrammar = /\b(hai|hain|hoon|ho|se|tak|ka|ki|ke|ko|karo|karein|karna|kar|kardo|doon|dena|de|di|diya|gaya|gayi|gaye|rahe|raha|rahi|aaya|bolein|dhoondh|liya|mila|mile|aapka|aapki|aapke|aapko|chahiye|theek|haan|han|nahi|nahin|kya|aur|bhai|batao|dikhao|le|lo|matlab|kaunsa|kiraya|kiraaya|yahan|rupaye)\b/gi;
+  const englishGrammar = /\b(is|are|am|from|to|for|with|your|the|this|that|should|would|can|could|please|book|ride|cab|fare|distance|ready|found|which|where)\b/gi;
 
   const hindiCount = (t.match(hindiGrammar) || []).length;
   const englishCount = (t.match(englishGrammar) || []).length;
-  const isHindi = hasDevanagari || hindiCount > englishCount || (hindiCount > 0 && englishCount === 0);
+  const isHindi = hasDevanagari || hindiCount >= englishCount;
   const lang = isHindi ? 'hi-IN' : 'en-IN';
 
   // 0. Clean address noise: Strip 6-digit Indian PIN codes (e.g. 560049), ", India", etc.
@@ -226,11 +226,20 @@ export function prepareTextForIshita(rawText) {
       const spoken = numberToHindiWords(val);
       return spoken ? `${spoken} rupaye` : `${val.toLocaleString('en-IN')} rupaye`;
     });
+    // Natural Hindi pronunciation for item quantities (e.g. 2 Cold Coffee -> do Cold Coffee, 1 Masala Dosa -> ek Masala Dosa)
+    const hindiSmall = { 1: 'ek', 2: 'do', 3: 'teen', 4: 'chaar', 5: 'paanch', 6: 'chheh', 7: 'saat', 8: 'aath', 9: 'nau', 10: 'das' };
+    t = t.replace(/\b([1-9]|10)\s+((?:[a-zA-Z]+\s+)?(?:coffee|dosa|idli|chai|tea|pizza|burger|biryani|sandwich|fries|shake|thali|roll|vada|uttapam|noodles|items?|plate|cup|glass|ta))\b/gi, (m, num, restOfDish) => {
+      return `${hindiSmall[num] || num} ${restOfDish}`;
+    });
   } else {
     t = t.replace(/(?:₹\s*(\d{1,5})|(\d{1,5})\s*(?:rs\.?|inr|rupaye|rupees))/gi, (m, g1, g2) => {
       const val = Number(g1 || g2);
       const spoken = numberToEnglishWords(val);
       return spoken ? `${spoken} rupees` : `${val.toLocaleString('en-US')} rupees`;
+    });
+    const englishSmall = { 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six', 7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten' };
+    t = t.replace(/\b([1-9]|10)\s+((?:[a-zA-Z]+\s+)?(?:coffee|dosa|idli|chai|tea|pizza|burger|biryani|sandwich|fries|shake|thali|roll|vada|uttapam|noodles|items?|plates?|cups?))\b/gi, (m, num, restOfDish) => {
+      return `${englishSmall[num] || num} ${restOfDish}`;
     });
   }
 

@@ -91,6 +91,24 @@ export async function resolveItemsByName(restaurantId, requestedItems) {
       } else if (/burger/i.test(cleanName)) {
         defaultPrice = 149;
         canonicalName = 'Crispy Veg Burger';
+      } else if (/chai|tea/i.test(cleanName)) {
+        defaultPrice = 40;
+        canonicalName = 'Masala Chai';
+      } else if (/dosa/i.test(cleanName)) {
+        defaultPrice = 129;
+        canonicalName = 'Masala Dosa';
+      } else if (/idli/i.test(cleanName)) {
+        defaultPrice = 69;
+        canonicalName = 'Steamed Idli';
+      } else if (/sandwich/i.test(cleanName)) {
+        defaultPrice = 119;
+        canonicalName = 'Grilled Paneer Sandwich';
+      } else if (/shake/i.test(cleanName)) {
+        defaultPrice = 120;
+        canonicalName = 'Chocolate Shake';
+      } else if (/fries/i.test(cleanName)) {
+        defaultPrice = 89;
+        canonicalName = 'Peri Peri Fries';
       }
 
       results.push({

@@ -66,7 +66,15 @@ export const toolMap = {
       item.quantity = qty;
     }
 
-    const draft = await buildDraft(sessionId, items, restaurantId);
+    let targetRestId = restaurantId;
+    if (typeof restaurantId === 'string' && !/^[0-9a-fA-F]{24}$/.test(restaurantId) && !restaurantId.startsWith('rest_')) {
+      const found = await searchRestaurant(restaurantId);
+      if (found && found.length > 0) {
+        targetRestId = found[0].id || found[0]._id;
+      }
+    }
+
+    const draft = await buildDraft(sessionId, items, targetRestId);
 
     const existingSession = await AuraSession.findOne({ sessionId }).lean();
     const newStage = existingSession?.activeQuoteId ? 'awaiting_multi_confirmation' : 'awaiting_confirmation';

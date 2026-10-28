@@ -8,7 +8,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
 import { useAuraContext } from '../../../shared/voice/AuraContext';
-import AuraOverlay from '../../../shared/voice/AuraOverlay';
 import BottomNavBar from '../../../shared/components/bottomNavBar';
 import * as Location from 'expo-location';
 import { MAPBOX_TOKEN, extractLocationDetails } from '../../../shared/utils/mapboxHelper';
@@ -419,9 +418,6 @@ export default function HomeScreen({ navigation, onNavigate }) {
                     onPress: openAura,
                 }}
             />
-
-            {/* ── Aura Voice Overlay ── */}
-            <AuraOverlay />
         </SafeAreaView>
     );
 }

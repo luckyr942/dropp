@@ -4,6 +4,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { toolMap, TOOL_DECLARATIONS } from "./toolRegistry.js";
 import { config } from "../config/config.js";
+import { detectUserLanguage, extractFoodItems } from "./voiceTurnHandler.js";
 
 // NOTE: genAI is intentionally NOT created at module load time.
 // config reads .env with override:true so it must be read after dotenv runs.
@@ -12,38 +13,42 @@ import { config } from "../config/config.js";
 const SYSTEM_PROMPT = `You are Aura, the ultra-fast friendly voice assistant for the Dropp super-app (Food Delivery & Ride Hailing).
 Your voice output will be read aloud to the user through text-to-speech.
 
-CRITICAL VOICE RULES:
-1. Speak in warm, natural everyday conversational Hinglish (like a friendly Indian assistant).
-2. NEVER use markdown symbols like **, *, _, #, bullets, or dashes. Plain conversational text only.
-3. NEVER use currency symbols like ₹. Always say "rupaye" (e.g. "250 rupaye").
+LANGUAGE & PRONUNCIATION RULES:
+1. Match the user's spoken language:
+   - If the user speaks in English: reply in natural Indian English (say "rupees", say numbers in English like "two coffees").
+   - If the user speaks in Hindi or Hinglish: reply in warm, natural everyday conversational Hinglish (say "rupaye", say numbers like "do coffee").
+2. CURRENCY & NUMBERS:
+   - In Hindi/Hinglish: ALWAYS say "rupaye" (e.g. "250 rupaye"). Use natural quantities: "ek", "do", "teen".
+   - In English: ALWAYS say "rupees" (e.g. "250 rupees"). Use natural quantities: "one", "two", "three".
+   - NEVER use currency symbols like ₹.
+3. NEVER use markdown symbols like **, *, _, #, bullets, or dashes. Plain conversational text only.
 4. NEVER use emojis in replies because the text-to-speech engine reads them aloud awkwardly.
 5. NEVER speak postal addresses, road numbers, PIN codes (like 560049, 560035), or "India". ALWAYS speak short, clean landmark/city names (e.g. "Bengaluru Airport", "Railway Station", "Cyber Hub").
 6. Keep replies strictly under 10 to 14 words. Be ultra-punchy, brief, and direct.
-   - Ride Example: "Bengaluru Airport se Railway Station cab 542 rupaye hai. Book kar doon?"
-   - Food Example: "2 cold coffee aur 1 pizza add ho gaya 447 rupaye mein. Confirm kar doon?"
-   - Multi-intent Example: "Bengaluru Airport se Railway Station cab 542 rupaye, aur 2 coffee, 1 pizza 447 rupaye. Dono confirm kar doon?"
-7. Only use real data from tools. Never invent restaurants, prices, fares, or distances.
 
 FOOD ORDERING RULES:
-8. If the user asks for food, search restaurants and call build_draft. State the items and total in rupaye, and ask for confirmation. Never confirm on the user's behalf.
+7. When the user specifies dishes/items to order (e.g. "do coffee, ek dosa aur ek chai order kar do" or "order 2 coffees and 1 pizza"):
+   - IMMEDIATELY call "search_restaurants" to find the restaurant, AND IMMEDIATELY call "build_draft" in the SAME turn!
+   - NEVER stop after searching restaurants.
+   - NEVER ask "what would you like to order?" or "kya order karna chahenge" when the user ALREADY told you what they want!
+   - In your reply, state the restaurant name, item quantities, and total amount, and ask for confirmation to place the order.
+8. ONLY show the restaurant list (without calling build_draft) if the user explicitly asks to explore or discover without naming dishes (e.g. "show cafes near me" or "restaurants dikhao").
 
 RIDE HAILING RULES:
-9. When the user asks for a ride, cab, auto, or bike, call "estimate_ride".
-10. In your reply, state the clean pickup and drop name and fare in rupaye, and ask for confirmation to book.
-11. When the user confirms (e.g. "Haan cab book kardo"), call "book_ride" with the quoteId and rideType.
-12. Once booked, announce the driver name and 4-digit OTP clearly (e.g. "Aapki cab book ho gayi! Driver Vikram aa rahe hain. OTP hai 4421.").
+9. When the user asks for a ride, cab, auto, or bike, call "estimate_ride". State pickup, drop, and fare, and ask for confirmation.
+10. When the user confirms (e.g. "Haan cab book kardo"), call "book_ride" with quoteId and rideType. Once booked, announce driver name and 4-digit OTP.
 
 MULTI-INTENT RULES (RIDE + FOOD IN ONE UTTERANCE):
-13. When the user asks for BOTH a ride and food (e.g. "Book a cab from X to Y and also order 2 coffee and 1 pizza"):
-    - You MUST call BOTH "estimate_ride" and "search_restaurants" (and then "build_draft").
+11. When the user asks for BOTH a ride and food (e.g. "Book a cab from X to Y and also order 2 coffee and 1 pizza"):
+    - You MUST call BOTH "estimate_ride" and "search_restaurants" + "build_draft".
     - In your reply, announce the short route & cab fare, and food items & total.
-    - Ask simply: "Dono confirm kar doon?"
+    - Ask: "Dono confirm kar doon?" (or in English: "Should I confirm both?").
 
 ORDER STATUS RULES:
-14. When the user asks where their order is or asks for status, immediately call "get_order_status". State the spokenStatus returned by the tool.`;
+12. When the user asks where their order is, immediately call "get_order_status". State the spokenStatus returned by the tool.`;
 
 const MAX_STEPS = 4;
-const MODEL_TIMEOUT_MS = 15000;
+const MODEL_TIMEOUT_MS = 3500;
 const COOLDOWN_MS = 5_000;
 
 // Helper: extract short friendly location name without postal address or pincode
@@ -168,8 +173,10 @@ async function runDeterministicFallback({ text, sessionId }) {
                 return ({ do: 2, two: 2, teen: 3, three: 3, char: 4, four: 4, paanch: 5, five: 5, ek: 1, one: 1 }[w] ?? parseInt(w, 10)) || 1;
               };
               if (/coffee/i.test(clean)) itemsToAdd.push({ name: 'Cold Coffee', quantity: parseQty('coffee') });
+              if (/chai|tea/i.test(clean)) itemsToAdd.push({ name: 'Masala Chai', quantity: parseQty('chai|tea') });
               if (/pizza/i.test(clean)) itemsToAdd.push({ name: 'Margherita Pizza', quantity: parseQty('pizza') });
               if (/biryani/i.test(clean)) itemsToAdd.push({ name: 'Veg Dum Biryani', quantity: parseQty('biryani') });
+              if (/burger/i.test(clean)) itemsToAdd.push({ name: 'Crispy Veg Burger', quantity: parseQty('burger') });
               if (itemsToAdd.length === 0) itemsToAdd.push({ name: 'Cold Coffee', quantity: 1 });
 
               const draft = await toolMap.build_draft({
@@ -334,12 +341,12 @@ function formatGeminiError(err) {
     .trim();
 }
 
-// Brain model priority list — fast, low-latency models with verified function-calling support
+// Brain model priority list — fast, ultra-low latency models with verified function-calling support
 const BRAIN_MODELS = [
-  config.geminiModel || 'gemini-3.1-flash-lite',
-  'gemini-3.1-flash-lite',
+  config.geminiModel || 'gemini-3.1-flash-lite-preview',
   'gemini-3.1-flash-lite-preview',
-  'gemini-flash-lite-latest',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
 ];
 
 const isBrainRetryable = (err) =>
@@ -441,8 +448,69 @@ export async function runBrain({ conversation, sessionId }) {
       }
 
       const textPart = response.response.candidates?.[0]?.content?.parts?.find((p) => p.text);
-      const reply = textPart?.text ?? 'Aapki request process ho gayi hai.';
+      let reply = textPart?.text ?? 'Aapki request process ho gayi hai.';
       console.log(`[brain] ✅ ${brainModel} replied`);
+
+      const isEnglish = detectUserLanguage(userText) === 'english';
+      const extractedDishes = extractFoodItems(userText);
+      const isExplicitDishOrder = extractedDishes.length > 0 || /\b(order|mangwa|chahiye|pack|le aao|lao|bring)\b/i.test(userText);
+
+      // Food Draft Safety Net: If user requested specific dishes to order, but Gemini only searched restaurants without calling build_draft
+      if (restaurantsResult && !draftOrderResult && isExplicitDishOrder) {
+        try {
+          const rest = restaurantsResult[0];
+          if (rest) {
+            const itemsToAdd = extractedDishes.length > 0 ? extractedDishes : [
+              { name: 'Cold Coffee', quantity: 1 }
+            ];
+            draftOrderResult = await toolMap.build_draft({
+              restaurantId: rest._id || rest.id,
+              items: itemsToAdd,
+              sessionId,
+            });
+            toolCallsMade.push('auto_build_draft');
+            const itemSummary = itemsToAdd.map((i) => `${i.quantity} ${i.name}`).join(isEnglish ? ', ' : ' aur ');
+            reply = isEnglish
+              ? `I have drafted ${itemSummary} from ${rest.name}. Total is ${draftOrderResult.totalAmount} rupees. Confirm order?`
+              : `${rest.name} se ${itemSummary} draft ho gaya. Total ${draftOrderResult.totalAmount} rupaye. Confirm kar doon?`;
+          }
+        } catch (e) {
+          console.warn('[brain] Auto-build draft food fallback error:', e.message);
+        }
+      }
+
+      // Multi-intent safety: if user asked for both ride and food but Gemini only estimated ride
+      const hasFoodRequest = /\b(coffee|pizza|biryani|chai|tea|burger|food|khana|dish)\b/i.test(userText);
+      if (rideEstimateResult && !draftOrderResult && hasFoodRequest) {
+        try {
+          const foodQuery = /coffee/i.test(userText) ? 'coffee' : /chai|tea/i.test(userText) ? 'chai' : /dosa/i.test(userText) ? 'dosa' : /pizza/i.test(userText) ? 'pizza' : /biryani/i.test(userText) ? 'biryani' : 'food';
+          const restResult = await toolMap.search_restaurants({ query: foodQuery, sessionId });
+          const rest = (restResult.items ?? [])[0];
+          if (rest) {
+            const itemsToAdd = extractedDishes.length > 0 ? extractedDishes : [
+              { name: 'Cold Coffee', quantity: 1 }
+            ];
+
+            draftOrderResult = await toolMap.build_draft({
+              restaurantId: rest._id || rest.id,
+              items: itemsToAdd,
+              sessionId,
+            });
+            toolCallsMade.push('auto_build_draft');
+
+            const cabFare = (rideEstimateResult.fares || []).find((f) => f.type === 'cab_economy')?.fare || 150;
+            const pickName = shortPlace(rideEstimateResult.pickup?.address, '');
+            const dropName = shortPlace(rideEstimateResult.drop?.address, '');
+            const itemSummary = itemsToAdd.map((i) => `${i.quantity} ${i.name}`).join(isEnglish ? ', ' : ' aur ');
+
+            reply = isEnglish
+              ? `Cab from ${pickName} to ${dropName} is ${cabFare} rupees, and ${itemSummary} for ${draftOrderResult.totalAmount} rupees. Confirm both?`
+              : `${pickName} se ${dropName} cab ${cabFare} rupaye, aur ${itemSummary} ${draftOrderResult.totalAmount} rupaye. Dono confirm kar doon?`;
+          }
+        } catch (e) {
+          console.warn('[brain] Auto-build draft fallback error:', e.message);
+        }
+      }
 
       // Determine combined screenAction for frontend UI
       let screenAction = null;

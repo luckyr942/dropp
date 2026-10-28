@@ -295,8 +295,23 @@ export async function buildDraft(sessionId, requestedItems, restaurantId = null,
     totalAmount: order.totalAmount,
   });
 
+  let restaurantName = 'Restaurant';
+  try {
+    const rDoc = await Restaurant.findById(targetRestaurantId).select('name').lean();
+    if (rDoc?.name) {
+      restaurantName = rDoc.name;
+    } else {
+      const fb = ALL_FALLBACK_RESTAURANTS.find(
+        (r) => r.id === targetRestaurantId || r._id === targetRestaurantId || (r.name && r.name.toLowerCase().includes(String(targetRestaurantId).toLowerCase()))
+      );
+      if (fb?.name) restaurantName = fb.name;
+    }
+  } catch (_) {}
+
   return {
     orderId: order._id,
+    restaurantId: targetRestaurantId,
+    restaurantName,
     items: foundItems,
     missingItems,
     subtotal: order.subtotal,
