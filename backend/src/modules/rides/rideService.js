@@ -190,10 +190,21 @@ export async function bookRide({
     let driver;
     try {
         const { Driver } = await import('../drivers/driverModel.js');
+        const vehicleFilter = (rideType === 'bike')
+            ? ['bike']
+            : (rideType === 'auto')
+                ? ['auto']
+                : ['cab_economy', 'cab_premium'];
+
         const realDriver = await Driver.findOneAndUpdate(
-            { isOnline: true },
-            { $set: { isOnline: false } },
-            { new: false }
+            {
+                isOnline: true,
+                isBusy: { $ne: true },
+                enabledServices: 'RIDE',
+                vehicleType: { $in: vehicleFilter },
+            },
+            { $set: { isBusy: true } },
+            { new: true }
         ).lean();
 
         if (realDriver) {
@@ -206,7 +217,7 @@ export async function bookRide({
                 avatar: realDriver.avatar || null,
                 etaMinutes: 3,
             };
-            console.log(`[bookRide] Assigned driver: ${realDriver.name}`);
+            console.log(`[bookRide] Assigned real MongoDB driver: ${realDriver.name} (${realDriver.vehicleModel})`);
         }
     } catch (err) {
         console.warn('[bookRide] Could not query drivers:', err.message);
@@ -313,7 +324,9 @@ export async function cancelRide(rideId, customerId = 'cust_live_001') {
     if (ride.driver?.driverId) {
         try {
             const { Driver } = await import('../drivers/driverModel.js');
-            await Driver.findByIdAndUpdate(ride.driver.driverId, { $set: { isOnline: true } });
+            await Driver.findByIdAndUpdate(ride.driver.driverId, {
+                $set: { isOnline: true, isBusy: false, activeTaskId: null },
+            });
         } catch (_) {}
     }
 

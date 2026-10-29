@@ -6,20 +6,20 @@ import {
     getDriverById,
     acceptRide,
     updateDriverLocation,
-    getNearbyDrivers,
+    updateDriverServices,
 } from './driverService.js';
 
 // POST /api/drivers/register
 export async function handleRegisterDriver(req, res, next) {
     try {
-        const { name, phone, vehicleType, vehicleModel, vehicleNumber } = req.body;
+        const { name, phone, vehicleType, vehicleModel, vehicleNumber, enabledServices } = req.body;
         if (!name || !phone || !vehicleType || !vehicleModel || !vehicleNumber) {
             return res.status(400).json({
                 success: false,
                 error: 'name, phone, vehicleType, vehicleModel, vehicleNumber are all required',
             });
         }
-        const driver = await registerDriver({ name, phone, vehicleType, vehicleModel, vehicleNumber });
+        const driver = await registerDriver({ name, phone, vehicleType, vehicleModel, vehicleNumber, enabledServices });
         return res.status(201).json({ success: true, data: driver });
     } catch (err) {
         next(err);
@@ -37,20 +37,6 @@ export async function handleListDrivers(req, res, next) {
     }
 }
 
-// GET /api/drivers/nearby
-export async function handleGetNearbyDrivers(req, res, next) {
-    try {
-        const { lat, lng, radius = 5 } = req.query;
-        if (!lat || !lng) {
-            return res.status(400).json({ success: false, error: 'lat and lng query params required' });
-        }
-        const drivers = await getNearbyDrivers(Number(lat), Number(lng), Number(radius));
-        return res.status(200).json({ success: true, data: drivers });
-    } catch (err) {
-        next(err);
-    }
-}
-
 // GET /api/drivers/:id
 export async function handleGetDriver(req, res, next) {
     try {
@@ -62,6 +48,25 @@ export async function handleGetDriver(req, res, next) {
         if (!driver) return res.status(404).json({ success: false, error: 'Driver not found' });
         return res.status(200).json({ success: true, data: driver });
     } catch (err) {
+        next(err);
+    }
+}
+
+// PATCH /api/drivers/:id/services
+export async function handleUpdateDriverServices(req, res, next) {
+    try {
+        const { id } = req.params;
+        const { services } = req.body;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, error: 'Invalid driver ID' });
+        }
+        if (!Array.isArray(services)) {
+            return res.status(400).json({ success: false, error: 'services array is required' });
+        }
+        const driver = await updateDriverServices(id, services);
+        return res.status(200).json({ success: true, data: driver });
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ success: false, error: err.message });
         next(err);
     }
 }
@@ -149,4 +154,3 @@ export async function handleUpdateTaskStatus(req, res, next) {
         next(err);
     }
 }
-

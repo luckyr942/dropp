@@ -14,14 +14,14 @@ import {
 import * as Speech from 'expo-speech';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { WS_BASE } from '../../../shared/utils/apiConfig';
+import { API_BASE, WS_BASE } from '../../../shared/utils/apiConfig';
 
 const WS_URL = WS_BASE;
 
 const ORDER_STEPS = [
-    { id: 1, title: 'Order Confirmed', time: '6:02 PM' },
-    { id: 2, title: 'Driver Assigned & Kitchen Preparing', time: 'In Progress' },
-    { id: 3, title: 'Out for Delivery', time: 'Live GPS' },
+    { id: 1, title: 'Confirmed', time: '6:02 PM' },
+    { id: 2, title: 'Preparing', time: 'In Progress' },
+    { id: 3, title: 'On the Way', time: 'Live GPS' },
     { id: 4, title: 'Delivered', time: 'Expected' },
 ];
 
@@ -45,8 +45,8 @@ export default function OrderTrackingScreen({
     const [assignedDriver, setAssignedDriver] = useState(order?.driver?.name ? order.driver : null);
     const [currentStepIndex, setCurrentStepIndex] = useState(
         order?.status === 'delivered' ? 3 :
-        order?.status === 'out_for_delivery' ? 2 :
-        (order?.driver?.name || order?.status === 'driver_assigned') ? 1 : 0
+            order?.status === 'out_for_delivery' ? 2 :
+                (order?.driver?.name || order?.status === 'driver_assigned') ? 1 : 0
     );
     const [statusBannerText, setStatusBannerText] = useState(
         order?.status === 'confirmed' ? 'Order confirmed. Waiting for the kitchen.' : 'Kitchen Preparing Your Meal'
@@ -54,6 +54,34 @@ export default function OrderTrackingScreen({
     const [driverPos, setDriverPos] = useState({ lat: 28.5427, lng: 77.0492, bearing: 0 });
 
     const scooterAnim = useRef(new Animated.Value(0)).current;
+
+    // ── Hydrate Live DB Order & Assigned Driver on Mount ────────────
+    useEffect(() => {
+        let isMounted = true;
+        const targetId = order?._id || (order?.id && !String(order.id).startsWith('#') ? order.id : null);
+        if (!targetId) return;
+
+        fetch(`${API_BASE}/api/orders/${targetId}`)
+            .then((r) => r.json())
+            .then((json) => {
+                if (!isMounted || !json?.data) return;
+                const d = json.data;
+                if (d.driver) setAssignedDriver(d.driver);
+                if (d.status === 'delivered') {
+                    setCurrentStepIndex(3);
+                    setStatusBannerText('Order Delivered! Enjoy your meal 🍕');
+                } else if (d.status === 'out_for_delivery') {
+                    setCurrentStepIndex(2);
+                    setStatusBannerText('Order collected! Your food is out for delivery 🛵');
+                } else if (d.status === 'driver_assigned' || d.status === 'preparing') {
+                    setCurrentStepIndex(1);
+                    setStatusBannerText(d.driver ? `${d.driver.name} is on the way to pick up your order!` : 'Kitchen Preparing Your Meal');
+                }
+            })
+            .catch(() => {});
+
+        return () => { isMounted = false; };
+    }, [order?._id, order?.id]);
 
     // ── WebSocket Real-Time Listener ────────────────────────────────
     useEffect(() => {
@@ -87,6 +115,7 @@ export default function OrderTrackingScreen({
                             };
                             const nextStep = stepByStatus[data.status];
                             if (typeof nextStep === 'number') setCurrentStepIndex(nextStep);
+                            if (data.driver) setAssignedDriver(data.driver);
                             const message = data.message || `Your order is now ${String(data.status || '').replace(/_/g, ' ')}.`;
                             setStatusBannerText(message);
                             if (data.status === 'out_for_delivery') {
@@ -95,7 +124,6 @@ export default function OrderTrackingScreen({
                             if (data.status === 'delivered') {
                                 Alert.alert('Order Delivered', 'Your meal has arrived. Enjoy your meal!');
                             }
-                            // This is intentionally device TTS: it speaks even when the Aura overlay is closed.
                             Speech.stop();
                             Speech.speak(message, { language: 'en-IN', rate: 0.94 });
                             return;
@@ -108,9 +136,11 @@ export default function OrderTrackingScreen({
                                 setStatusBannerText(`${data.driver.name} is on the way to pick up your order!`);
                             }
                         } else if (type === 'order.driver_arrived_pickup') {
+                            if (data.driver) setAssignedDriver(data.driver);
                             setCurrentStepIndex(1);
                             setStatusBannerText('Delivery partner arrived at restaurant. Packing your food.');
                         } else if (type === 'order.out_for_delivery') {
+                            if (data.driver) setAssignedDriver(data.driver);
                             setCurrentStepIndex(2);
                             setStatusBannerText('Order collected! Your food is out for delivery 🛵');
                             Animated.timing(scooterAnim, {
@@ -124,9 +154,9 @@ export default function OrderTrackingScreen({
                                 lng: data.lng,
                                 bearing: data.bearing || 0,
                             });
-                            // Advance marker slightly on GPS updates
                             if (currentStepIndex === 1) setCurrentStepIndex(2);
                         } else if (type === 'order.delivered') {
+                            if (data.driver) setAssignedDriver(data.driver);
                             setCurrentStepIndex(3);
                             setStatusBannerText('Order Delivered! Enjoy your meal 🍕');
                             Alert.alert('🎉 Order Delivered!', 'Your meal has arrived. Enjoy your meal!');
@@ -156,7 +186,7 @@ export default function OrderTrackingScreen({
                 };
 
                 ws.onerror = () => {
-                    try { ws.close(); } catch (_) {}
+                    try { ws.close(); } catch (_) { }
                 };
             } catch (err) {
                 console.warn('[FoodTracking] WS error:', err.message);
@@ -167,7 +197,7 @@ export default function OrderTrackingScreen({
 
         return () => {
             isMounted = false;
-            try { ws?.close(); } catch (_) {}
+            try { ws?.close(); } catch (_) { }
         };
     }, [order]);
 
@@ -180,6 +210,12 @@ export default function OrderTrackingScreen({
         phone: '+91 98765 43210',
         avatar: require('../../../assets/icon.png'),
     };
+
+    const avatarSource = typeof driver.avatar === 'number'
+        ? driver.avatar
+        : (typeof driver.avatar === 'string' && driver.avatar.startsWith('http'))
+            ? { uri: driver.avatar }
+            : require('../../../assets/icon.png');
 
     const handleCallDriver = () => {
         if (!assignedDriver) {
@@ -205,8 +241,10 @@ export default function OrderTrackingScreen({
                 </TouchableOpacity>
 
                 <View style={styles.etaPill}>
-                    <View style={styles.pulsingDot} />
-                    <Text style={styles.etaPillText}>Arriving in {order.etaMinutes} mins</Text>
+                    <View style={[styles.pulsingDot, currentStepIndex === 3 && { backgroundColor: '#00C96B' }]} />
+                    <Text style={styles.etaPillText}>
+                        {currentStepIndex === 3 ? 'Delivered 🎉' : `Arriving in ${order.etaMinutes || 20} mins`}
+                    </Text>
                 </View>
 
                 <TouchableOpacity
@@ -335,7 +373,7 @@ export default function OrderTrackingScreen({
                     <Text style={styles.cardHeaderTitle}>Delivery Partner</Text>
 
                     <View style={styles.driverRow}>
-                        <Image source={{ uri: driver.avatar }} style={styles.driverAvatar} />
+                        <Image source={avatarSource} style={styles.driverAvatar} />
 
                         <View style={styles.driverInfo}>
                             <View style={styles.driverNameRow}>

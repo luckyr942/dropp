@@ -67,21 +67,32 @@ export function broadcast(eventType, data) {
     });
 }
 
-// Send event only to a specific customer's sockets
+// Send event to a specific customer's sockets, with fallback to connected customer sockets
 export function emitToCustomer(customerId, eventType, data) {
     if (!wss) return;
+    const message = JSON.stringify({ type: eventType, data, at: new Date().toISOString() });
     const room = customerRooms.get(customerId);
-    if (!room || room.size === 0) {
-        // Customer not connected via WS — that's fine, just log
-        console.warn(`[WS] No socket found for customerId=${customerId}. Event dropped: ${eventType}`);
+    
+    if (room && room.size > 0) {
+        room.forEach((ws) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(message);
+            }
+        });
         return;
     }
-    const message = JSON.stringify({ type: eventType, data, at: new Date().toISOString() });
-    room.forEach((ws) => {
-        if (ws.readyState === WebSocket.OPEN) {
-            ws.send(message);
-        }
-    });
+
+    // Fallback: If customer is connected as 'anonymous' or reconnected without query param,
+    // deliver to non-dashboard clients so real-time UI never misses ride/order updates.
+    console.log(`[WS] Routing ${eventType} to active customer sockets (fallback for ${customerId})`);
+    const anonRoom = customerRooms.get('anonymous');
+    if (anonRoom && anonRoom.size > 0) {
+        anonRoom.forEach((ws) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(message);
+            }
+        });
+    }
 }
 
 // Operations updates are deliberately sent only to authenticated dashboard

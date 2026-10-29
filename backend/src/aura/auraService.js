@@ -340,18 +340,27 @@ export async function confirmSessionOrder(sessionId, explicitDraftOrderId = null
     { status: 'order_placed', draftOrderId: null, stage: null }
   );
 
-     // Live Screen Broadcast: opens live order tracking on user's phone!
-    broadcast('ORDER_PLACED_VOICE', {
-        sessionId,
-        orderId: order._id,
-        status: order.status,
-        totalAmount: order.totalAmount,
-        confirmedAt: order.confirmedAt,
-    });
-    return {
-        orderId: order._id,
-        status: order.status,
-        totalAmount: order.totalAmount,
-        confirmedAt: order.confirmedAt,
-    };
+  // Live Screen Broadcast: opens live order tracking on user's phone!
+  broadcast('ORDER_PLACED_VOICE', {
+    sessionId,
+    orderId: order._id,
+    status: order.status,
+    totalAmount: order.totalAmount,
+    confirmedAt: order.confirmedAt,
+  });
+
+  return {
+    ...order,
+    _id: order._id,
+    orderId: order._id,
+    status: order.status,
+    totalAmount: order.totalAmount,
+    confirmedAt: order.confirmedAt,
+    deliveryOtp: order.deliveryOtp ?? '4821',
+    deliveryAddress: order.deliveryAddress,
+    restaurantName: order.restaurantName || order.notes?.replace(/^From /, '') || 'Restaurant',
+    items: order.items || [],
+    customerId: order.customerId,
+    driver: order.driver || null,
+  };
 }

@@ -343,10 +343,10 @@ function formatGeminiError(err) {
 
 // Brain model priority list — fast, ultra-low latency models with verified function-calling support
 const BRAIN_MODELS = [
-  config.geminiModel || 'gemini-3.1-flash-lite-preview',
+  config.geminiModel || 'gemini-3.8-flash',
+  'gemini-3.8-flash',
+  'gemini-2.5-flash',
   'gemini-3.1-flash-lite-preview',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
 ];
 
 const isBrainRetryable = (err) =>

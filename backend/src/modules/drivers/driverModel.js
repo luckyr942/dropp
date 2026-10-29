@@ -15,12 +15,25 @@ const driverSchema = new mongoose.Schema(
         vehicleModel:  { type: String, required: true, trim: true },
         vehicleNumber: { type: String, required: true, trim: true },
 
-        // Performance
-        rating:     { type: Number, default: 5.0, min: 1, max: 5 },
-        totalTrips: { type: Number, default: 0 },
+        // Multi-Service Capability Toggles
+        // Drivers can toggle which services they want to accept
+        enabledServices: {
+            type: [String],
+            enum: ['RIDE', 'FOOD', 'GROCERY', 'PARCEL', 'PHARMACY'],
+            default: ['RIDE', 'FOOD', 'GROCERY', 'PARCEL', 'PHARMACY'],
+            index: true,
+        },
 
-        // Availability
-        isOnline: { type: Boolean, default: false, index: true },
+        // Performance & Day Metrics
+        rating:        { type: Number, default: 5.0, min: 1, max: 5 },
+        totalTrips:    { type: Number, default: 0 },
+        tripsToday:    { type: Number, default: 0 },
+        earningsToday: { type: Number, default: 0 },
+
+        // Availability & Work Status
+        isOnline:      { type: Boolean, default: false, index: true },
+        isBusy:        { type: Boolean, default: false, index: true }, // True when currently on a trip
+        activeTaskId:  { type: String,  default: null },
 
         // Real-time GPS location (updated by driver app every 4s)
         location: {
@@ -36,7 +49,7 @@ const driverSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
-// Index for fast nearby-driver queries
-driverSchema.index({ isOnline: 1, 'location.lat': 1, 'location.lng': 1 });
+// Compound index for fast nearby online dispatch queries
+driverSchema.index({ isOnline: 1, isBusy: 1, 'location.lat': 1, 'location.lng': 1 });
 
 export const Driver = mongoose.model('Driver', driverSchema);

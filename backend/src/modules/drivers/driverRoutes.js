@@ -2,8 +2,8 @@ import { Router } from 'express';
 import {
     handleRegisterDriver,
     handleListDrivers,
-    handleGetNearbyDrivers,
     handleGetDriver,
+    handleUpdateDriverServices,
     handleSetOnline,
     handleSetOffline,
     handleUpdateLocation,
@@ -14,10 +14,10 @@ import {
 const router = Router();
 
 router.get('/', handleListDrivers);
-router.get('/nearby', handleGetNearbyDrivers);
 router.post('/register', handleRegisterDriver);
 
 router.get('/:id', handleGetDriver);
+router.patch('/:id/services', handleUpdateDriverServices);
 router.post('/:id/online', handleSetOnline);
 router.post('/:id/offline', handleSetOffline);
 router.patch('/:id/location', handleUpdateLocation);

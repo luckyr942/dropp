@@ -65,6 +65,12 @@ export const useRideStore = create((set) => ({
         allFares: fares || [],
         routeGeometry: geometry || null,
     }),
+    setRoute: (geometry, distanceKm, durationMins, fares) => set({
+        routeGeometry: geometry || null,
+        distanceKm: distanceKm || null,
+        durationMins: durationMins || null,
+        allFares: fares || [],
+    }),
     setDriver: (driverData) => set((state) => ({
         driver: { ...state.driver, ...driverData },
     })),

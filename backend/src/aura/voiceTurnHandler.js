@@ -7,6 +7,7 @@
 import { runBrain } from './brain.js';
 import { startSession, confirmSessionOrder } from './auraService.js';
 import { bookRide } from '../modules/rides/rideService.js';
+import { orchestrateMultiServiceBooking } from '../modules/orchestrator/orchestratorService.js';
 import { AuraSession } from './sessionModel.js';
 import { config } from '../config/config.js';
 import { textToSpeech, storeAudio } from './ttsService.js';
@@ -216,20 +217,31 @@ export async function handleVoiceTurn(req, res, next) {
         else if (/\b(auto|rikshaw|rickshaw)\b/i.test(cleanText)) chosenRideType = 'auto';
         else if (/\b(premier|premium)\b/i.test(cleanText)) chosenRideType = 'cab_premium';
 
+        let multiSession = null;
         let order = null;
         let ride = null;
 
         try {
-          [order, ride] = await Promise.all([
-            confirmSessionOrder(sessionId, existingSession.draftOrderId),
-            bookRide({
-              customerId,
-              quoteId: existingSession.activeQuoteId,
-              rideType: chosenRideType,
-            }),
-          ]);
+          multiSession = await orchestrateMultiServiceBooking({
+            customerId,
+            sessionId,
+            rideQuoteId: existingSession.activeQuoteId,
+            rideType: chosenRideType,
+            draftOrderId: existingSession.draftOrderId,
+          });
+          const rideTask = multiSession?.tasks?.find((t) => t.serviceCategory === 'RIDE');
+          const foodTask = multiSession?.tasks?.find((t) => t.serviceCategory === 'FOOD');
+          ride = rideTask ? { _id: rideTask.entityId, ...rideTask } : null;
+          order = foodTask ? { _id: foodTask.entityId, ...foodTask } : null;
         } catch (multiErr) {
           console.error('[voiceTurnHandler] Multi-confirmation error:', multiErr.message);
+          // Fallback: orchestrator already called bookRide() before it failed, so only
+          // confirm the food order here — do NOT call bookRide() again (would create a duplicate ride).
+          try {
+            order = await confirmSessionOrder(sessionId, existingSession.draftOrderId);
+          } catch (_) {}
+          // ride stays null — the orchestrator's bookRide() succeeded even if save() failed,
+          // so the ride is already in MongoDB. Use a generic OTP.
         }
 
         await AuraSession.updateOne(
@@ -585,7 +597,16 @@ export async function handleVoiceTurn(req, res, next) {
 
         if (pickup.length >= 2 && drop.length >= 2 && pickup.length < 60) {
           try {
-            const foodQuery = /coffee/i.test(cleanText) ? 'coffee' : /chai|tea/i.test(cleanText) ? 'chai' : /dosa/i.test(cleanText) ? 'dosa' : /pizza/i.test(cleanText) ? 'pizza' : /biryani/i.test(cleanText) ? 'biryani' : 'food';
+            // Pick the restaurant category that best matches the most "substantial" food items
+            // ordered: burger/pizza take priority over coffee (they need a multi-cuisine kitchen).
+            // This prevents a burger order from landing on a coffee-shop menu.
+            const foodQuery = /burger/i.test(cleanText) ? 'burger'
+              : /pizza/i.test(cleanText) ? 'pizza'
+              : /biryani/i.test(cleanText) ? 'biryani'
+              : /dosa/i.test(cleanText) ? 'dosa'
+              : /coffee/i.test(cleanText) ? 'coffee'
+              : /chai|tea/i.test(cleanText) ? 'chai'
+              : 'food';
 
             const [estimate, restResult] = await Promise.all([
               toolMap.estimate_ride({ pickup, drop, sessionId }),

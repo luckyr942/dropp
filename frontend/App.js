@@ -120,7 +120,29 @@ export default function App() {
     };
 
     const cartTotal = Object.values(cart).reduce((s, i) => s + i.price * i.quantity, 0);
-    const navigate = (screen) => screen && setCurrentScreen(screen);
+    const navigate = (screen, payload) => {
+        if (!screen) return;
+        if (payload && screen === 'FoodTracking') {
+            const orderId = payload._id || payload.orderId || payload.id;
+            setActiveOrder({
+                id: `#DRP-${String(orderId || '').slice(-5).toUpperCase() || '84920'}`,
+                _id: orderId,
+                customerId: payload.customerId || 'cust_live_001',
+                restaurantName: payload.restaurantName || selectedRestaurant?.name || 'Restaurant',
+                etaMinutes: Number(payload.etaMinutes) || 20,
+                etaTime: '25 mins',
+                items: payload.items || Object.values(cart),
+                totalAmount: payload.totalAmount || Math.max(0, cartTotal + 24 - 50),
+                deliveryAddress: typeof payload.deliveryAddress === 'object'
+                    ? (payload.deliveryAddress.street || payload.deliveryAddress.address || 'Flat 402, Sector 28, Gurugram')
+                    : (payload.deliveryAddress || 'Flat 402, Sector 28, Gurugram'),
+                deliveryOtp: payload.deliveryOtp || '4821',
+                driver: payload.driver || null,
+                status: payload.status || 'confirmed',
+            });
+        }
+        setCurrentScreen(screen);
+    };
 
     const isDarkScreen =
         currentScreen === 'Splash' ||

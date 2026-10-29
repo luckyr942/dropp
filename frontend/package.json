@@ -3,11 +3,17 @@
   "version": "1.0.0",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
-    "start": "expo start",
-    "tunnel": "expo start --tunnel",
-    "start:tunnel": "expo start --tunnel",
-    "start:clear": "expo start -c",
-    "dev": "expo start",
+    "start": "expo start --port 8081",
+    "tunnel": "expo start --tunnel --port 8081",
+    "start:tunnel": "expo start --tunnel --port 8081",
+    "start:clear": "expo start -c --port 8081",
+    "dev": "expo start --port 8081",
+
+    "open:17pro": "xcrun simctl openurl A6ED74F6-58E8-4246-9356-0DA6BCCBE55F exp://localhost:8081",
+    "open:17":    "xcrun simctl openurl 1B252EAB-D89F-4753-B430-DF07407BA8E5 exp://localhost:8082",
+    "open:air":   "xcrun simctl openurl 1D2BAB97-C628-4B3A-949E-5EA4E1229400 exp://localhost:8083",
+    "open:all":   "xcrun simctl openurl A6ED74F6-58E8-4246-9356-0DA6BCCBE55F exp://localhost:8081 && xcrun simctl openurl 1B252EAB-D89F-4753-B430-DF07407BA8E5 exp://localhost:8082 && xcrun simctl openurl 1D2BAB97-C628-4B3A-949E-5EA4E1229400 exp://localhost:8083",
+
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web"

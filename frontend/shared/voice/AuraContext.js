@@ -482,10 +482,11 @@ export function AuraProvider({ children, onNavigate }) {
   const confirmOrder = useCallback(() => sendVoiceTurn('haan'), [sendVoiceTurn]);
   const cancelDraft  = useCallback(() => sendVoiceTurn('nahi'), [sendVoiceTurn]);
   const trackOrder   = useCallback(() => {
+    const currentOrder = placedOrder;
     closeAura();
     setPlacedOrder(null);
-    onNavigate?.(TRACKING_SCREEN);
-  }, [closeAura, onNavigate]);
+    onNavigate?.(TRACKING_SCREEN, currentOrder);
+  }, [closeAura, onNavigate, placedOrder]);
 
   const confirmRide = useCallback((rideType) => {
     const chosenType = rideType || 'cab_economy';
