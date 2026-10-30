@@ -21,12 +21,21 @@ import auraRouter from './aura/auraRoutes.js';
 import rideRouter from './modules/rides/rideRoutes.js';
 import driverRouter from './modules/drivers/driverRoutes.js';
 
+// Auth, Merchants & Products (Production)
+import authRouter from './modules/auth/authRoutes.js';
+import merchantRouter from './modules/merchants/merchantRoutes.js';
+import productRouter from './modules/catalogue/productRoutes.js';
+import { notFound, errorHandler } from './middleware/errorHandler.js';
+
 
 //Map 
 import geocodeRoutes from './modules/geoCode/geoRoutes.js';
 
 
 const app = express();
+if (!process.env.JWT_ACCESS_SECRET) {
+  throw new Error('FATAL: JWT_ACCESS_SECRET environment variable is not set');
+}
 const server = http.createServer(app);
 
 // -------------------------------------------------------------
@@ -141,6 +150,9 @@ app.get('/dashboard', (req, res) => {
 // 3. Mount Service Modules
 // -------------------------------------------------------------
 app.use('/api/catalog', catalogRouter);
+app.use('/api/auth', authRouter);
+app.use('/api/merchants/:merchantId/products', productRouter); 
+app.use('/api/merchants', merchantRouter);
 app.use('/api/orders', orderRouter);
 app.use('/api/rides', rideRouter);
 app.use('/api/drivers', driverRouter);
@@ -148,10 +160,9 @@ app.use('/api/aura', auraRouter);
 app.use('/api/geocode', geocodeRoutes);
 
 
-// 404 Handler
-app.use((req, res) => {
-  res.status(404).json({ success: false, error: `Route not found: ${req.method} ${req.url}` });
-});
+// Central 404 and Error Handlers
+app.use(notFound);
+app.use(errorHandler);
 
 // -------------------------------------------------------------
 // 4. Safe Centralized Error Handler
