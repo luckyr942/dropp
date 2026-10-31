@@ -1,0 +1,50 @@
+[
+ {
+  "id": "n1",
+  "start": 1.0,
+  "end": 38.5,
+  "text": "Imagine you're rushing to the airport. You need a ride, you want a coffee on the way, and you just remembered something from the shop. Today that means switching between apps, repeating your details, paying separately, and coordinating everything yourself. What if one request could bring these services together? That's Dropp. It connects customers, local merchants and service partners in one coordinated experience. Customer on the left, merchant in the middle, driver on the right. Let me show you."
+ },
+ {
+  "id": "n2",
+  "start": 40.5,
+  "end": 60.0,
+  "text": "We start with the merchant. FreshMart manages its catalogue here. I'll lower the stock of Amul Butter from twenty to fifteen. This isn't a picture on a screen. Every change is saved to our database and flows into the customer experience."
+ },
+ {
+  "id": "n3",
+  "start": 60.5,
+  "end": 66.8,
+  "text": "Now the customer simply asks Aura for a ride and two cold coffees."
+ },
+ {
+  "id": "n4",
+  "start": 76.5,
+  "end": 89.5,
+  "text": "Aura understood one request that spans two services. It priced the real road route and the cafe order through our backend, and asks before booking. I'll confirm both."
+ },
+ {
+  "id": "n5",
+  "start": 98.3,
+  "end": 106.8,
+  "text": "Watch the driver's phone. The ride offer arrives instantly, with fare and route, and he accepts."
+ },
+ {
+  "id": "n6",
+  "start": 110.5,
+  "end": 131.0,
+  "text": "Back on the customer's screen, the driver, vehicle and OTP appear in real time, and here is the live map with the driver's actual GPS position. The food order runs its own lifecycle, preparation and delivery, independent of the ride. One experience, separate workflows behind the scenes."
+ },
+ {
+  "id": "n7",
+  "start": 131.5,
+  "end": 157.0,
+  "text": "So what makes Dropp different? First, Aura turns natural language, in Hindi, Hinglish or English, into structured requests, even when one sentence needs two services. Second, our orchestration layer coordinates services that keep their own rules and status. The backend validates prices and availability, streams live events to every app, and a failure in one service never breaks the other."
+ },
+ {
+  "id": "n8",
+  "start": 157.5,
+  "end": 179.8,
+  "text": "Our goal is simple: make local services easier to use together. Merchants reach nearby customers, partners get more demand, and everyday tasks get simpler. We earn through commissions and service fees, and next we expand to more local services and O N D C. Dropp. One request. Multiple services. A simpler everyday life."
+ }
+]

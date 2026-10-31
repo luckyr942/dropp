@@ -13,6 +13,7 @@ import { config } from '../config/config.js';
 import { textToSpeech, storeAudio } from './ttsService.js';
 import { runGuardRails } from './guardRails.js';
 import { toolMap } from './toolRegistry.js';
+import { compareRides, detectRideCategory } from '../modules/rides/rideCompareService.js';
 
 const MAX_TEXT_LENGTH = 300;
 const MAX_STORED_TURNS = 20;  // Space optimization: cap stored MongoDB history
@@ -35,6 +36,27 @@ async function getAudioUrl(reply) {
 // Bare 'book' or 'kar do' at the start are NOT confirmations (they are new requests).
 const CONFIRM_REGEX =
   /^\s*(haan|han|yes|ok|theek hai|theek|chalega|confirm|proceed|sure|yep|yup)(\s+(the|it|both|dono|all|confirm|confirmed|order|ride|cab|bike|auto|premier|premium|economy|go|car|book|kar|do|kardo|karo|ji|please))*[.!?\s]*$/i;
+
+// "Sabse sasta", "cheapest", "compare", or naming another ride app → compare across providers
+const COMPARE_REGEX =
+  /\b(sasta|sasti|saste|sabse kam|kam paise|cheapest|cheaper|cheap|lowest|compare|best price|ola|uber|rapido)\b/i;
+const BOOK_REGEX = /\b(book|kar do|kardo|karo|kara do|kar dijiye)\b/i;
+
+// Pulls "<pickup> se/to <drop>" out of a ride request. Returns null when no route is spoken.
+function parseRoute(text) {
+  const match = text.match(/(?:from\s+|)(.+?)\s+(?:se|to)\s+(.+?)(?:\s+tak|\s+cab|\s+chahiye|\s+book|$)/i);
+  if (!match?.[1] || !match?.[2]) return null;
+  const strip = (s) =>
+    s
+      .replace(COMPARE_REGEX, '')
+      .replace(/\b(sabse|wala|wali|cab|ride|auto|bike|taxi|book|chahiye|tak|mujhe|humein|jana|jaana|hai|kar|do|kardo|find|me|the|a|for|get)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const pickup = strip(match[1]);
+  const drop = strip(match[2]);
+  if (pickup.length < 2 || drop.length < 2 || pickup.length > 60 || drop.length > 60) return null;
+  return { pickup, drop };
+}
 
 // Whole utterance must be a cancellation (e.g., "nahi", "cancel karo", "rehne do", "no")
 const CANCEL_REGEX =
@@ -66,7 +88,7 @@ export function extractFoodItems(txt) {
   const clean = (txt || '').toLowerCase();
   const items = [];
   const parseQty = (pat) => {
-    const m = clean.match(new RegExp(`(\\d+|do|teen|char|chaar|paanch|chheh|ek|two|three|four|five|one)\\s*(?:ta|plate|cup|glass|botal|pcs)?\\s*(?:${pat})`, 'i'));
+    const m = clean.match(new RegExp(`(\\d+|do|teen|char|chaar|paanch|chheh|ek|two|three|four|five|one)\\s*(?:ta|plate|cup|glass|botal|pcs)?\\s*(?:(?:cold|hot|iced|filter|masala|black|veg|chicken|paneer|cheese)\\s+)?(?:${pat})`, 'i'));
     if (!m) return 1;
     const w = m[1].toLowerCase();
     return ({ do: 2, two: 2, teen: 3, three: 3, char: 4, chaar: 4, four: 4, paanch: 5, five: 5, ek: 1, one: 1 }[w] ?? parseInt(w, 10)) || 1;
@@ -166,7 +188,8 @@ export async function handleVoiceTurn(req, res, next) {
     );
 
     // Confirmation must be short (< 45 chars) and match confirm words or vehicle selection
-    const isConfirm = cleanText.length < 45 && (CONFIRM_REGEX.test(cleanText) || isRideChoice);
+    const isCompareIntent = COMPARE_REGEX.test(cleanText);
+    const isConfirm = !isCompareIntent && cleanText.length < 45 && (CONFIRM_REGEX.test(cleanText) || isRideChoice);
     const isCancel = CANCEL_REGEX.test(cleanText);
 
     // Confirmations, cancellations, and active draft confirmations cost 0 credits (completely free)
@@ -231,8 +254,9 @@ export async function handleVoiceTurn(req, res, next) {
           });
           const rideTask = multiSession?.tasks?.find((t) => t.serviceCategory === 'RIDE');
           const foodTask = multiSession?.tasks?.find((t) => t.serviceCategory === 'FOOD');
-          ride = rideTask ? { _id: rideTask.entityId, ...rideTask } : null;
-          order = foodTask ? { _id: foodTask.entityId, ...foodTask } : null;
+          // entityId is the real Ride/Order id; it must win over the task's own subdocument _id
+          ride = rideTask ? { ...rideTask, _id: rideTask.entityId, rideId: rideTask.entityId } : null;
+          order = foodTask ? { ...foodTask, _id: foodTask.entityId, orderId: foodTask.entityId } : null;
         } catch (multiErr) {
           console.error('[voiceTurnHandler] Multi-confirmation error:', multiErr.message);
           // Fallback: orchestrator already called bookRide() before it failed, so only
@@ -252,8 +276,8 @@ export async function handleVoiceTurn(req, res, next) {
         const vehicleLabels = { bike: 'bike', auto: 'auto', cab_economy: 'cab', cab_premium: 'premier cab' };
         const vLabel = vehicleLabels[chosenRideType] || 'cab';
         const reply = isEnglish
-          ? `Your ${vLabel} and food are both confirmed! Cab OTP is ${ride?.otp || '4821'} and your food is being prepared.`
-          : `Aapki ${vLabel} aur khana dono confirm ho gaye! Cab OTP ${ride?.otp || '4821'} hai aur khana prepare ho raha hai.`;
+          ? `Your ${vLabel} and food are both confirmed! ${ride?.otp ? `Cab OTP is ${ride.otp}` : 'Finding your driver now'} and your food is being prepared.`
+          : `Aapki ${vLabel} aur khana dono confirm ho gaye! ${ride?.otp ? `Cab OTP ${ride.otp} hai` : 'Driver dhoondh rahe hain'} aur khana prepare ho raha hai.`;
 
         await saveConversationHistory(sessionId, cleanText, reply);
         const audioUrl = await getAudioUrl(reply);
@@ -379,8 +403,8 @@ export async function handleVoiceTurn(req, res, next) {
           };
           const vehicleLabel = vehicleLabels[chosenRideType] || 'cab';
           const reply = isEnglish
-            ? `Your ${vehicleLabel} is booked! Check driver details and OTP on screen.`
-            : `Aapki ${vehicleLabel} book ho gayi! Driver aur OTP screen par check karein.`;
+            ? `Your ${vehicleLabel} is booked! Finding your driver now, OTP is on screen.`
+            : `Aapki ${vehicleLabel} book ho gayi! Driver dhoondh rahe hain, OTP screen par hai.`;
           await saveConversationHistory(sessionId, cleanText, reply);
           const audioUrl = await getAudioUrl(reply);
 
@@ -440,6 +464,86 @@ export async function handleVoiceTurn(req, res, next) {
           creditsLeft: guard.creditsLeft,
         },
       });
+    }
+
+    // ── 2A. Compare & Auto-Book Fast-Path ──
+    // "Cyber Hub se Airport sabse sasta cab book kar do": compare Dropp (live) against Uber / Ola / Rapido
+    // (estimates), then book Dropp directly if it wins, or hand off to the cheaper app with the trip pre-filled.
+    const compareRoute = isCompareIntent && !/\b(coffee|pizza|biryani|chai|burger|khana|food)\b/i.test(cleanText)
+      ? parseRoute(cleanText)
+      : null;
+    if (compareRoute) {
+      try {
+        const comparison = await compareRides({
+          ...compareRoute,
+          customerId,
+          category: detectRideCategory(cleanText),
+        });
+        const { cheapest, cheapestDropp } = comparison;
+        const wantsBooking = BOOK_REGEX.test(cleanText);
+
+        // Hold the Dropp quote so a follow-up "haan" books it through the normal confirm path
+        await AuraSession.updateOne(
+          { sessionId },
+          {
+            $set: {
+              stage: 'awaiting_ride_confirmation',
+              activeQuoteId: comparison.quoteId,
+              selectedRideType: cheapestDropp?.rideType || 'cab_economy',
+            },
+          }
+        );
+
+        let reply;
+        let bookedRide = null;
+        let handoff = null;
+        const toolCallsMade = ['compare_rides'];
+
+        if (cheapest?.provider === 'dropp' && wantsBooking) {
+          bookedRide = await bookRide({ customerId, quoteId: comparison.quoteId, rideType: cheapest.rideType });
+          await AuraSession.updateOne({ sessionId }, { $set: { stage: null, activeQuoteId: null } });
+          toolCallsMade.push('book_ride');
+          reply = isEnglish
+            ? `Dropp is cheapest at ${cheapest.fare} rupees. Booked, finding your driver now.`
+            : `Dropp sabse sasta hai, ${cheapest.fare} rupaye. Book kar di, driver dhoondh rahe hain.`;
+        } else if (cheapest && cheapest.provider !== 'dropp') {
+          handoff = { provider: cheapest.provider, providerName: cheapest.providerName, url: cheapest.deepLink, autoOpen: wantsBooking };
+          const droppFare = cheapestDropp ? cheapestDropp.fare : null;
+          if (wantsBooking) {
+            reply = isEnglish
+              ? `${cheapest.providerName} looks cheapest, about ${cheapest.fare} rupees. Opening ${cheapest.providerName} for you.`
+              : `${cheapest.providerName} sabse sasta lag raha hai, lagbhag ${cheapest.fare} rupaye. ${cheapest.providerName} khol rahi hoon.`;
+          } else {
+            reply = isEnglish
+              ? `${cheapest.providerName} about ${cheapest.fare}, Dropp ${droppFare} rupees. Book Dropp?`
+              : `${cheapest.providerName} lagbhag ${cheapest.fare}, Dropp ${droppFare} rupaye. Dropp book kar doon?`;
+          }
+        } else {
+          reply = isEnglish
+            ? `Dropp is cheapest at ${cheapest?.fare} rupees. Should I book it?`
+            : `Dropp sabse sasta hai, ${cheapest?.fare} rupaye. Book kar doon?`;
+        }
+
+        await saveConversationHistory(sessionId, cleanText, reply);
+        const audioUrl = mode === 'voice' ? await getAudioUrl(reply) : null;
+        console.log('[voice-turn-fastpath] ⚡ Ride comparison served in', Date.now() - startTime, 'ms, cheapest:', cheapest?.product);
+
+        return res.json({
+          success: true,
+          data: {
+            reply,
+            toolCallsMade,
+            screenAction: {
+              type: 'RIDE_COMPARISON',
+              data: { ...comparison, bookedRide, handoff },
+            },
+            audioUrl,
+            creditsLeft: guard.creditsLeft,
+          },
+        });
+      } catch (err) {
+        console.warn('[voiceTurnHandler] Compare fastpath error, falling back:', err.message);
+      }
     }
 
     // ── 2B. Instant Direct Ride Estimate Fast-Path (Runs in ~25ms, cuts latency by 85%) ──
@@ -608,9 +712,21 @@ export async function handleVoiceTurn(req, res, next) {
               : /chai|tea/i.test(cleanText) ? 'chai'
               : 'food';
 
+            // A single named dish ("2 cold coffee") searches for that exact dish first,
+            // falling back to the category when no open restaurant sells it.
+            const findRestaurants = async () => {
+              if (requestedFoodItems.length === 1) {
+                const byDish = await toolMap.search_restaurants({ query: requestedFoodItems[0].name, sessionId });
+                const top = (byDish.items ?? [])[0];
+                // Offline-catalog fallbacks carry 'rest_' ids; treat them as "no real match"
+                if (top && !String(top.id).startsWith('rest_')) return byDish;
+              }
+              return toolMap.search_restaurants({ query: foodQuery, sessionId });
+            };
+
             const [estimate, restResult] = await Promise.all([
               toolMap.estimate_ride({ pickup, drop, sessionId }),
-              toolMap.search_restaurants({ query: foodQuery, sessionId }),
+              findRestaurants(),
             ]);
 
             const rest = (restResult.items ?? [])[0];

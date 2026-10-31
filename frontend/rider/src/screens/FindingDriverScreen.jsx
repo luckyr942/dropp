@@ -14,63 +14,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
-import { buildMapboxRouteUrl, extractLocationDetails, MAPBOX_TOKEN } from '../../../shared/utils/mapboxHelper';
+import { extractLocationDetails } from '../../../shared/utils/mapboxHelper';
+import LiveMap from '../../../shared/components/LiveMap';
+import { getCustomerId } from '../../../shared/utils/authStorage';
 import { API_BASE, WS_BASE } from '../../../shared/utils/apiConfig';
 
 const WS_URL = WS_BASE;
-
-// Nearby decoy cars scattered around the pickup point on the static map
-function buildFindingMapUrl(routeGeometry, pickup, destination) {
-    const pu = pickup ? extractLocationDetails(pickup) : null;
-    const dp = destination ? extractLocationDetails(destination) : null;
-
-    const pLng = pu?.lng ?? 77.0492;
-    const pLat = pu?.lat ?? 28.5427;
-    const dLng = dp?.lng ?? 77.2199;
-    const dLat = dp?.lat ?? 28.6338;
-
-    const coords = routeGeometry?.coordinates;
-    const hasRoute = Array.isArray(coords) && coords.length > 1;
-
-    if (hasRoute) {
-        const step = Math.max(1, Math.floor(coords.length / 50));
-        const sampled = [];
-        for (let i = 0; i < coords.length; i += step) {
-            sampled.push([Number(coords[i][0].toFixed(5)), Number(coords[i][1].toFixed(5))]);
-        }
-        const last = coords[coords.length - 1];
-        if (sampled[sampled.length - 1]?.[0] !== Number(last[0].toFixed(5))) {
-            sampled.push([Number(last[0].toFixed(5)), Number(last[1].toFixed(5))]);
-        }
-
-        const geojson = {
-            type: 'FeatureCollection',
-            features: [
-                {
-                    type: 'Feature',
-                    properties: { stroke: '#00C96B', 'stroke-width': 4, 'stroke-opacity': 0.9 },
-                    geometry: { type: 'LineString', coordinates: sampled },
-                },
-                {
-                    type: 'Feature',
-                    properties: { 'marker-color': '00C96B', 'marker-size': 'large', 'marker-symbol': 'circle' },
-                    geometry: { type: 'Point', coordinates: [pLng, pLat] },
-                },
-                {
-                    type: 'Feature',
-                    properties: { 'marker-color': 'EF4444', 'marker-size': 'medium' },
-                    geometry: { type: 'Point', coordinates: [dLng, dLat] },
-                },
-            ],
-        };
-
-        const enc = encodeURIComponent(JSON.stringify(geojson));
-        return `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/geojson(${enc})/auto/700x700@2x?padding=80,80,80,80&access_token=${MAPBOX_TOKEN}`;
-    }
-
-    // Fallback: just pickup + drop pins
-    return `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-s-a+00c96b(${pLng},${pLat}),pin-s-b+ef4444(${dLng},${dLat})/auto/700x700@2x?padding=80,80,80,80&access_token=${MAPBOX_TOKEN}`;
-}
 
 const STEPS = [
     { id: 'sent', label: 'Request Sent', sub: 'Broadcast to nearby drivers', done: true },
@@ -86,6 +35,7 @@ export default function FindingDriverScreen({ onNavigate, onCancel }) {
         selectedVehicleTier,
         routeGeometry,
         driver,
+        rideId,
         setRideStatus,
         setDriver,
         setDeliveryOtp,
@@ -100,7 +50,7 @@ export default function FindingDriverScreen({ onNavigate, onCancel }) {
     const [stepIdx, setStepIdx] = useState(0);
     const [matchedDriver, setMatchedDriver] = useState(null);
 
-    const mapUrl = buildFindingMapUrl(routeGeometry, pickupLocation, destination);
+    const [searchSecs, setSearchSecs] = useState(0);
 
     // Spinner rotation animation for the "finding" icon
     const spinAnim = useRef(new Animated.Value(0)).current;
@@ -120,84 +70,91 @@ export default function FindingDriverScreen({ onNavigate, onCancel }) {
 
     useEffect(() => {
         const t1 = setTimeout(() => setStepIdx(1), 2500);
-        const t2 = setTimeout(() => setStepIdx(2), 5000);
+        const t2 = setTimeout(() => setStepIdx(2), 6000);
+        const ticker = setInterval(() => setSearchSecs((n) => n + 1), 1000);
 
         let ws;
+        let poll;
         let isDone = false;
 
-        const handleMatch = (driverData, otp) => {
-            if (isDone) return;
+        // Only ever shows the driver who actually accepted — no invented fallback driver
+        const handleMatch = (d, otp) => {
+            if (isDone || !d?.name) return;
             isDone = true;
-
-            const fallbackPool = [
-                { name: 'Vikram Singh', vehicle: 'White Swift Dzire • DL 1Z A 4421', rating: 4.89, avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80', etaMinutes: 4 },
-                { name: 'Rajesh Sharma', vehicle: 'Yellow Bajaj Auto • HR 26 AT 8812', rating: 4.75, avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=160&q=80', etaMinutes: 3 },
-                { name: 'Mohit Verma', vehicle: 'Honda Activa • DL 4S B 1092', rating: 4.92, avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=160&q=80', etaMinutes: 2 },
-                { name: 'Arjun Nair', vehicle: 'Maruti Suzuki Ertiga • KA 05 MX 7741', rating: 4.81, avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=160&q=80', etaMinutes: 5 },
-                { name: 'Deepak Yadav', vehicle: 'Hyundai Grand i10 • UP 14 CK 9901', rating: 4.88, avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=160&q=80', etaMinutes: 4 },
-                { name: 'Anil Kumar', vehicle: 'Mahindra eVerito • DL 7CF AB 2231', rating: 4.95, avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=160&q=80', etaMinutes: 3 },
-            ];
-
-            const raw = driverData || (driver?.name ? driver : fallbackPool[Math.floor(Math.random() * fallbackPool.length)]);
-            const vehicleParts = (raw.vehicle || '').split('•').map(p => p.trim());
-            const fullDriver = {
-                ...raw,
-                name: raw.name || 'Captain Assigned',
-                plate: raw.plate || vehicleParts[1] || 'DL 1Z A 4421',
-                vehicle: vehicleParts[0] || raw.vehicle || 'Swift Dzire',
-                rating: raw.rating || 4.88,
-                etaMinutes: raw.etaMinutes || 4,
-                avatar: raw.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80',
-            };
-
+            const [vehicleModel, plate] = String(d.vehicle || '').split('•').map((p) => p.trim());
+            const fullDriver = { ...d, vehicle: vehicleModel || d.vehicle || '', plate: plate || d.plate || '' };
             setDriver(fullDriver);
             if (otp) setDeliveryOtp(otp);
             setMatchedDriver(fullDriver);
-
             Animated.parallel([
                 Animated.spring(matchScale, { toValue: 1, friction: 7, useNativeDriver: true }),
                 Animated.timing(matchOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
             ]).start();
-
             setRideStatus('DRIVER_ASSIGNED');
-
-            setTimeout(() => {
-                if (onNavigate) onNavigate('TripTracking');
-            }, 1600);
+            setTimeout(() => onNavigate?.('TripTracking'), 1600);
         };
 
-        // Real WebSocket
-        try {
-            ws = new WebSocket(WS_URL);
-            ws.onmessage = (e) => {
-                try {
-                    const msg = JSON.parse(e.data);
-                    if (
-                        msg.type === 'ride.driver_confirmed' ||
-                        msg.type === 'ride.driver_assigned' ||
-                        msg.type === 'DRIVER_ASSIGNED'
-                    ) {
-                        const payload = msg.data || msg;
-                        if (payload.rideId) setRideId(payload.rideId);
-                        if (payload.customerId) setCustomerId(payload.customerId);
-                        handleMatch(payload.driver, payload.otp);
-                    }
-                } catch (_) { }
-            };
-        } catch (_) { }
+        const handleCancelled = () => {
+            if (isDone) return;
+            isDone = true;
+            resetTripState();
+            onNavigate?.('Home');
+        };
 
-        // Fallback after 9s so demo never stalls
-        const fallback = setTimeout(() => handleMatch(), 9000);
+        (async () => {
+            const customerId = await getCustomerId().catch(() => null);
+            try {
+                ws = new WebSocket(`${WS_URL}${customerId ? `?customerId=${encodeURIComponent(customerId)}` : ''}`);
+                ws.onmessage = (e) => {
+                    try {
+                        const msg = JSON.parse(e.data);
+                        const payload = msg.data || msg;
+                        if (rideId && payload.rideId && String(payload.rideId) !== String(rideId)) return;
+                        if (msg.type === 'ride.driver_confirmed' || msg.type === 'ride.driver_assigned') {
+                            handleMatch(payload.driver, payload.otp);
+                        } else if (msg.type === 'ride.cancelled') {
+                            handleCancelled();
+                        }
+                    } catch (_) { }
+                };
+            } catch (_) { }
+        })();
+
+        // Backup in case the socket event is missed (e.g. it fired before we connected)
+        if (rideId) {
+            poll = setInterval(async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/api/rides/${rideId}`);
+                    const json = await res.json();
+                    const ride = json.data || json;
+                    if (ride?.driver?.name) handleMatch(ride.driver, ride.otp);
+                    else if (ride?.status === 'cancelled') handleCancelled();
+                } catch (_) { }
+            }, 3000);
+        }
 
         return () => {
             clearTimeout(t1);
             clearTimeout(t2);
-            clearTimeout(fallback);
+            clearInterval(ticker);
+            clearInterval(poll);
             try { ws?.close(); } catch (_) { }
         };
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rideId]);
 
-    const handleCancel = () => {
+    const handleCancel = async () => {
+        if (rideId) {
+            try {
+                // Rides booked through Aura carry their own customer id in the store
+                const customerId = useRideStore.getState().customerId || (await getCustomerId().catch(() => null));
+                await fetch(`${API_BASE}/api/rides/${rideId}/cancel`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...(customerId ? { 'x-customer-id': customerId } : {}) },
+                    body: JSON.stringify({ customerId }),
+                });
+            } catch (_) { }
+        }
         resetTripState();
         if (onCancel) onCancel();
         else if (onNavigate) onNavigate('Home');
@@ -211,11 +168,15 @@ export default function FindingDriverScreen({ onNavigate, onCancel }) {
 
             {/* ── Full-screen map (top 60%) ── */}
             <View style={s.mapArea}>
-                {mapUrl ? (
-                    <Image source={{ uri: mapUrl }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                ) : (
-                    <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#E8F5EE' }]} />
-                )}
+                <LiveMap
+                    style={StyleSheet.absoluteFillObject}
+                    pickup={pickupDetails.lat != null ? pickupDetails : null}
+                    drop={dropDetails.lat != null ? dropDetails : null}
+                    route={routeGeometry}
+                    pickupLabel={pickupDetails.label}
+                    dropLabel={dropDetails.label}
+                    edgePadding={{ top: 170, right: 50, bottom: 60, left: 50 }}
+                />
 
                 {/* Top overlay: Dropp header */}
                 <SafeAreaView edges={['top']} style={s.mapHeader} pointerEvents="box-none">
@@ -224,7 +185,7 @@ export default function FindingDriverScreen({ onNavigate, onCancel }) {
                             <Ionicons name="location" size={18} color="#00C96B" />
                             <Text style={s.droppLogoText}>Dropp</Text>
                         </View>
-                        <Text style={s.mapHeaderSub}>Finding your driver...</Text>
+                        <Text style={s.mapHeaderSub}>{matchedDriver ? 'Driver found!' : `Finding your driver… ${searchSecs}s`}</Text>
                         <TouchableOpacity style={s.cancelTopBtn} onPress={handleCancel} activeOpacity={0.8}>
                             <Ionicons name="close" size={16} color="#111820" />
                             <Text style={s.cancelTopText}>Cancel</Text>
@@ -311,9 +272,9 @@ export default function FindingDriverScreen({ onNavigate, onCancel }) {
                         <Ionicons name="checkmark-circle" size={20} color="#00C96B" />
                         <View style={{ flex: 1, marginLeft: 10 }}>
                             <Text style={s.matchName}>{matchedDriver.name}</Text>
-                            <Text style={s.matchSub}>{matchedDriver.vehicle || 'On the way'}</Text>
+                            <Text style={s.matchSub}>{[matchedDriver.vehicle, matchedDriver.plate].filter(Boolean).join(' • ') || 'On the way'}</Text>
                         </View>
-                        <Text style={s.matchEta}>{matchedDriver.etaMinutes || 4} min</Text>
+                        {matchedDriver.etaMinutes != null && <Text style={s.matchEta}>{matchedDriver.etaMinutes} min</Text>}
                     </Animated.View>
                 )}
 
@@ -335,7 +296,7 @@ export default function FindingDriverScreen({ onNavigate, onCancel }) {
                         </Text>
                     </View>
                     <Text style={s.fareAmt}>Est. Fare</Text>
-                    <Text style={s.fareValue}>₹{fare ? Math.round(fare) : 149}</Text>
+                    <Text style={s.fareValue}>{fare ? `₹${Math.round(fare)}` : '—'}</Text>
                     <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
                 </View>
 

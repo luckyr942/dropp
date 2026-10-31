@@ -48,3 +48,18 @@ export const updateMerchantSchema = base
     })
     .refine(latLngTogether, latLngMsg)
     .refine((d) => Object.keys(d).length > 0, { message: 'Nothing to update' });
+// ── Seller order management ──
+export const listMerchantOrdersQuerySchema = z.object({
+    status: z.enum(['ongoing', 'completed', 'cancelled']).optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(100),
+});
+
+export const merchantOrderStatusSchema = z.object({
+    status: z.enum(['accepted', 'preparing', 'ready_for_pickup', 'cancelled'], {
+        message: 'status must be one of accepted, preparing, ready_for_pickup, cancelled',
+    }),
+});
+
+export const analyticsQuerySchema = z.object({
+    days: z.coerce.number().int().min(1).max(90).default(7),
+});

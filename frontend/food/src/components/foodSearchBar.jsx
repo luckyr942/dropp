@@ -19,10 +19,25 @@ export default function FoodSearchBar({
                     placeholderTextColor="#A0AEC0"
                     value={value}
                     onChangeText={onChangeText}
+                    returnKeyType="search"
+                    autoCorrect={false}
                 />
             </View>
 
-            {/* Compact Filter Button */}
+            {/* Clear button while typing */}
+            {value ? (
+                <TouchableOpacity
+                    style={styles.filterBtn}
+                    onPress={() => onChangeText && onChangeText('')}
+                    activeOpacity={0.8}
+                    accessibilityLabel="Clear search"
+                >
+                    <Ionicons name="close" size={18} color="#111827" />
+                </TouchableOpacity>
+            ) : null}
+
+            {/* Compact Filter Button (only when a handler is provided) */}
+            {onFilterPress ? (
             <TouchableOpacity
                 style={styles.filterBtn}
                 onPress={onFilterPress}
@@ -30,6 +45,7 @@ export default function FoodSearchBar({
             >
                 <Feather name="sliders" size={18} color="#111827" />
             </TouchableOpacity>
+            ) : null}
         </View>
     );
 }

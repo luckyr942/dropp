@@ -62,6 +62,10 @@ export const KNOWN_LANDMARKS = {
   'delhi': { lat: 28.6139, lng: 77.2090, address: 'New Delhi' },
   'gurgaon': { lat: 28.4595, lng: 77.0266, address: 'Gurugram' },
   'gurugram': { lat: 28.4595, lng: 77.0266, address: 'Gurugram' },
+  'sector 29': { lat: 28.4687, lng: 77.0637, address: 'Sector 29, Gurugram' },
+  // Bare "airport" must stay last: city-specific airports above match first, and without this
+  // Mapbox geocodes plain "Airport" to Kolkata. Defaults to Delhi for the NCR launch market.
+  'airport': { lat: 28.5562, lng: 77.1000, address: 'Delhi Airport' },
 };
 
 // 1. Location to GPS (lat, lng) with Live Geocoding

@@ -6,29 +6,27 @@ export function useLiveDriverLocation({ customerId, driverId }) {
     const [driverPos, setDriverPos] = useState(null);
     const wsRef = useRef(null);
 
-    const activeCustId = customerId || 'cust_live_001';
-
     useEffect(() => {
+        // Without a driver id we can't tell whose position an update is, so show nothing
+        if (!driverId) {
+            setDriverPos(null);
+            return undefined;
+        }
         let reconnectTimer = null;
         let isDead = false;
 
         function connect() {
             try {
-                const wsUrl = `${WS_BASE}?customerId=${encodeURIComponent(activeCustId)}`;
+                const wsUrl = customerId ? `${WS_BASE}?customerId=${encodeURIComponent(customerId)}` : WS_BASE;
                 const ws = new WebSocket(wsUrl);
                 wsRef.current = ws;
-
-                ws.onopen = () => {
-                    console.log('[LiveTracking] WS connected to', wsUrl);
-                };
 
                 ws.onmessage = (e) => {
                     try {
                         const msg = JSON.parse(e.data);
                         if (msg.type === 'driver.location_update') {
                             const data = msg.data || {};
-                            // Match driverId if provided, or accept if matching active driver
-                            if (!driverId || String(data.driverId) === String(driverId)) {
+                            if (String(data.driverId) === String(driverId)) {
                                 setDriverPos({
                                     lat: Number(data.lat),
                                     lng: Number(data.lng),
@@ -36,9 +34,7 @@ export function useLiveDriverLocation({ customerId, driverId }) {
                                 });
                             }
                         }
-                    } catch (err) {
-                        console.error("[LiveTracking] Error parsing message", err);
-                    }
+                    } catch (_) {}
                 };
 
                 ws.onclose = () => {
@@ -51,9 +47,7 @@ export function useLiveDriverLocation({ customerId, driverId }) {
                 ws.onerror = () => {
                     ws.close();
                 };
-            } catch (err) {
-                console.warn('[LiveTracking] WS connection failed:', err.message);
-            }
+            } catch (_) {}
         }
 
         connect();

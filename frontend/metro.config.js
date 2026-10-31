@@ -10,6 +10,7 @@ config.watchFolders = [
     path.resolve(projectRoot, 'rider'),
     path.resolve(projectRoot, 'food'),
     path.resolve(projectRoot, 'driver'),
+    path.resolve(projectRoot, 'seller'),
     path.resolve(projectRoot, 'shared'),
 ];
 
@@ -20,6 +21,7 @@ config.resolver.nodeModulesPaths = [
     path.resolve(projectRoot, 'driver/node_modules'),
     path.resolve(projectRoot, 'rider/node_modules'),
     path.resolve(projectRoot, 'food/node_modules'),
+    path.resolve(projectRoot, 'seller/node_modules'),
     path.resolve(projectRoot, '../node_modules'),
 ];
 

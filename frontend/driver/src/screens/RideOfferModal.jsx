@@ -20,12 +20,11 @@ export default function RideOfferModal({ offer, onAccept, onDecline }) {
     };
 
     const serviceType = offer?.serviceType || 'RIDE';
-    const fare = offer?.fare || '₹361.00';
-    const distance = offer?.distance || '4.2 km • 12 mins';
-    const pickup = formatLocation(offer?.pickup, 'Cyber Hub, Building 10, Gurugram');
-    const destination = formatLocation(offer?.destination, 'Sector 28, Gurugram');
-    const otp = offer?.otp || '4821';
-    const customerName = offer?.customerName || 'Rahul Verma';
+    const fare = offer?.fare || '₹—';
+    const distance = offer?.distance || '—';
+    const pickup = formatLocation(offer?.pickup, 'Pickup location');
+    const destination = formatLocation(offer?.destination, 'Drop location');
+    const customerName = offer?.customerName;
 
     const isFood = serviceType.includes('FOOD');
     const isParcel = serviceType.includes('PARCEL') || serviceType.includes('DELIVERY');
@@ -110,7 +109,7 @@ export default function RideOfferModal({ offer, onAccept, onDecline }) {
                     <View style={[styles.otpNote, { backgroundColor: theme.inputBg }]}>
                         <Ionicons name="shield-checkmark" size={16} color={theme.primaryGreen} />
                         <Text style={[styles.otpText, { color: theme.textPrimary }]}>
-                            Customer: {customerName} • OTP: {otp} required at drop-off.
+                            {customerName ? `${customerName} • ` : ''}Ask the customer for their 4-digit OTP to start.
                         </Text>
                     </View>
 

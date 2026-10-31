@@ -20,8 +20,8 @@ const subTaskSchema = new mongoose.Schema(
         title: { type: String, default: '' },
         status: {
             type: String,
-            // 'confirmed' is a valid food-order status returned by confirmSessionOrder
-            enum: ['pending', 'confirmed', 'driver_assigned', 'preparing', 'picked_up', 'in_progress', 'completed', 'delivered', 'cancelled'],
+            // Mirrors both ride statuses ('searching', 'arrived', …) and food-order statuses ('confirmed', …)
+            enum: ['pending', 'searching', 'confirmed', 'driver_assigned', 'arrived', 'preparing', 'picked_up', 'in_progress', 'completed', 'delivered', 'cancelled'],
             default: 'pending',
         },
         pickupLocation: {

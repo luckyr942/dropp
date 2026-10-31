@@ -41,15 +41,17 @@ export default function App() {
     );
   }
 
-  const handleAddToCart = (item) => {
+  // Never mix restaurants: an item from another kitchen starts a new cart
+  const handleAddToCart = (item, { replaceCart = false } = {}) => {
     setCart((prev) => {
-      const existing = prev[item.id];
+      const other = Object.values(prev).some(
+        (i) => i.restaurantId && item.restaurantId && i.restaurantId !== item.restaurantId
+      );
+      const base = replaceCart || other ? {} : prev;
+      const existing = base[item.id];
       return {
-        ...prev,
-        [item.id]: {
-          ...item,
-          quantity: (existing?.quantity || 0) + 1,
-        },
+        ...base,
+        [item.id]: { ...(existing || item), quantity: (existing?.quantity || 0) + 1 },
       };
     });
   };
@@ -63,32 +65,18 @@ export default function App() {
         delete next[itemId];
         return next;
       }
-      return {
-        ...prev,
-        [itemId]: {
-          ...existing,
-          quantity: existing.quantity - 1,
-        },
-      };
+      return { ...prev, [itemId]: { ...existing, quantity: existing.quantity - 1 } };
     });
   };
 
   const handleUpdateQuantity = (itemId, delta) => {
-    if (delta > 0) {
-      setCart((prev) => {
-        const item = prev[itemId];
-        if (!item) return prev;
-        return {
-          ...prev,
-          [itemId]: { ...item, quantity: item.quantity + 1 },
-        };
-      });
-    } else {
-      handleRemoveFromCart(itemId);
-    }
+    if (delta < 0) return handleRemoveFromCart(itemId);
+    setCart((prev) => {
+      const item = prev[itemId];
+      if (!item) return prev;
+      return { ...prev, [itemId]: { ...item, quantity: item.quantity + delta } };
+    });
   };
-
-  const cartTotal = Object.values(cart).reduce((s, i) => s + i.price * i.quantity, 0);
 
   return (
     <SafeAreaProvider>
@@ -127,8 +115,10 @@ export default function App() {
               restaurant={selectedRestaurant}
               onBack={() => setCurrentScreen(selectedRestaurant ? 'Detail' : 'Market')}
               onUpdateQuantity={handleUpdateQuantity}
+              onBrowse={() => setCurrentScreen('Market')}
               onPlaceOrder={(order) => {
-                setActiveOrder(order || null);
+                setActiveOrder(order);
+                setCart({});
                 setCurrentScreen('Tracking');
               }}
             />
@@ -136,19 +126,13 @@ export default function App() {
 
           {currentScreen === 'Tracking' && (
             <OrderTrackingScreen
-              order={activeOrder || {
-                id: '#DRP-84920',
-                restaurantName: selectedRestaurant?.name || 'The Daily Grind',
-                etaMinutes: 18,
-                etaTime: '6:25 PM',
-                items: Object.values(cart),
-                totalAmount: Math.max(0, cartTotal + 24 - 50),
-                deliveryAddress: 'Flat 402, Tower B, Sector 28, Gurugram',
-              }}
+              orderId={activeOrder?._id || null}
+              initialOrder={activeOrder}
               onBack={() => {
-                setCart({});
+                setActiveOrder(null);
                 setCurrentScreen('Market');
               }}
+              onBrowse={() => setCurrentScreen('Market')}
             />
           )}
         </View>

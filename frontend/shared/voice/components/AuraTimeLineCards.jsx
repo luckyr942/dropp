@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -116,12 +117,7 @@ export default function AuraTimeLineCards({
 
           {/* Horizontal Vehicle Tiers Selector */}
           <Text style={styles.sectionLabel}>Select Vehicle Type:</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tierScrollContent}
-            style={styles.tierScrollView}
-          >
+          <View style={styles.tierGrid}>
             {fares.map((tier, idx) => {
               const isSelected = selectedTier === tier.type;
               const iconName =
@@ -173,7 +169,7 @@ export default function AuraTimeLineCards({
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
+          </View>
 
           {/* Action Row */}
           <View style={styles.actionRow}>
@@ -210,42 +206,58 @@ export default function AuraTimeLineCards({
             </View>
             <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={[styles.cardTitle, { color: '#00A859' }]}>
-                {bookedRide.rideType === 'bike' ? 'Dropp Bike Confirmed!' : bookedRide.rideType === 'auto' ? 'Dropp Auto Confirmed!' : 'Cab Confirmed!'}
+                {bookedRide.rideType === 'bike' ? 'Dropp Bike Booked!' : bookedRide.rideType === 'auto' ? 'Dropp Auto Booked!' : 'Cab Booked!'}
               </Text>
               <Text style={styles.routeText}>
-                Driver is on the way to your location
+                {!bookedRide.driver?.name ? 'Booked • matching you with a driver'
+                  : bookedRide.status === 'arrived' ? 'Your driver has arrived'
+                  : bookedRide.status === 'in_progress' ? 'Trip in progress'
+                  : bookedRide.status === 'completed' ? 'Trip completed'
+                  : 'Driver is on the way to your location'}
               </Text>
             </View>
           </View>
 
-          <View style={styles.driverInfoCard}>
-            <View style={styles.driverAvatar}>
-              <Ionicons name="person" size={20} color="#00A859" />
+          {bookedRide.driver?.name ? (
+            <View style={styles.driverInfoCard}>
+              <View style={styles.driverAvatar}>
+                <Ionicons name="person" size={20} color="#00A859" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.driverName}>{bookedRide.driver.name}</Text>
+                <Text style={styles.driverVehicle} numberOfLines={1}>
+                  {bookedRide.driver.vehicle || 'Vehicle details on the way'}
+                </Text>
+              </View>
+              {bookedRide.driver.rating != null && (
+                <View style={styles.ratingBadge}>
+                  <Ionicons name="star" size={12} color="#EAB308" />
+                  <Text style={styles.ratingText}>{Number(bookedRide.driver.rating).toFixed(1)}</Text>
+                </View>
+              )}
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.driverName}>
-                {bookedRide.driver?.name || bookedRide.driverName || 'Vikram Singh'}
-              </Text>
-              <Text style={styles.driverVehicle}>
-                {bookedRide.driver?.vehicleModel || bookedRide.vehicleModel || 'Swift Dzire'} • {bookedRide.driver?.vehicleNumber || bookedRide.vehicleNumber || 'DL 1Z A 4421'}
-              </Text>
+          ) : (
+            <View style={styles.driverInfoCard}>
+              <ActivityIndicator size="small" color="#00A859" style={{ marginRight: 12 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.driverName}>Finding your driver…</Text>
+                <Text style={styles.driverVehicle}>Sent to nearby Dropp partners</Text>
+              </View>
             </View>
-            <View style={styles.ratingBadge}>
-              <Ionicons name="star" size={12} color="#EAB308" />
-              <Text style={styles.ratingText}>4.9</Text>
-            </View>
-          </View>
+          )}
 
           {/* Large Prominent START OTP Pill */}
-          <View style={styles.otpBanner}>
-            <View>
-              <Text style={styles.otpLabel}>SHARE OTP WITH DRIVER</Text>
-              <Text style={styles.otpNumber}>{bookedRide.otp || '4821'}</Text>
+          {!!bookedRide.otp && (
+            <View style={styles.otpBanner}>
+              <View>
+                <Text style={styles.otpLabel}>SHARE OTP WITH DRIVER</Text>
+                <Text style={styles.otpNumber}>{bookedRide.otp}</Text>
+              </View>
+              <View style={styles.otpShield}>
+                <Ionicons name="shield-checkmark" size={24} color="#00A859" />
+              </View>
             </View>
-            <View style={styles.otpShield}>
-              <Ionicons name="shield-checkmark" size={24} color="#00A859" />
-            </View>
-          </View>
+          )}
 
           {/* Track Button */}
           <TouchableOpacity
@@ -316,6 +328,14 @@ export default function AuraTimeLineCards({
               <View style={styles.itemRow}>
                 <Text style={styles.itemName}>Food Items (Selected)</Text>
                 <Text style={styles.itemPrice}>{formatInr(foodTotal)}</Text>
+              </View>
+            )}
+
+            {/* Delivery fee row so the items add up to the total */}
+            {safeNum(draftOrder?.deliveryFee) > 0 && (
+              <View style={styles.itemRow}>
+                <Text style={styles.itemName}>Delivery fee</Text>
+                <Text style={styles.itemPrice}>{formatInr(draftOrder.deliveryFee)}</Text>
               </View>
             )}
 
@@ -533,21 +553,21 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  tierScrollView: {
+  // 2x2 grid: all four vehicle tiers visible at once, no hidden off-screen selection
+  tierGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 10,
     marginVertical: 4,
   },
-  tierScrollContent: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingRight: 4,
-  },
   tierBox: {
-    minWidth: 100,
+    width: '48.5%',
     backgroundColor: '#F8FAFC',
     borderRadius: 16,
     paddingVertical: 12,
     paddingHorizontal: 12,
-    alignItems: 'center',
+    alignItems: 'flex-start',
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
   },
@@ -565,7 +585,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    width: '100%',
+    alignSelf: 'stretch',
     marginBottom: 6,
   },
   activeRadioUnselected: {

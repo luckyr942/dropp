@@ -29,8 +29,8 @@ export async function handleRegisterDriver(req, res, next) {
 // GET /api/drivers
 export async function handleListDrivers(req, res, next) {
     try {
-        const { Driver } = await import('./driverModel.js');
-        const drivers = await Driver.find().sort({ createdAt: -1 }).limit(50).lean();
+        const { listAllDrivers } = await import('./driverService.js');
+        const drivers = await listAllDrivers();
         return res.status(200).json({ success: true, data: drivers });
     } catch (err) {
         next(err);
@@ -41,8 +41,8 @@ export async function handleListDrivers(req, res, next) {
 export async function handleGetDriver(req, res, next) {
     try {
         const { id } = req.params;
-        if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'Invalid driver ID' });
+        if (!id) {
+            return res.status(400).json({ success: false, error: 'Driver ID required' });
         }
         const driver = await getDriverById(id);
         if (!driver) return res.status(404).json({ success: false, error: 'Driver not found' });
@@ -57,8 +57,8 @@ export async function handleUpdateDriverServices(req, res, next) {
     try {
         const { id } = req.params;
         const { services } = req.body;
-        if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'Invalid driver ID' });
+        if (!id) {
+            return res.status(400).json({ success: false, error: 'Driver ID required' });
         }
         if (!Array.isArray(services)) {
             return res.status(400).json({ success: false, error: 'services array is required' });
@@ -75,8 +75,8 @@ export async function handleUpdateDriverServices(req, res, next) {
 export async function handleSetOnline(req, res, next) {
     try {
         const { id } = req.params;
-        if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'Invalid driver ID' });
+        if (!id) {
+            return res.status(400).json({ success: false, error: 'Driver ID required' });
         }
         const driver = await setDriverOnline(id);
         return res.status(200).json({ success: true, data: driver });
@@ -89,8 +89,8 @@ export async function handleSetOnline(req, res, next) {
 export async function handleSetOffline(req, res, next) {
     try {
         const { id } = req.params;
-        if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'Invalid driver ID' });
+        if (!id) {
+            return res.status(400).json({ success: false, error: 'Driver ID required' });
         }
         const driver = await setDriverOffline(id);
         return res.status(200).json({ success: true, data: driver });
@@ -104,8 +104,8 @@ export async function handleUpdateLocation(req, res, next) {
     try {
         const { id } = req.params;
         const { lat, lng, bearing } = req.body;
-        if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ success: false, error: 'Invalid driver ID' });
+        if (!id) {
+            return res.status(400).json({ success: false, error: 'Driver ID required' });
         }
         if (!lat || !lng) {
             return res.status(400).json({ success: false, error: 'lat and lng required' });

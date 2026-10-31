@@ -30,13 +30,20 @@ const SERVICE_OPTIONS = [
     { key: 'PARCEL', label: '📦 Parcels' },
 ];
 
+// Offers this driver already accepted/declined. Module scope so it survives the screen remounting
+// when the driver comes back from navigation (a ref would reset and the old offer would pop up again).
+const handledOffers = new Set();
+
+// iOS simulators default to California; never publish that as a Dropp driver position
+const isInServiceArea = (lat, lng) => lat > 6 && lat < 37.5 && lng > 68 && lng < 97.5;
+
 export default function DriverHomeScreen({ onNavigate }) {
     const { theme, isDark } = useTheme();
 
     // Driver Identity
     const [driverId, setDriverId] = useState(null);
     const [driverProfile, setDriverProfile] = useState(null);
-    const [isOnline, setIsOnline] = useState(false);
+    const [isOnline, setIsOnline] = useState(true);
     const [wsConnected, setWsConnected] = useState(false);
 
     // Multi-Service Capabilities
@@ -45,7 +52,13 @@ export default function DriverHomeScreen({ onNavigate }) {
     // Offer State
     const [currentOffer, setCurrentOffer] = useState(null);
     const [showOffer, setShowOffer] = useState(false);
-    const lastHandledOfferId = useRef(null);
+    // Refs so the long-lived socket handler always sees current values without reconnecting
+    const currentOfferRef = useRef(null);
+    const isOnlineRef = useRef(true);
+    const enabledServicesRef = useRef(['RIDE', 'FOOD', 'GROCERY', 'PARCEL']);
+    useEffect(() => { currentOfferRef.current = showOffer ? currentOffer : null; }, [currentOffer, showOffer]);
+    useEffect(() => { isOnlineRef.current = isOnline; }, [isOnline]);
+    useEffect(() => { enabledServicesRef.current = enabledServices; }, [enabledServices]);
 
     // Registration Modal
     const [showRegModal, setShowRegModal] = useState(false);
@@ -70,6 +83,29 @@ export default function DriverHomeScreen({ onNavigate }) {
         let isMounted = true;
         async function loadDriver() {
             try {
+                // Auto-sync with fleet and prefer Pradeep Bose for hackathon pitch
+                try {
+                    const res = await fetch(`${API_BASE}/api/drivers`);
+                    const json = await res.json();
+                    if (json.success && json.data && json.data.length > 0) {
+                        const pradeep = json.data.find((d) => d.name === 'Pradeep Bose') || json.data[0];
+                        if (pradeep && isMounted) {
+                            setDriverId(pradeep._id);
+                            setDriverProfile(pradeep);
+                            if (pradeep.enabledServices) setEnabledServices(pradeep.enabledServices);
+                            setEarningsToday(Number(pradeep.earningsToday) || 840);
+                            setTripsToday(Number(pradeep.tripsToday) || 3);
+                            setIsOnline(true);
+                            setShowRegModal(false);
+                            await Promise.all([
+                                AsyncStorage.setItem(DRIVER_ID_KEY, pradeep._id),
+                                AsyncStorage.setItem(DRIVER_PROFILE_KEY, JSON.stringify(pradeep)),
+                            ]);
+                            return;
+                        }
+                    }
+                } catch (_) {}
+
                 const [savedId, savedProfileStr] = await Promise.all([
                     AsyncStorage.getItem(DRIVER_ID_KEY),
                     AsyncStorage.getItem(DRIVER_PROFILE_KEY),
@@ -105,6 +141,7 @@ export default function DriverHomeScreen({ onNavigate }) {
                             const json = await res.json();
                             if (isMounted && json.success && json.data) {
                                 setDriverProfile(json.data);
+                                setIsOnline(true);
                                 if (json.data.enabledServices) setEnabledServices(json.data.enabledServices);
                                 setEarningsToday(Number(json.data.earningsToday) || 0);
                                 setTripsToday(Number(json.data.tripsToday) || 0);
@@ -185,18 +222,26 @@ export default function DriverHomeScreen({ onNavigate }) {
         Alert.alert('✅ Profile Active', `Switched to ${selected.name} (${selected.vehicleType}).`);
     };
 
+    // 2B. The server only dispatches to drivers it knows are online, so tell it
+    useEffect(() => {
+        if (!driverId || !isOnline) return;
+        fetch(`${API_BASE}/api/drivers/${driverId}/online`, { method: 'POST' }).catch(() => {});
+    }, [driverId, isOnline]);
+
     // 3. WebSocket listener with offer capability filtering
     useEffect(() => {
         let ws;
         let pollInterval;
         let isMounted = true;
+        const wsRef = { connected: false };
 
         function connect() {
             try {
                 const wsUrl = driverId ? `${WS_BASE}?driverId=${driverId}&role=driver` : WS_BASE;
                 ws = new WebSocket(wsUrl);
-                ws.onopen = () => { if (isMounted) setWsConnected(true); };
+                ws.onopen = () => { wsRef.connected = true; if (isMounted) setWsConnected(true); };
                 ws.onclose = () => {
+                    wsRef.connected = false;
                     if (isMounted) {
                         setWsConnected(false);
                         setTimeout(connect, 3000);
@@ -206,8 +251,16 @@ export default function DriverHomeScreen({ onNavigate }) {
                 ws.onmessage = (e) => {
                     try {
                         const msg = JSON.parse(e.data);
+                        const data = msg.data || msg;
                         if (msg.type === 'driver.incoming_offer') {
-                            handleIncomingOffer(msg.data || msg);
+                            handleIncomingOffer(data);
+                        } else if (msg.type === 'driver.offer_taken') {
+                            // Someone else accepted it (or the customer cancelled): close our popup
+                            handledOffers.add(data.offerId);
+                            if (currentOfferRef.current?.offerId === data.offerId) {
+                                setShowOffer(false);
+                                setCurrentOffer(null);
+                            }
                         }
                     } catch (err) {
                         console.warn('[DriverApp] WS parse error:', err.message);
@@ -220,23 +273,22 @@ export default function DriverHomeScreen({ onNavigate }) {
 
         connect();
 
+        // Backup only: the socket delivers offers instantly; poll slowly in case it dropped
         pollInterval = setInterval(async () => {
-            if (!isMounted) return;
+            if (!isMounted || wsRef.connected) return;
             try {
                 const res = await fetch(`${API_BASE}/api/rides/driver/latest-offer`);
                 const json = await res.json();
-                if (json.success && json.data?.offerId && json.data.offerId !== lastHandledOfferId.current) {
-                    handleIncomingOffer(json.data);
-                }
+                if (json.success && json.data?.offerId) handleIncomingOffer(json.data);
             } catch (_) {}
-        }, 1500);
+        }, 5000);
 
         return () => {
             isMounted = false;
             ws?.close();
             clearInterval(pollInterval);
         };
-    }, [isOnline, driverId, enabledServices]);
+    }, [driverId]);
 
     // 4. Real-time GPS location push (every 4s when Online)
     useEffect(() => {
@@ -252,6 +304,7 @@ export default function DriverHomeScreen({ onNavigate }) {
 
                 const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
                 if (isCancelled || !loc?.coords) return;
+                if (!isInServiceArea(loc.coords.latitude, loc.coords.longitude)) return;
 
                 await fetch(`${API_BASE}/api/drivers/${driverId}/location`, {
                     method: 'PATCH',
@@ -262,8 +315,8 @@ export default function DriverHomeScreen({ onNavigate }) {
                         bearing: loc.coords.heading ?? 0,
                     }),
                 });
-            } catch (err) {
-                console.warn('[DriverLocation] push error:', err.message);
+            } catch (_) {
+                // Network blips are expected; the next tick retries
             }
         };
 
@@ -303,8 +356,10 @@ export default function DriverHomeScreen({ onNavigate }) {
     };
 
     function handleIncomingOffer(raw) {
-        if (!raw) return;
-        if (raw.offerId === lastHandledOfferId.current) return;
+        if (!raw?.offerId) return;
+        if (handledOffers.has(raw.offerId) || currentOfferRef.current?.offerId === raw.offerId) return;
+        if (!isOnlineRef.current) return;
+        const enabledServices = enabledServicesRef.current;
 
         // Service Capability Check
         const sType = (raw.serviceType || '').toUpperCase();
@@ -318,24 +373,25 @@ export default function DriverHomeScreen({ onNavigate }) {
         if (isParcel && !enabledServices.includes('PARCEL')) return;
         if (isRide && !enabledServices.includes('RIDE')) return;
 
-        lastHandledOfferId.current = raw.offerId;
-        setIsOnline(true);
         setCurrentOffer({
-            offerId: raw.offerId || 'offer_' + Date.now(),
+            offerId: raw.offerId,
             rideId: raw.offerId,
             serviceType: raw.serviceType || 'RIDE',
             fare: raw.fare || '₹—',
-            fareNumber: Number(raw.fareNumber) || 120,
+            fareNumber: Number(raw.fareNumber) || null,
             distance: raw.distance || '—',
             pickup: typeof raw.pickup === 'object' ? (raw.pickup?.label || raw.pickup?.address || 'Pickup Location') : (raw.pickup || 'Pickup Location'),
             destination: typeof raw.destination === 'object' ? (raw.destination?.label || raw.destination?.address || 'Destination') : (raw.destination || 'Destination'),
-            otp: raw.otp || '4821',
-            customerName: raw.customerName || 'Customer',
+            pickupCoords: typeof raw.pickup === 'object' ? raw.pickup : null,
+            dropCoords: typeof raw.destination === 'object' ? raw.destination : null,
+            routeGeometry: raw.routeGeometry || null,
+            customerName: raw.customerName || null,
         });
         setShowOffer(true);
     }
 
     const handleAcceptOffer = async (offer) => {
+        handledOffers.add(offer.offerId);
         setShowOffer(false);
         if (!driverId) {
             Alert.alert('Not Registered', 'Please register first.');
@@ -350,18 +406,16 @@ export default function DriverHomeScreen({ onNavigate }) {
             const json = await res.json();
 
             if (json.success) {
-                const earned = Number(json.data?.ride?.fare) || offer.fareNumber || 120;
-                setTripsToday((t) => t + 1);
-                setEarningsToday((e) => e + earned);
-
+                // Earnings are credited by the server when the trip completes, not at accept time
                 const acceptedRide = json.data?.ride || {};
-                const pLoc = acceptedRide.pickupLocation || offer.pickup;
-                const dLoc = acceptedRide.dropLocation || offer.destination;
+                const pLoc = acceptedRide.pickupLocation || offer.pickupCoords || offer.pickup;
+                const dLoc = acceptedRide.dropLocation || offer.dropCoords || offer.destination;
 
                 useRideStore.getState().setServiceType(acceptedRide.serviceType || offer.serviceType || 'RIDE');
                 useRideStore.getState().setPickupLocation(pLoc);
                 useRideStore.getState().setDestination(dLoc);
-                useRideStore.getState().setDeliveryOtp(acceptedRide.otp || offer.otp || '4821');
+                // The driver doesn't get the OTP; they ask the customer for it at pickup
+                useRideStore.getState().setDeliveryOtp(null);
                 useRideStore.getState().setRideId(acceptedRide._id || offer.rideId);
                 if (acceptedRide.routeGeometry) {
                     if (typeof useRideStore.getState().setRoute === 'function') {
@@ -375,11 +429,14 @@ export default function DriverHomeScreen({ onNavigate }) {
                         });
                     }
                 }
-                useRideStore.getState().selectVehicle('standard', acceptedRide.fare || offer.fare || 180);
+                useRideStore.getState().selectVehicle('standard', acceptedRide.fare ?? offer.fareNumber ?? 0);
 
                 if (onNavigate) onNavigate('DriverNav');
             } else {
-                Alert.alert('Could Not Accept', json.error || 'The task may have been assigned or cancelled.');
+                Alert.alert(
+                    res.status === 409 ? 'Already Taken' : res.status === 410 ? 'Cancelled' : 'Could Not Accept',
+                    json.error || 'The task may have been assigned or cancelled.'
+                );
             }
         } catch (err) {
             console.error('[DriverApp] Accept error:', err.message);
@@ -388,6 +445,7 @@ export default function DriverHomeScreen({ onNavigate }) {
     };
 
     const handleDeclineOffer = () => {
+        if (currentOffer?.offerId) handledOffers.add(currentOffer.offerId);
         setShowOffer(false);
         setCurrentOffer(null);
     };

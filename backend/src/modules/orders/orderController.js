@@ -8,6 +8,9 @@ import {
   updateOrderStatus,
 } from './orderService.js';
 
+// Identity of the calling customer: JWT user, else the device-bound x-customer-id header
+const callerCustomerId = (req) => req.user?.id || req.headers['x-customer-id'] || null;
+
 export async function handleCreateDraft(req, res, next) {
   try {
     const { restaurantId, sessionId, items, customerId, orderType, deliveryAddress, restaurantName } = req.body;
@@ -17,7 +20,7 @@ export async function handleCreateDraft(req, res, next) {
         error: 'items[] array is required',
       });
     }
-    const realCustomerId = req.user?.id || req.headers['x-customer-id'] || customerId;
+    const realCustomerId = callerCustomerId(req) || customerId;
     const order = await createDraftOrder({
       restaurantId,
       sessionId,
@@ -26,6 +29,8 @@ export async function handleCreateDraft(req, res, next) {
       orderType,
       deliveryAddress,
       restaurantName,
+      // Client requests must reference real catalog items; prices are computed server-side
+      requireCatalogItems: true,
     });
     res.status(201).json({ success: true, data: order });
   } catch (err) {
@@ -35,8 +40,14 @@ export async function handleCreateDraft(req, res, next) {
 
 export async function handleGetOrders(req, res, next) {
   try {
-    const realCustomerId = req.user?.id || req.headers['x-customer-id'] || req.query.customerId;
-    const orders = await getOrdersForCustomer(realCustomerId);
+    const realCustomerId = callerCustomerId(req) || req.query.customerId;
+    if (!realCustomerId) {
+      return res.status(400).json({ success: false, error: 'x-customer-id header is required' });
+    }
+    const orders = await getOrdersForCustomer(realCustomerId, {
+      status: req.query.status,
+      limit: req.query.limit,
+    });
     res.json({ success: true, data: orders });
   } catch (err) {
     next(err);
@@ -45,7 +56,11 @@ export async function handleGetOrders(req, res, next) {
 
 export async function handleGetOrder(req, res, next) {
   try {
+    if (!/^[0-9a-fA-F]{24}$/.test(req.params.id)) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
     const order = await getOrderById(req.params.id);
+    // Not scoped to the caller: Aura-created orders may carry a different customer id
     if (!order) {
       return res.status(404).json({ success: false, error: 'Order not found' });
     }
@@ -75,7 +90,7 @@ export async function handleConfirmOrder(req, res, next) {
 
 export async function handleCancelOrder(req, res, next) {
   try {
-    const order = await cancelOrder(req.params.id);
+    const order = await cancelOrder(req.params.id, callerCustomerId(req) || req.body?.customerId || null);
     res.json({ success: true, data: order });
   } catch (err) {
     next(err);

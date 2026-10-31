@@ -9,7 +9,7 @@ const MAX_STORES_PER_OWNER = 5;
 
 // Status for the dropp orders
 const REVENUE_STATUSES = ['delivered'];
-const ACTIVE_STATUSES = ['confirmed', 'accepted', 'driver_assigned', 'preparing', 'out_for_delivery'];
+const ACTIVE_STATUSES = ['confirmed', 'accepted', 'driver_assigned', 'preparing', 'ready_for_pickup', 'out_for_delivery'];
 const LOW_STOCK_LEVEL = 5;
 
 
@@ -84,6 +84,7 @@ export async function getMerchantDashboard(merchant) {
             {
                 $match: {
                     $or: [{ restaurantId: merchant._id }, { merchantId: merchant._id }],
+                    status: { $ne: 'draft' },
                     createdAt: { $gte: startOfTodayIST() },
                 },
             },

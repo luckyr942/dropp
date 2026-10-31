@@ -2,46 +2,48 @@ import mongoose from 'mongoose';
 import { Ride, RideQuote } from './rideModel.js';
 import { getRoute } from './routeService.js';
 import { broadcast, emitToCustomer } from '../../infrastructure/websocket/wsServer.js';
-import { pushOffer } from '../../infrastructure/offerQueue.js';
+import { pushOffer, acknowledgeOffer } from '../../infrastructure/offerQueue.js';
 
+// Priced ~10% under the Uber / Ola / Rapido rate-card estimates in rideCompareService.js,
+// so Dropp is the cheapest option Aura can book in every category.
 export const VEHICLE_TIERS = [
     {
         type: 'bike',
         name: 'Dropp Bike',
-        baseFare: 25,
-        perKmRate: 9,
+        baseFare: 15,
+        perKmRate: 5,
         perMinuteRate: 0.5,
-        minimumFare: 35,
+        minimumFare: 25,
         etaMins: 3,
         icon: 'bicycle',
     },
     {
         type: 'auto',
         name: 'Dropp Auto',
-        baseFare: 35,
-        perKmRate: 13,
-        perMinuteRate: 0.75,
-        minimumFare: 50,
+        baseFare: 25,
+        perKmRate: 10,
+        perMinuteRate: 0.5,
+        minimumFare: 30,
         etaMins: 4,
         icon: 'car',
     },
     {
         type: 'cab_economy',
         name: 'Dropp Go',
-        baseFare: 60,
-        perKmRate: 17,
-        perMinuteRate: 1.0,
-        minimumFare: 80,
+        baseFare: 40,
+        perKmRate: 12,
+        perMinuteRate: 0.75,
+        minimumFare: 70,
         etaMins: 5,
         icon: 'car-sport',
     },
     {
         type: 'cab_premium',
         name: 'Dropp Premier',
-        baseFare: 90,
-        perKmRate: 23,
-        perMinuteRate: 1.5,
-        minimumFare: 120,
+        baseFare: 70,
+        perKmRate: 16,
+        perMinuteRate: 1.25,
+        minimumFare: 110,
         etaMins: 6,
         icon: 'car-sport',
     },
@@ -115,36 +117,129 @@ export async function estimateRide({ pickup, drop, customerId = 'cust_live_001' 
     };
 }
 
-function scheduleSimulatedRide(ride, customerId) {
-    const steps = [
-        [8000,  'arrived',     'ride.driver_arrived', 'Your driver has arrived at the pickup point.'],
-        [15000, 'in_progress', 'ride.trip_started',   'Your trip has started. Enjoy the ride!'],
-        [45000, 'completed',   'ride.completed',      'You have reached your destination. Have a great day!'],
-    ];
+// ── Demo safety net ─────────────────────────────────────────────────────────
+// A booked ride waits for a real driver to accept from the driver app. If nobody accepts within
+// AUTO_ASSIGN_DRIVER_MS (default 40s — after the driver app's 30s accept window; 0 disables), a fallback driver is assigned and the trip is
+// simulated end to end — including live location updates — so a solo demo never stalls.
+const AUTO_ASSIGN_MS = Number(process.env.AUTO_ASSIGN_DRIVER_MS ?? 40000);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-    for (const [ms, status, eventType, message] of steps) {
-        setTimeout(async () => {
-            try {
-                const fresh = await Ride.findById(ride._id);
-                if (!fresh) return;
-                if (['cancelled', 'completed'].includes(fresh.status)) return;
+function bearingBetween(a, b) {
+    const toRad = (d) => (d * Math.PI) / 180;
+    const y = Math.sin(toRad(b.lng - a.lng)) * Math.cos(toRad(b.lat));
+    const x = Math.cos(toRad(a.lat)) * Math.sin(toRad(b.lat)) -
+        Math.sin(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.cos(toRad(b.lng - a.lng));
+    return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
 
-                fresh.status = status;
-                await fresh.save();
+// Spread `steps` points evenly along a list of {lat,lng}
+function samplePath(points, steps) {
+    if (points.length < 2) return points;
+    const out = [];
+    for (let i = 0; i < steps; i++) {
+        const t = (i / (steps - 1)) * (points.length - 1);
+        const k = Math.min(Math.floor(t), points.length - 2);
+        const f = t - k;
+        out.push({
+            lat: points[k].lat + (points[k + 1].lat - points[k].lat) * f,
+            lng: points[k].lng + (points[k + 1].lng - points[k].lng) * f,
+        });
+    }
+    return out;
+}
 
-                const eventPayload = {
-                    rideId: ride._id,
-                    customerId,
-                    status,
-                    message,
-                };
-                emitToCustomer(customerId, eventType, eventPayload);
-                broadcast(eventType, eventPayload);
-                console.log(`[scheduleSimulatedRide] ${eventType} -> ride ${ride._id}`);
-            } catch (err) {
-                console.error('[scheduleSimulatedRide] Error at', status, ':', err.message);
-            }
-        }, ms);
+async function driveAlong(driverId, path, durationMs) {
+    const steps = samplePath(path, Math.max(2, Math.round(durationMs / 1000)));
+    for (let i = 0; i < steps.length; i++) {
+        const next = steps[i + 1] || steps[i];
+        broadcast('driver.location_update', {
+            driverId,
+            lat: steps[i].lat,
+            lng: steps[i].lng,
+            bearing: bearingBetween(steps[i], next),
+            simulated: true,
+        });
+        await sleep(1000);
+    }
+}
+
+async function setRideStatus(rideId, from, to) {
+    return Ride.findOneAndUpdate({ _id: rideId, status: { $in: from } }, { $set: { status: to } }, { new: true });
+}
+
+function emitRideEvent(ride, eventType, extra = {}) {
+    const payload = { rideId: ride._id, customerId: ride.customerId, status: ride.status, serviceType: ride.serviceType || 'RIDE', ...extra };
+    emitToCustomer(ride.customerId, eventType, payload);
+    broadcast(eventType, payload);
+}
+
+function scheduleAutoAssign(rideId) {
+    if (!AUTO_ASSIGN_MS) return;
+    setTimeout(() => {
+        autoAssignAndSimulate(rideId).catch((err) => console.error('[autoAssign] failed:', err.message));
+    }, AUTO_ASSIGN_MS);
+}
+
+async function autoAssignAndSimulate(rideId) {
+    const pick = FALLBACK_DRIVERS[Math.floor(Math.random() * FALLBACK_DRIVERS.length)];
+    const driver = {
+        driverId: `sim_${pick.vehicleNumber.replace(/\s+/g, '')}`,
+        name: pick.name,
+        phone: pick.phone,
+        vehicle: `${pick.vehicleModel} • ${pick.vehicleNumber}`,
+        rating: pick.rating,
+        avatar: null,
+        etaMinutes: pick.etaMinutes,
+    };
+    // Only claims the ride if no real driver accepted it in the meantime
+    const ride = await Ride.findOneAndUpdate(
+        { _id: rideId, status: 'searching' },
+        { $set: { status: 'driver_assigned', driver } },
+        { new: true }
+    ).select('+otp');
+    if (!ride) return;
+
+    acknowledgeOffer(rideId.toString());
+    broadcast('driver.offer_taken', { offerId: rideId.toString() });
+    console.log(`[autoAssign] No driver accepted ride ${rideId}; assigned demo driver ${driver.name}`);
+    emitRideEvent(ride, 'ride.driver_confirmed', {
+        driver,
+        otp: ride.otp,
+        message: `${driver.name} is on the way`,
+    });
+
+    const pickup = { lat: ride.pickupLocation.lat, lng: ride.pickupLocation.lng };
+    const routePts = (ride.routeGeometry?.coordinates || []).map(([lng, lat]) => ({ lat, lng }));
+    const tripPath = routePts.length > 1 ? routePts : [pickup, { lat: ride.dropLocation.lat, lng: ride.dropLocation.lng }];
+    // Approach from ~1 km away, then drive the real route
+    const start = { lat: pickup.lat + 0.008, lng: pickup.lng - 0.006 };
+
+    await driveAlong(driver.driverId, [start, pickup], 8000);
+    let r = await setRideStatus(rideId, ['driver_assigned'], 'arrived');
+    if (!r) return;
+    emitRideEvent(r, 'ride.driver_arrived', { message: 'Your driver has arrived at the pickup point.' });
+
+    await sleep(4000);
+    r = await setRideStatus(rideId, ['arrived'], 'in_progress');
+    if (!r) return;
+    emitRideEvent(r, 'ride.trip_started', { message: 'Your trip has started. Enjoy the ride!' });
+
+    await driveAlong(driver.driverId, tripPath, 30000);
+    r = await setRideStatus(rideId, ['in_progress'], 'completed');
+    if (!r) return;
+    emitRideEvent(r, 'ride.completed', { fare: r.fare, message: 'You have reached your destination.' });
+}
+
+// Timers live in memory, so a restart (node --watch reloads on every save) would strand rides in
+// "searching". On boot, re-arm recent ones and cancel anything too old to still be wanted.
+export async function resumeSearchingRides() {
+    if (mongoose.connection?.readyState !== 1) return;
+    const staleBefore = new Date(Date.now() - 10 * 60 * 1000);
+    const stale = await Ride.updateMany({ status: 'searching', createdAt: { $lt: staleBefore } }, { $set: { status: 'cancelled' } });
+    const pending = await Ride.find({ status: 'searching', createdAt: { $gte: staleBefore } }).select('_id').lean();
+    pending.forEach((r) => scheduleAutoAssign(r._id));
+    if (stale.modifiedCount || pending.length) {
+        console.log(`[rides] Resumed ${pending.length} searching ride(s), cancelled ${stale.modifiedCount} stale one(s)`);
     }
 }
 
@@ -157,80 +252,16 @@ export async function bookRide({
     serviceType = 'RIDE',
     packageDetails = null,
 }) {
-    let fareAmount = 150;
-    let distKm = 5.0;
-    let durMins = 15;
-    let routeGeo = null;
-    let pickupLoc = pickup;
-    let dropLoc = drop;
-
-    if (quoteId) {
-        const quote = await RideQuote.findById(quoteId);
-        if (!quote) {
-            throw new Error('Fare quote has expired or is invalid. Please get a new estimate.');
-        }
-        const selectedFare = quote.fares.find((f) => f.type === rideType) || quote.fares[2];
-        fareAmount = selectedFare.fare;
-        distKm = quote.distanceKm;
-        durMins = quote.durationMins;
-        routeGeo = quote.geometry;
-        pickupLoc = quote.pickup;
-        dropLoc = quote.drop;
-    } else {
-        const estimate = await estimateRide({ pickup, drop, customerId });
-        const selectedFare = estimate.fares.find((f) => f.type === rideType) || estimate.fares[2];
-        fareAmount = selectedFare.fare;
-        distKm = estimate.distanceKm;
-        durMins = estimate.durationMins;
-        routeGeo = estimate.geometry;
-        pickupLoc = estimate.pickup;
-        dropLoc = estimate.drop;
+    let quote = quoteId ? await RideQuote.findById(quoteId) : null;
+    if (quoteId && !quote) {
+        throw new Error('Fare quote has expired or is invalid. Please get a new estimate.');
     }
-
-    let driver;
-    try {
-        const { Driver } = await import('../drivers/driverModel.js');
-        const vehicleFilter = (rideType === 'bike')
-            ? ['bike']
-            : (rideType === 'auto')
-                ? ['auto']
-                : ['cab_economy', 'cab_premium'];
-
-        const realDriver = await Driver.findOneAndUpdate(
-            {
-                isOnline: true,
-                isBusy: { $ne: true },
-                enabledServices: 'RIDE',
-                vehicleType: { $in: vehicleFilter },
-            },
-            { $set: { isBusy: true } },
-            { new: true }
-        ).lean();
-
-        if (realDriver) {
-            driver = {
-                driverId: realDriver._id.toString(),
-                name: realDriver.name,
-                phone: realDriver.phone,
-                vehicle: `${realDriver.vehicleModel} • ${realDriver.vehicleNumber}`,
-                rating: realDriver.rating,
-                avatar: realDriver.avatar || null,
-                etaMinutes: 3,
-            };
-            console.log(`[bookRide] Assigned real MongoDB driver: ${realDriver.name} (${realDriver.vehicleModel})`);
-        }
-    } catch (err) {
-        console.warn('[bookRide] Could not query drivers:', err.message);
+    if (!quote) {
+        quote = await estimateRide({ pickup, drop, customerId });
     }
-
-    if (!driver) {
-        const fallback = FALLBACK_DRIVERS[Math.floor(Math.random() * FALLBACK_DRIVERS.length)];
-        driver = {
-            ...fallback,
-            vehicle: `${fallback.vehicleModel} • ${fallback.vehicleNumber}`,
-        };
-        console.log(`[bookRide] Using fallback driver: ${driver.name}`);
-    }
+    const selectedFare = quote.fares.find((f) => f.type === rideType) || quote.fares[2];
+    const pickupLoc = quote.pickup;
+    const dropLoc = quote.drop;
 
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     const ride = await Ride.create({
@@ -240,53 +271,43 @@ export async function bookRide({
         rideType,
         serviceType: serviceType || 'RIDE',
         packageDetails,
-        fare: fareAmount,
-        distanceKm: distKm,
-        estimatedMins: durMins,
-        routeGeometry: routeGeo,
+        fare: selectedFare.fare,
+        distanceKm: quote.distanceKm,
+        estimatedMins: quote.durationMins,
+        routeGeometry: quote.geometry,
         otp,
-        driver,
-        status: 'driver_assigned',
-        quoteId,
+        status: 'searching',
+        quoteId: quoteId || null,
     });
 
     const isDelivery = serviceType === 'DELIVERY' || serviceType === 'PARCEL DELIVERY';
     const offerData = {
         offerId: ride._id.toString(),
         serviceType: isDelivery ? 'PARCEL DELIVERY' : 'RIDE',
-        title: isDelivery ? 'NEW PARCEL PICKUP REQUEST' : `NEW ${String(rideType).toUpperCase()} REQUEST`,
-        fare: `₹${fareAmount}`,
-        fareNumber: fareAmount,
-        distance: `${distKm.toFixed(1)} km • ${Math.round(durMins)} mins`,
+        title: isDelivery ? 'NEW PARCEL PICKUP REQUEST' : `NEW ${String(rideType).toUpperCase().replace('_', ' ')} REQUEST`,
+        fare: `₹${selectedFare.fare}`,
+        fareNumber: selectedFare.fare,
+        distance: `${Number(quote.distanceKm).toFixed(1)} km • ${Math.round(quote.durationMins)} mins`,
         pickup: pickupLoc,
         destination: dropLoc,
-        otp,
+        routeGeometry: quote.geometry,
         packageDetails,
         vehicleTier: rideType,
-        customerName: customerId,
-        customerRating: '4.9 ★',
         createdAt: new Date().toISOString(),
     };
 
     pushOffer(offerData);
-    setLatestDriverOffer(offerData);
-
     broadcast('driver.incoming_offer', offerData);
 
-    const assignPayload = {
-        rideId: ride._id,
-        customerId,
-        status: 'driver_assigned',
-        driver,
-        otp,
-    };
-    emitToCustomer(customerId, 'ride.driver_assigned', assignPayload);
-    broadcast('ride.driver_assigned', assignPayload);
+    const searchingPayload = { rideId: ride._id, customerId, status: 'searching', fare: selectedFare.fare };
+    emitToCustomer(customerId, 'ride.searching', searchingPayload);
+    broadcast('ride.searching', searchingPayload);
 
-    scheduleSimulatedRide(ride.toObject(), customerId);
+    scheduleAutoAssign(ride._id);
 
-    console.log(`[bookRide] Ride ${ride._id} created. Driver: ${driver.name}. Fare: ₹${fareAmount}`);
-    return ride.toObject();
+    console.log(`[bookRide] Ride ${ride._id} searching for a driver. Fare: ₹${selectedFare.fare}`);
+    // The customer needs their OTP to share with the driver at pickup
+    return { ...ride.toObject(), otp };
 }
 
 let latestDriverOffer = null;
@@ -315,11 +336,16 @@ export async function getActiveRide(customerId = 'cust_live_001') {
 
 export async function cancelRide(rideId, customerId = 'cust_live_001') {
     const ride = await Ride.findOneAndUpdate(
-        { _id: rideId, customerId, status: { $ne: 'completed' } },
+        { _id: rideId, customerId, status: { $nin: ['completed', 'cancelled'] } },
         { $set: { status: 'cancelled' } },
         { new: true }
     );
     if (!ride) throw new Error('Active ride not found or already completed');
+
+    // Pull the offer from every driver app and tell an assigned driver the trip is off
+    acknowledgeOffer(ride._id.toString());
+    broadcast('driver.offer_taken', { offerId: ride._id.toString() });
+    emitRideEvent(ride, 'ride.cancelled', { driverId: ride.driver?.driverId || null, message: 'The customer cancelled this ride.' });
 
     if (ride.driver?.driverId) {
         try {

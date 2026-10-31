@@ -13,7 +13,7 @@ import * as Location from 'expo-location';
 import { MAPBOX_TOKEN, extractLocationDetails } from '../../../shared/utils/mapboxHelper';
 
 const { width } = Dimensions.get('window');
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
+import { API_BASE } from '../../../shared/utils/apiConfig';
 
 const Images = {
     logo: require('../../../assets/logo.png'),
@@ -149,17 +149,24 @@ export default function HomeScreen({ navigation, onNavigate }) {
         if (id === 'Shop') handleNavigate('Food');
     };
 
+    // Carry the live quote (with real coordinates and route) into review, where the ride is booked
     const handleFindRide = () => {
         const tier = availableTiers.find(t => t.type === selectedRideType);
-        setPickupLocation(pickup);
-        setDestination(dropoff);
-        setServiceType(selectedRideType);
+        const store = useRideStore.getState();
+        setPickupLocation(quoteData?.pickup || pickup);
+        setDestination(quoteData?.drop || dropoff);
+        setServiceType('RIDE');
+        if (quoteData?.quoteId) {
+            store.setQuote({
+                quoteId: quoteData.quoteId,
+                distanceKm: quoteData.distanceKm,
+                durationMins: quoteData.durationMins,
+                fares: quoteData.fares,
+                geometry: quoteData.geometry,
+            });
+        }
         if (tier) selectVehicle(selectedRideType, tier.fare);
-        handleNavigate('FindingDriver', {
-            quoteId: quoteData?.quoteId,
-            rideType: selectedRideType,
-            fare: tier?.fare,
-        });
+        handleNavigate('ReviewBooking');
     };
 
 

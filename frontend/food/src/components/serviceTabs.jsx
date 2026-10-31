@@ -17,7 +17,7 @@ const SERVICES = [
 ];
 
 export default function ServiceTabs({
-    activeTab = "food", onSelectTab
+    activeTab = "food", onSelectTab, hiddenTabs = []
 }) {
     const handlePress = (tabId) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -26,7 +26,7 @@ export default function ServiceTabs({
 
     return (
         <View style={styles.container}>
-            {SERVICES.map((item) => {
+            {SERVICES.filter((s) => !hiddenTabs.includes(s.id)).map((item) => {
                 const isActive = activeTab === item.id;
 
                 if (isActive) {

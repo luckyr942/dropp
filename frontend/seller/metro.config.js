@@ -6,8 +6,9 @@ const frontendRoot = path.resolve(projectRoot, '..');
 
 const config = getDefaultConfig(projectRoot);
 
-// Watch shared components and theme
+// Watch project root and shared components
 config.watchFolders = [
+  projectRoot,
   path.resolve(frontendRoot, 'shared'),
 ];
 
@@ -20,3 +21,4 @@ config.resolver.nodeModulesPaths = [
 config.resolver.disableHierarchicalLookup = true;
 
 module.exports = config;
+

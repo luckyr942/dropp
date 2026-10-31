@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
+import { API_BASE } from '../../../shared/utils/apiConfig';
 
 const Images = {
     logo: require('../../../assets/logo.png'),

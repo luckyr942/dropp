@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start":       "expo start --port 8082",
-    "start:air":   "expo start --port 8083",
-    "start:both":  "expo start --port 8082 & expo start --port 8083",
-    "open:17":     "xcrun simctl openurl 1B252EAB-D89F-4753-B430-DF07407BA8E5 exp://localhost:8082",
-    "open:air":    "xcrun simctl openurl 1D2BAB97-C628-4B3A-949E-5EA4E1229400 exp://localhost:8083",
+    "start": "expo start --port 8082",
+    "start:air": "expo start --port 8083",
+    "start:both": "expo start --port 8082 & expo start --port 8083",
+    "open:17": "xcrun simctl openurl 1B252EAB-D89F-4753-B430-DF07407BA8E5 exp://localhost:8082",
+    "open:air": "xcrun simctl openurl 1D2BAB97-C628-4B3A-949E-5EA4E1229400 exp://localhost:8083",
     "android": "expo start --android --port 8082",
     "ios": "expo start --ios --port 8082",
     "web": "expo start --web --port 8082"
@@ -22,6 +22,7 @@
     "expo-status-bar": "~1.11.1",
     "react": "18.2.0",
     "react-native": "0.73.6",
+    "react-native-maps": "^1.10.0",
     "react-native-safe-area-context": "4.8.2",
     "zustand": "^4.5.1"
   },

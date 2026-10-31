@@ -31,7 +31,7 @@ export async function startSession(sessionId, customerId = null) {
 //2. Process the speech and extract intent (Restaurant, Items, Quantity)
 export async function searchRestaurant(query){
     const cleanQuery = (query || '').trim();
-    const regex = new RegExp(cleanQuery, 'i');
+    const regex = new RegExp(cleanQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
     // Find restaurants matching name or cuisine
     const byNameOrCuisine = await Restaurant.find({
@@ -51,7 +51,9 @@ export async function searchRestaurant(query){
         : [];
 
     const map = new Map();
-    for (const r of [...byNameOrCuisine, ...byDish]) {
+    // Restaurants that actually sell the dish rank ahead of cuisine-tag matches,
+    // so "cold coffee" doesn't land on a dosa place that only lists "Filter Coffee".
+    for (const r of [...byDish, ...byNameOrCuisine]) {
         map.set(r._id.toString(), r);
     }
     const combined = Array.from(map.values()).slice(0, 5);
@@ -242,7 +244,9 @@ export async function buildDraft(sessionId, requestedItems, restaurantId = null,
     }
   }
 
-  const targetRestaurantId = session.restaurantId || restaurantId;
+  // An explicitly chosen restaurant wins over the one remembered from an earlier turn,
+  // otherwise "2 cold coffee" lands on whatever shop the user ordered from first.
+  const targetRestaurantId = restaurantId || session.restaurantId;
   if (!targetRestaurantId) {
     throw Object.assign(
       new Error('Please select a restaurant first before adding items to cart'),

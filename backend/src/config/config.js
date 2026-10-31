@@ -12,6 +12,15 @@ export const config = Object.freeze({
   // Required for every restaurant/operations write. Set a long random value in
   // production; the development value exists only to make the local demo usable.
   operationsKey: process.env.OPERATIONS_API_KEY || (process.env.NODE_ENV === 'production' ? null : 'dropp-demo-operations-key'),
+  // Bearer token for the /mcp endpoint. Same dev-default rule as operationsKey; unset in production disables MCP.
+  mcpApiKey: process.env.MCP_API_KEY || (process.env.NODE_ENV === 'production' ? null : 'dropp-demo-mcp-key'),
+  // Bolna AI seller voice assistant. The API key never leaves the server.
+  bolnaApiKey: process.env.BOLNA_API_KEY || null,
+  bolnaSellerAgentId: process.env.BOLNA_SELLER_AGENT_ID || null,
+  // Shared secret Bolna sends as the Authorization header on every tool call
+  bolnaToolSecret: process.env.BOLNA_TOOL_SECRET || null,
+  // Public HTTPS base URL Bolna's servers can reach (a tunnel in development)
+  publicApiUrl: process.env.PUBLIC_API_URL || null,
   defaultCustomerId: process.env.DEFAULT_CUSTOMER_ID || 'cust_default',
   geminiApiKey: process.env.GEMINI_API_KEY || null,
   geminiModel: process.env.GEMINI_MODEL || 'gemini-3.8-flash',

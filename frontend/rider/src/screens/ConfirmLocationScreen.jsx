@@ -8,7 +8,7 @@ import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
 import { buildMapboxRouteUrl, extractLocationDetails } from '../../../shared/utils/mapboxHelper';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
+import { API_BASE } from '../../../shared/utils/apiConfig';
 
 export default function ConfirmLocationScreen({ onBack, onNavigate }) {
     const {

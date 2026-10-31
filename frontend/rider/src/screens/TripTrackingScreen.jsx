@@ -16,6 +16,7 @@ import {
     View,
     TouchableOpacity,
     Image,
+    Share,
     Platform,
     StatusBar,
     Animated,
@@ -28,7 +29,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
-import { extractLocationDetails, MAPBOX_TOKEN } from '../../../shared/utils/mapboxHelper';
+import { extractLocationDetails } from '../../../shared/utils/mapboxHelper';
+import LiveMap from '../../../shared/components/LiveMap';
 import { useLiveDriverLocation } from '../../../shared/hooks/useLiveDriverLocation';
 import { API_BASE, WS_BASE } from '../../../shared/utils/apiConfig';
 
@@ -36,75 +38,15 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MAP_HEIGHT = SCREEN_HEIGHT * 0.44;
 const WS_URL = WS_BASE;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Mapbox Static Route Builder with Live Vehicle Coordinates
-// ─────────────────────────────────────────────────────────────────────────────
-function buildLiveMapUrl(routeGeometry, pickup, destination, driverLat, driverLng) {
-    const pu = pickup ? extractLocationDetails(pickup) : null;
-    const dp = destination ? extractLocationDetails(destination) : null;
+// Rough city speed for the "arriving in" countdown from the driver's live position
+const CITY_KM_PER_MIN = 0.42; // ~25 km/h
 
-    const pLng = pu?.lng ?? 77.0492;
-    const pLat = pu?.lat ?? 28.5427;
-    const dLng = dp?.lng ?? 77.2199;
-    const dLat = dp?.lat ?? 28.6338;
-    const drLng = driverLng ?? pLng;
-    const drLat = driverLat ?? pLat;
-
-    const coords = routeGeometry?.coordinates;
-    const hasRoute = Array.isArray(coords) && coords.length > 1;
-
-    if (hasRoute) {
-        // Downsample to max 45 coordinates to stay well under Mapbox URL limit
-        const step = Math.max(1, Math.floor(coords.length / 45));
-        const sampled = [];
-        for (let i = 0; i < coords.length; i += step) {
-            sampled.push([Number(coords[i][0].toFixed(5)), Number(coords[i][1].toFixed(5))]);
-        }
-        const last = coords[coords.length - 1];
-        if (
-            sampled.length === 0 ||
-            sampled[sampled.length - 1][0] !== Number(last[0].toFixed(5)) ||
-            sampled[sampled.length - 1][1] !== Number(last[1].toFixed(5))
-        ) {
-            sampled.push([Number(last[0].toFixed(5)), Number(last[1].toFixed(5))]);
-        }
-
-        const geojson = {
-            type: 'FeatureCollection',
-            features: [
-                // Route line
-                {
-                    type: 'Feature',
-                    properties: { stroke: '#00C96B', 'stroke-width': 4.5, 'stroke-opacity': 0.95 },
-                    geometry: { type: 'LineString', coordinates: sampled },
-                },
-                // Pickup pin (Green)
-                {
-                    type: 'Feature',
-                    properties: { 'marker-color': '00C96B', 'marker-size': 'large', 'marker-symbol': 'circle' },
-                    geometry: { type: 'Point', coordinates: [pLng, pLat] },
-                },
-                // Destination pin (Red)
-                {
-                    type: 'Feature',
-                    properties: { 'marker-color': 'EF4444', 'marker-size': 'medium' },
-                    geometry: { type: 'Point', coordinates: [dLng, dLat] },
-                },
-                // Live Vehicle location (Dark Marker)
-                {
-                    type: 'Feature',
-                    properties: { 'marker-color': '111827', 'marker-size': 'small', 'marker-symbol': 'car' },
-                    geometry: { type: 'Point', coordinates: [drLng, drLat] },
-                },
-            ],
-        };
-
-        const enc = encodeURIComponent(JSON.stringify(geojson));
-        return `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/geojson(${enc})/auto/800x650@2x?padding=70,70,70,70&access_token=${MAPBOX_TOKEN}`;
-    }
-
-    // Fallback static map
-    return `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-s-car+111827(${drLng},${drLat}),pin-s-a+00c96b(${pLng},${pLat}),pin-s-b+ef4444(${dLng},${dLat})/auto/800x650@2x?padding=70,70,70,70&access_token=${MAPBOX_TOKEN}`;
+function kmBetween(a, b) {
+    if (!a || !b || a.lat == null || b.lat == null) return null;
+    const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+    const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    return 2 * 6371 * Math.asin(Math.sqrt(h));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,7 +73,7 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
 
     // ── Local State ──
     const [tripStage, setTripStage] = useState('EN_ROUTE'); // 'EN_ROUTE' | 'ARRIVED' | 'ON_TRIP' | 'COMPLETED'
-    const [eta, setEta] = useState(driver?.etaMinutes || 4);
+    const [eta, setEta] = useState(driver?.etaMinutes ?? null);
     const [rideData, setRideData] = useState(null);
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [cancelling, setCancelling] = useState(false);
@@ -149,9 +91,6 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
                 const json = await res.json();
                 if (json.success && json.data) {
                     setRideData(json.data);
-                    if (json.data.estimatedMins) {
-                        setEta(Math.round(json.data.estimatedMins));
-                    }
                     if (json.data.status === 'arrived') {
                         setTripStage('ARRIVED');
                     } else if (json.data.status === 'in_progress') {
@@ -169,33 +108,44 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
     // ── 2. Live WebSocket GPS Position ──
     const effectiveDriverId = driver?._id || driver?.id || driver?.driverId || rideData?.driver?.driverId || '';
     const livePos = useLiveDriverLocation({
-        customerId: customerId || 'cust_live_001',
+        customerId,
         driverId: effectiveDriverId,
     });
-
-    const driverLat = livePos?.lat ?? (puDetails?.lat ? puDetails.lat + 0.003 : null);
-    const driverLng = livePos?.lng ?? (puDetails?.lng ? puDetails.lng + 0.002 : null);
     const driverBearing = livePos?.bearing ?? 0;
+
+    // Countdown from the real position: to pickup while arriving, to the drop once on the trip
+    useEffect(() => {
+        if (!livePos) return;
+        const target = tripStage === 'ON_TRIP' ? dropDetails : puDetails;
+        const km = kmBetween(livePos, target);
+        if (km != null) setEta(Math.max(1, Math.ceil(km / CITY_KM_PER_MIN)));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [livePos?.lat, livePos?.lng, tripStage]);
 
     // ── 3. WebSocket Listener for Real-Time Trip Stage Events ──
     useEffect(() => {
-        const clientCustId = customerId || 'cust_live_001';
         let ws;
 
         try {
-            ws = new WebSocket(`${WS_URL}?customerId=${clientCustId}`);
+            ws = new WebSocket(`${WS_URL}${customerId ? `?customerId=${encodeURIComponent(customerId)}` : ''}`);
             ws.onmessage = (e) => {
                 try {
                     const msg = JSON.parse(e.data);
+                    const d = msg.data || {};
+                    if (rideId && d.rideId && String(d.rideId) !== String(rideId)) return;
                     if (msg.type === 'ride.driver_arrived') {
                         setTripStage('ARRIVED');
-                        Alert.alert('📍 Captain Arrived', 'Your captain has arrived at the pickup location.');
+                        Alert.alert('Your driver has arrived', 'Share your OTP with the driver to start the trip.');
                     } else if (msg.type === 'ride.trip_started') {
                         setTripStage('ON_TRIP');
-                        Alert.alert('🚀 Trip Started', 'Have a pleasant and safe ride!');
+                        Alert.alert('Trip started', 'Have a safe ride!');
+                    } else if (msg.type === 'ride.cancelled') {
+                        Alert.alert('Ride cancelled', d.message || 'This ride was cancelled.');
+                        resetTripState();
+                        onNavigate?.('Home');
                     } else if (msg.type === 'ride.completed') {
                         setTripStage('COMPLETED');
-                        Alert.alert('🎉 Destination Reached', 'You have arrived safely. Thank you for choosing Dropp!', [
+                        Alert.alert('You have arrived', 'Thank you for riding with Dropp!', [
                             { text: 'Done', onPress: handleFinishTrip }
                         ]);
                     }
@@ -206,7 +156,7 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
         return () => {
             try { ws?.close(); } catch (_) {}
         };
-    }, [customerId]);
+    }, [customerId, rideId]);
 
     // ── 4. Animations: Pulsing Aura Ring & Smooth Heading Rotation ──
     const pinPulse = useRef(new Animated.Value(1)).current;
@@ -240,8 +190,18 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
         else if (onBack) onBack();
     }, [onNavigate, onBack]);
 
+    // Back leaves the trip running; you can return to it from Home / Activity
+    const handleBack = useCallback(() => {
+        if (onNavigate) onNavigate('Home');
+        else if (onBack) onBack();
+    }, [onNavigate, onBack]);
+
     const handleCallDriver = useCallback(() => {
-        const phone = driver?.phone || rideData?.driver?.phone || '+919811234567';
+        const phone = driver?.phone || rideData?.driver?.phone;
+        if (!phone) {
+            Alert.alert('Not available yet', 'The driver\'s number appears once they accept your ride.');
+            return;
+        }
         Alert.alert(
             `Call Captain`,
             `Connect with ${driver?.name || 'your Captain'} (${phone})?`,
@@ -250,9 +210,7 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
                 {
                     text: 'Call Now',
                     onPress: () => {
-                        Linking.openURL(`tel:${phone.replace(/[^0-9+]/g, '')}`).catch(() => {
-                            Alert.alert('Calling Captain', `Dialing ${phone}`);
-                        });
+                        Linking.openURL(`tel:${phone.replace(/[^0-9+]/g, '')}`).catch(() => {});
                     },
                 },
             ]
@@ -260,13 +218,15 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
     }, [driver, rideData]);
 
     const handleChat = useCallback(() => {
-        Alert.alert('Captain Chat', 'Quick message: "I am waiting at the main gate!" sent.');
-    }, []);
+        const phone = driver?.phone || rideData?.driver?.phone;
+        if (!phone) return;
+        Linking.openURL(`sms:${phone.replace(/[^0-9+]/g, '')}`).catch(() => {});
+    }, [driver, rideData]);
 
     const handleSOS = useCallback(() => {
         Alert.alert(
             '🛡️ Dropp 24x7 Safety Guard',
-            'Emergency Police Helpline: 112\n\nYour live GPS track and vehicle credentials have been shared with our Safety Response Team.',
+            'Emergency helpline: 112. Use Share Trip to send your driver and vehicle details to someone you trust.',
             [
                 { text: 'Close', style: 'cancel' },
                 { text: 'Call 112', style: 'destructive', onPress: () => Linking.openURL('tel:112') },
@@ -275,58 +235,55 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
     }, []);
 
     const handleShareTrip = useCallback(() => {
-        Alert.alert(
-            'Share Live Tracking',
-            `Live track link copied to clipboard:\nhttps://dropp.app/track/${rideId || 'live'}`
-        );
-    }, [rideId]);
+        const d = driver?.name ? driver : rideData?.driver;
+        const lines = [
+            `I'm on a Dropp ride to ${dropDetails.label}.`,
+            d?.name ? `Driver: ${d.name}${d.vehicle ? ` (${[d.vehicle, d.plate].filter(Boolean).join(' • ')})` : ''}` : null,
+        ].filter(Boolean);
+        Share.share({ message: lines.join('\n') }).catch(() => {});
+    }, [driver, rideData, dropDetails.label]);
 
     const handleCancelRide = async () => {
         setCancelling(true);
         try {
             if (rideId) {
-                await fetch(`${API_BASE}/api/rides/${rideId}/cancel`, {
+                const res = await fetch(`${API_BASE}/api/rides/${rideId}/cancel`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ customerId: customerId || 'cust_live_001' }),
+                    headers: { 'Content-Type': 'application/json', ...(customerId ? { 'x-customer-id': customerId } : {}) },
+                    body: JSON.stringify({ customerId }),
                 });
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok || json.success === false) throw new Error(json.error || 'Could not cancel');
             }
             setShowCancelModal(false);
-            Alert.alert('Ride Cancelled', 'Your booking has been cancelled.');
-            handleFinishTrip();
+            resetTripState();
+            Alert.alert('Ride cancelled', 'Your booking has been cancelled.');
+            onNavigate?.('Home');
         } catch (err) {
             setShowCancelModal(false);
-            handleFinishTrip();
+            Alert.alert('Could not cancel', err.message || 'Please try again.');
         } finally {
             setCancelling(false);
         }
     };
 
     // ── 6. Derived Display Values ──
-    const avatarUri =
-        driver?.avatar ||
-        rideData?.driver?.avatar ||
-        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80';
-
-    const rawVehicle = driver?.vehicle || rideData?.driver?.vehicle || 'White Swift Dzire • DL 1Z A 4421';
+    const d = driver?.name ? driver : (rideData?.driver || {});
+    const avatarUri = d.avatar || null;
+    const rawVehicle = d.vehicle || '';
     const vehicleParts = rawVehicle.split('•').map((p) => p.trim());
-    const vehicleModel = vehicleParts[0] || 'Swift Dzire';
-    const vehiclePlate = driver?.plate || driver?.vehicleNumber || vehicleParts[1] || 'DL 1Z A 4421';
+    const vehicleModel = vehicleParts[0] || 'Vehicle';
+    const vehiclePlate = d.plate || d.vehicleNumber || vehicleParts[1] || '';
 
-    const driverName = driver?.name || rideData?.driver?.name || 'Captain Vikram';
-    const driverRating = driver?.rating ?? rideData?.driver?.rating ?? 4.89;
-    const finalFare = rideData?.fare ?? fare ?? 165;
-    const displayOtp = rideData?.otp || deliveryOtp || '4821';
-    const displayDist = distanceKm || rideData?.distanceKm || 6.2;
-    const displayMins = durationMins || rideData?.estimatedMins || 18;
-
-    const mapUrl = buildLiveMapUrl(
-        routeGeometry || rideData?.routeGeometry,
-        pickupLocation,
-        destination,
-        driverLat,
-        driverLng
-    );
+    const driverName = d.name || 'Your driver';
+    const driverRating = d.rating ?? null;
+    const finalFare = rideData?.fare ?? fare;
+    const displayOtp = rideData?.otp || deliveryOtp;
+    const displayDist = distanceKm || rideData?.distanceKm;
+    const displayMins = durationMins || rideData?.estimatedMins;
+    const tripRoute = routeGeometry || rideData?.routeGeometry;
+    const pickupPt = puDetails.lat != null ? puDetails : rideData?.pickupLocation;
+    const dropPt = dropDetails.lat != null ? dropDetails : rideData?.dropLocation;
 
     return (
         <View style={styles.root}>
@@ -336,39 +293,27 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
                 1. LIVE MAPBOX CANVAS (Top Half)
             ════════════════════════════════════════════════════════════ */}
             <View style={styles.mapCanvas}>
-                {mapUrl ? (
-                    <Image
-                        key={`map_${driverLat?.toFixed(4)}_${driverLng?.toFixed(4)}`}
-                        source={{ uri: mapUrl }}
-                        style={StyleSheet.absoluteFillObject}
-                        resizeMode="cover"
-                    />
-                ) : (
-                    <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#E2F2E9' }]} />
-                )}
-
-                {/* Pulsing Aura Ripple */}
-                <Animated.View
-                    style={[styles.liveRipple, { transform: [{ scale: pinPulse }] }]}
+                <LiveMap
+                    style={StyleSheet.absoluteFillObject}
+                    pickup={pickupPt}
+                    drop={dropPt}
+                    route={tripRoute}
+                    driver={livePos}
+                    pickupLabel={puDetails.label}
+                    dropLabel={dropDetails.label}
+                    driverIcon={isDelivery ? 'bicycle' : 'car-sport'}
+                    edgePadding={{ top: 110, right: 50, bottom: 40, left: 50 }}
                 />
-
-                {/* Animated Directional Car Marker */}
-                <Animated.View
-                    style={[
-                        styles.driverMarker,
-                        { transform: [{ scale: pinPulse }, { rotate: spin }] },
-                    ]}
-                >
-                    <View style={styles.driverDotOuter}>
-                        <MaterialCommunityIcons name="car-side" size={20} color="#FFF" />
+                {!livePos && tripStage !== 'COMPLETED' && (
+                    <View style={styles.locatingPill} pointerEvents="none">
+                        <Text style={styles.locatingText}>Waiting for driver location…</Text>
                     </View>
-                    <View style={styles.carShadow} />
-                </Animated.View>
+                )}
             </View>
 
             {/* ── TOP FLOATING BAR ── */}
             <SafeAreaView edges={['top']} style={styles.topBar} pointerEvents="box-none">
-                <TouchableOpacity style={styles.iconBtn} onPress={handleFinishTrip} activeOpacity={0.8}>
+                <TouchableOpacity style={styles.iconBtn} onPress={handleBack} activeOpacity={0.8}>
                     <Ionicons name="chevron-back" size={22} color="#111827" />
                 </TouchableOpacity>
 
@@ -381,7 +326,7 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
                         ]}
                     />
                     <Text style={styles.statusText}>
-                        {tripStage === 'EN_ROUTE' && (isDelivery ? `Courier arriving in ${eta} min` : `Captain arriving in ${eta} min`)}
+                        {tripStage === 'EN_ROUTE' && (eta != null ? `${isDelivery ? 'Courier' : 'Driver'} arriving in ${eta} min` : `${isDelivery ? 'Courier' : 'Driver'} on the way`)}
                         {tripStage === 'ARRIVED' && (isDelivery ? 'Courier is at pickup point!' : 'Captain is at pickup!')}
                         {tripStage === 'ON_TRIP' && (isDelivery ? 'Parcel en route to destination' : 'En route to destination')}
                         {tripStage === 'COMPLETED' && (isDelivery ? 'Parcel delivered safely!' : 'Arrived safely')}
@@ -414,7 +359,7 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
                             <View style={styles.otpBadge}>
                                 <Text style={styles.otpBadgeText}>START CODE</Text>
                             </View>
-                            <Text style={styles.otpNumber}>{displayOtp}</Text>
+                            <Text style={styles.otpNumber}>{displayOtp || '— — — —'}</Text>
                         </View>
                         <View style={styles.otpRight}>
                             <Text style={styles.otpInstructions}>
@@ -428,7 +373,13 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
                     {/* ── Captain & Vehicle Card ── */}
                     <View style={styles.driverCard}>
                         <View style={styles.driverAvatarContainer}>
-                            <Image source={{ uri: avatarUri }} style={styles.driverAvatar} />
+                            {avatarUri ? (
+                                <Image source={{ uri: avatarUri }} style={styles.driverAvatar} />
+                            ) : (
+                                <View style={[styles.driverAvatar, styles.avatarInitial]}>
+                                    <Text style={styles.avatarInitialText}>{driverName.charAt(0).toUpperCase()}</Text>
+                                </View>
+                            )}
                             <View style={styles.verifiedCheck}>
                                 <Ionicons name="checkmark-circle" size={16} color="#00C96B" />
                             </View>
@@ -438,9 +389,9 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
                             <Text style={styles.driverName} numberOfLines={1}>{driverName}</Text>
                             <View style={styles.ratingRow}>
                                 <Ionicons name="star" size={14} color="#F59E0B" />
-                                <Text style={styles.ratingText}>{Number(driverRating).toFixed(1)}</Text>
+                                <Text style={styles.ratingText}>{driverRating != null ? Number(driverRating).toFixed(1) : 'New'}</Text>
                                 <Text style={styles.dotSeparator}>•</Text>
-                                <Text style={styles.tripsCountText}>Top Rated Partner</Text>
+                                <Text style={styles.tripsCountText}>Dropp Partner</Text>
                             </View>
                             <Text style={styles.vehicleModelText} numberOfLines={1}>
                                 {vehicleModel}
@@ -477,7 +428,7 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
                             <Text style={styles.routeCardTitle}>Trip Itinerary</Text>
                             <View style={styles.routeDistanceBadge}>
                                 <Text style={styles.routeDistanceText}>
-                                    {Number(displayDist).toFixed(1)} km · {Math.round(displayMins)} mins
+                                    {displayDist != null ? `${Number(displayDist).toFixed(1)} km` : '—'}{displayMins != null ? ` · ${Math.round(displayMins)} mins` : ''}
                                 </Text>
                             </View>
                         </View>
@@ -523,7 +474,7 @@ export default function TripTrackingScreen({ onBack, onNavigate }) {
                                 <Ionicons name="receipt-outline" size={18} color="#64748B" />
                                 <Text style={styles.fareTitle}>Payment & Fare</Text>
                             </View>
-                            <Text style={styles.fareAmount}>₹{finalFare}</Text>
+                            <Text style={styles.fareAmount}>{finalFare != null ? `₹${finalFare}` : '—'}</Text>
                         </View>
 
                         <View style={styles.fareSubRow}>
@@ -603,6 +554,18 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
+    locatingPill: {
+        position: 'absolute',
+        bottom: 14,
+        alignSelf: 'center',
+        backgroundColor: 'rgba(17,24,39,0.82)',
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+        borderRadius: 16,
+    },
+    locatingText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
+    avatarInitial: { backgroundColor: '#E6F7EF', alignItems: 'center', justifyContent: 'center' },
+    avatarInitialText: { color: '#00A859', fontSize: 22, fontWeight: '800' },
     liveRipple: {
         position: 'absolute',
         top: '42%',

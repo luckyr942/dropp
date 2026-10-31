@@ -3,6 +3,7 @@ import { searchRestaurant, getMenuForSession, buildDraft } from './auraService.j
 import { AuraSession } from './sessionModel.js';
 import { estimateRide, bookRide } from '../modules/rides/rideService.js';
 import { getLatestActiveOrder } from '../modules/orders/orderService.js';
+import { compareRides } from '../modules/rides/rideCompareService.js';
 
 export const toolMap = {
   // ── Food Tools ──────────────────────────────────────────────
@@ -115,6 +116,25 @@ export const toolMap = {
     return quote;
   },
 
+  // Compare Dropp (live) with Uber / Ola / Rapido (estimates) and hold the Dropp quote for booking
+  compare_rides: async ({ pickup, drop, category, sessionId }) => {
+    if (!pickup || !drop) {
+      throw new Error('Dono pickup aur drop location zaroori hain.');
+    }
+    const comparison = await compareRides({ pickup, drop, customerId: sessionId || 'cust_live_001', category: category || 'cab' });
+    await AuraSession.findOneAndUpdate(
+      { sessionId },
+      {
+        $set: {
+          stage: 'awaiting_ride_confirmation',
+          activeQuoteId: comparison.quoteId,
+          selectedRideType: comparison.cheapestDropp?.rideType || 'cab_economy',
+        },
+      }
+    );
+    return comparison;
+  },
+
   // Confirm booking for selected vehicle tier
   book_ride: async ({ quoteId, rideType, pickup, drop, sessionId }) => {
     const ride = await bookRide({
@@ -203,6 +223,19 @@ export const TOOL_DECLARATIONS = [
           type: 'string',
           description: 'Destination landmark or address (e.g., Rajiv Chowk, Kempegowda Airport, BKC)',
         },
+      },
+      required: ['pickup', 'drop'],
+    },
+  },
+  {
+    name: 'compare_rides',
+    description: 'Compare the trip across Dropp, Uber, Ola and Rapido and find the cheapest. Dropp fares are live and bookable; other apps are estimates that open in their own app. Call when the user asks for the cheapest/sasta ride or mentions Ola, Uber or Rapido.',
+    parameters: {
+      type: 'object',
+      properties: {
+        pickup: { type: 'string', description: 'Pickup landmark or address' },
+        drop: { type: 'string', description: 'Destination landmark or address' },
+        category: { type: 'string', enum: ['bike', 'auto', 'cab', 'premium'], description: 'Vehicle category to compare (default cab)' },
       },
       required: ['pickup', 'drop'],
     },

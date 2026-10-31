@@ -66,3 +66,69 @@ const sessionSchema = new mongoose.Schema(
 sessionSchema.index({ updatedAt: 1 }, { expireAfterSeconds: 3600 });
 
 export const AuraSession = mongoose.model('AuraSession', sessionSchema);
+
+// In-Memory Fallback when MongoDB is offline / disconnected
+const inMemorySessions = new Map();
+
+const originalFindOne = AuraSession.findOne.bind(AuraSession);
+const originalUpdateOne = AuraSession.updateOne.bind(AuraSession);
+const originalFindOneAndUpdate = AuraSession.findOneAndUpdate.bind(AuraSession);
+
+AuraSession.findOne = function (filter, ...args) {
+    if (mongoose.connection?.readyState === 1) {
+        try {
+            return originalFindOne(filter, ...args);
+        } catch (_) {}
+    }
+    const sessId = filter?.sessionId;
+    const session = inMemorySessions.get(sessId) || null;
+    return {
+        lean: () => Promise.resolve(session ? { ...session } : null),
+        then: (resolve) => resolve(session ? { ...session } : null),
+        catch: () => Promise.resolve(null),
+    };
+};
+
+AuraSession.updateOne = function (filter, update, ...args) {
+    if (mongoose.connection?.readyState === 1) {
+        try {
+            return originalUpdateOne(filter, update, ...args);
+        } catch (_) {}
+    }
+    const sessId = filter?.sessionId;
+    let session = inMemorySessions.get(sessId);
+    if (!session) {
+        session = { sessionId: sessId, conversation: [], transcript: [], status: 'active', customerId: 'cust_live_001' };
+        inMemorySessions.set(sessId, session);
+    }
+    if (update?.$set) Object.assign(session, update.$set);
+    if (update?.$push?.conversation) {
+        session.conversation = session.conversation || [];
+        session.conversation.push(update.$push.conversation);
+    }
+    if (update?.$push?.transcript) {
+        session.transcript = session.transcript || [];
+        session.transcript.push(update.$push.transcript);
+    }
+    return Promise.resolve({ acknowledged: true, modifiedCount: 1 });
+};
+
+AuraSession.findOneAndUpdate = function (filter, update, options, ...args) {
+    if (mongoose.connection?.readyState === 1) {
+        try {
+            return originalFindOneAndUpdate(filter, update, options, ...args);
+        } catch (_) {}
+    }
+    const sessId = filter?.sessionId;
+    let session = inMemorySessions.get(sessId);
+    if (!session) {
+        session = { sessionId: sessId, conversation: [], transcript: [], status: 'active', customerId: 'cust_live_001' };
+        inMemorySessions.set(sessId, session);
+    }
+    if (update?.$set) Object.assign(session, update.$set);
+    return {
+        lean: () => Promise.resolve({ ...session }),
+        then: (resolve) => resolve({ ...session }),
+        catch: () => Promise.resolve(null),
+    };
+};

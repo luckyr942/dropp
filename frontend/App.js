@@ -14,7 +14,10 @@
 import React, { useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, LogBox } from 'react-native';
+
+// Suppress dev yellow box banners during demo video recording
+LogBox.ignoreAllLogs(true);
 import { useFonts } from 'expo-font';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import {
@@ -29,6 +32,7 @@ import { Caveat_600SemiBold } from '@expo-google-fonts/caveat';
 // ─── Aura Voice AI ────────────────────────────────────────────────
 import { AuraProvider } from './shared/voice/AuraContext.js';
 import AuraOverlay from './shared/voice/AuraOverlay.jsx';
+import AuraFloatingButton from './shared/voice/components/AuraFloatingButton.jsx';
 
 // ─── Shared Screens ──────────────────────────────────────────────
 import SplashScreen from './shared/screens/SplashScreen.jsx';
@@ -63,6 +67,10 @@ import DriverHomeScreen from './driver/src/screens/DriverHomeScreen.jsx';
 import DriverNavigationScreen from './driver/src/screens/DriverNavigationScreen.jsx';
 import DriverEarningsScreen from './driver/src/screens/DriverEarningsScreen.jsx';
 
+// ─── Seller / Merchant Flow ──────────────────────────────────────
+import SellerOnboardingScreen from './seller/src/screens/SellerOnboardingScreen.jsx';
+import SellerDashboardScreen from './seller/src/screens/SellerDashboardScreen.jsx';
+
 import * as ExpoSplashScreen from 'expo-splash-screen';
 
 export default function App() {
@@ -82,6 +90,7 @@ export default function App() {
     const [selectedRestaurant, setSelectedRestaurant] = useState(null);
     const [cart, setCart] = useState({});
     const [activeOrder, setActiveOrder] = useState(null);
+    const [sellerStore, setSellerStore] = useState(null);
 
     if (!fontsLoaded) {
         return (
@@ -92,12 +101,21 @@ export default function App() {
     }
 
     // ─── Cart Helpers ─────────────────────────────────────────────
-    const handleAddToCart = (item) => {
+    // Cart is keyed by menu item id; every item carries its restaurantId so a
+    // cart can never mix kitchens. RestaurantDetail asks the user before
+    // replacing a cart from another restaurant and passes { replaceCart: true }.
+    const handleAddToCart = (item, { replaceCart = false } = {}) => {
+        if (!item?.id) return;
         setCart((prev) => {
-            const existing = prev[item.id];
+            const prevItems = Object.values(prev);
+            const otherRestaurant = prevItems.some(
+                (i) => i.restaurantId && item.restaurantId && i.restaurantId !== item.restaurantId
+            );
+            const base = replaceCart || otherRestaurant ? {} : prev;
+            const existing = base[item.id];
             return {
-                ...prev,
-                [item.id]: { ...item, quantity: (existing?.quantity || 0) + 1 },
+                ...base,
+                [item.id]: { ...(existing || item), quantity: (existing?.quantity || 0) + 1 },
             };
         });
     };
@@ -115,31 +133,29 @@ export default function App() {
         });
     };
 
+    // Change quantity in place so name/price/restaurant are preserved
     const handleUpdateQuantity = (itemId, delta) => {
-        delta > 0 ? handleAddToCart({ id: itemId }) : handleRemoveFromCart(itemId);
+        if (delta < 0) return handleRemoveFromCart(itemId);
+        setCart((prev) => {
+            const existing = prev[itemId];
+            if (!existing) return prev;
+            return { ...prev, [itemId]: { ...existing, quantity: existing.quantity + delta } };
+        });
     };
 
-    const cartTotal = Object.values(cart).reduce((s, i) => s + i.price * i.quantity, 0);
+    const cartFirstItem = Object.values(cart)[0];
+    const cartRestaurant = cartFirstItem?.restaurantId
+        ? (selectedRestaurant && (selectedRestaurant._id || selectedRestaurant.id) === cartFirstItem.restaurantId
+            ? selectedRestaurant
+            : { id: cartFirstItem.restaurantId, _id: cartFirstItem.restaurantId, name: cartFirstItem.restaurantName })
+        : selectedRestaurant;
+
     const navigate = (screen, payload) => {
         if (!screen) return;
         if (payload && screen === 'FoodTracking') {
+            // Keep the real order document; the tracking screen refreshes it from the API by id
             const orderId = payload._id || payload.orderId || payload.id;
-            setActiveOrder({
-                id: `#DRP-${String(orderId || '').slice(-5).toUpperCase() || '84920'}`,
-                _id: orderId,
-                customerId: payload.customerId || 'cust_live_001',
-                restaurantName: payload.restaurantName || selectedRestaurant?.name || 'Restaurant',
-                etaMinutes: Number(payload.etaMinutes) || 20,
-                etaTime: '25 mins',
-                items: payload.items || Object.values(cart),
-                totalAmount: payload.totalAmount || Math.max(0, cartTotal + 24 - 50),
-                deliveryAddress: typeof payload.deliveryAddress === 'object'
-                    ? (payload.deliveryAddress.street || payload.deliveryAddress.address || 'Flat 402, Sector 28, Gurugram')
-                    : (payload.deliveryAddress || 'Flat 402, Sector 28, Gurugram'),
-                deliveryOtp: payload.deliveryOtp || '4821',
-                driver: payload.driver || null,
-                status: payload.status || 'confirmed',
-            });
+            if (orderId) setActiveOrder({ ...payload, _id: String(orderId) });
         }
         setCurrentScreen(screen);
     };
@@ -150,6 +166,15 @@ export default function App() {
         currentScreen === 'DriverNavigation' ||
         currentScreen === 'DriverHome' ||
         currentScreen === 'RestaurantDetail';
+
+    // The floating Aura bubble is for customers only: hide it on splash, role picker, driver and seller
+    // screens, and on full-screen trip / checkout flows where it would cover live details
+    const AURA_HIDDEN_SCREENS = ['Splash', 'RoleSelection', 'FindingDriver', 'TripTracking', 'RideCompleted', 'FoodTracking', 'Cart'];
+    const showAuraBubble = !(
+        AURA_HIDDEN_SCREENS.includes(currentScreen) ||
+        currentScreen.startsWith('Driver') ||
+        currentScreen.startsWith('Seller')
+    );
 
     return (
         <SafeAreaProvider>
@@ -172,11 +197,30 @@ export default function App() {
                                 onSelectRole={(role) => {
                                     if (role === 'Customer') navigate('Home');
                                     else if (role === 'Captain') navigate('DriverHome');
-                                    else alert('Merchant portal coming soon! 🚀');
+                                    else if (role === 'Merchant') navigate('SellerOnboarding');
                                 }}
                             />
                         )}
 
+                        {/* ════════════════════════════════════════════════
+                            SELLER / MERCHANT FLOW
+                        ════════════════════════════════════════════════ */}
+                        {currentScreen === 'SellerOnboarding' && (
+                            <SellerOnboardingScreen
+                                onFinish={(newStore) => {
+                                    setSellerStore(newStore);
+                                    navigate('SellerDashboard');
+                                }}
+                                onCancel={() => navigate('Home')}
+                            />
+                        )}
+
+                        {currentScreen === 'SellerDashboard' && (
+                            <SellerDashboardScreen
+                                store={sellerStore}
+                                onNavigateBack={() => navigate('Home')}
+                            />
+                        )}
                         {/* ════════════════════════════════════════════════
                             CUSTOMER FLOW
                         ════════════════════════════════════════════════ */}
@@ -274,28 +318,16 @@ export default function App() {
                         {currentScreen === 'Cart' && (
                             <CartScreen
                                 cart={cart}
-                                restaurant={selectedRestaurant}
+                                restaurant={cartRestaurant}
                                 onBack={() =>
                                     navigate(selectedRestaurant ? 'RestaurantDetail' : 'Food')
                                 }
+                                onBrowse={() => navigate('Food')}
                                 onUpdateQuantity={handleUpdateQuantity}
-                                onPlaceOrder={(orderData) => {
-                                    if (orderData) {
-                                        setActiveOrder({
-                                            id: `#DRP-${String(orderData._id || '').slice(-5).toUpperCase() || '84920'}`,
-                                            _id: orderData._id,
-                                            customerId: orderData.customerId,
-                                            restaurantName: selectedRestaurant?.name || 'The Daily Grind',
-                                            etaMinutes: 18,
-                                            etaTime: '6:25 PM',
-                                            items: Object.values(cart),
-                                            totalAmount: orderData.totalAmount || Math.max(0, cartTotal + 24 - 50),
-                                            deliveryAddress: orderData.deliveryAddress?.street || 'Flat 402, Tower B, Sector 28, Gurugram',
-                                            deliveryOtp: orderData.deliveryOtp || '4821',
-                                            driver: orderData.driver || null,
-                                            status: orderData.status || 'confirmed',
-                                        });
-                                    }
+                                onPlaceOrder={(order) => {
+                                    // `order` is the confirmed order document from the backend
+                                    setActiveOrder(order);
+                                    setCart({});
                                     navigate('FoodTracking');
                                 }}
                             />
@@ -303,21 +335,13 @@ export default function App() {
 
                         {currentScreen === 'FoodTracking' && (
                             <OrderTrackingScreen
-                                order={activeOrder || {
-                                    id: '#DRP-84920',
-                                    restaurantName: selectedRestaurant?.name || 'The Daily Grind',
-                                    etaMinutes: 18,
-                                    etaTime: '6:25 PM',
-                                    items: Object.values(cart),
-                                    totalAmount: Math.max(0, cartTotal + 24 - 50),
-                                    deliveryAddress: 'Flat 402, Tower B, Sector 28, Gurugram',
-                                    deliveryOtp: '4821',
-                                }}
+                                orderId={activeOrder?._id || null}
+                                initialOrder={activeOrder}
                                 onBack={() => {
-                                    setCart({});
                                     setActiveOrder(null);
                                     navigate('Home');
                                 }}
+                                onBrowse={() => navigate('Food')}
                             />
                         )}
 
@@ -353,6 +377,7 @@ export default function App() {
                         )}
 
                     </View>
+                    <AuraFloatingButton hidden={!showAuraBubble} />
                     <AuraOverlay />
                 </AuraProvider>
             </ThemeProvider>

@@ -1,11 +1,10 @@
 import React from "react";
-import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function FoodTopHeader({
-    location = 'Gurugram, Sector 28',
-    balance = '₹450',
-    avatarUrl = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
+    location = null,
+    balance = null,
     onLocationPress,
     onWalletPress,
     onProfilePress,
@@ -18,15 +17,25 @@ export default function FoodTopHeader({
                 <Text style={styles.logo}>dropp</Text>
 
                 <View style={styles.topRight}>
-                    {/* White wallet pill with border */}
-                    <TouchableOpacity style={styles.walletPill} onPress={onWalletPress} activeOpacity={0.8}>
-                        <Ionicons name="wallet-outline" size={16} color="#0F172A" />
-                        <Text style={styles.walletText}>{balance}</Text>
-                    </TouchableOpacity>
+                    {/* Wallet pill: shows a balance only when a real one is supplied */}
+                    {onWalletPress ? (
+                        <TouchableOpacity style={styles.walletPill} onPress={onWalletPress} activeOpacity={0.8}>
+                            <Ionicons name="wallet-outline" size={16} color="#0F172A" />
+                            {balance ? <Text style={styles.walletText}>{balance}</Text> : null}
+                        </TouchableOpacity>
+                    ) : null}
 
-                    <TouchableOpacity style={styles.bellBtn} onPress={onNotificationPress} activeOpacity={0.7}>
-                        <Ionicons name="notifications-outline" size={26} color="#1E293B" />
-                    </TouchableOpacity>
+                    {onNotificationPress ? (
+                        <TouchableOpacity style={styles.bellBtn} onPress={onNotificationPress} activeOpacity={0.7}>
+                            <Ionicons name="notifications-outline" size={26} color="#1E293B" />
+                        </TouchableOpacity>
+                    ) : null}
+
+                    {onProfilePress ? (
+                        <TouchableOpacity style={styles.bellBtn} onPress={onProfilePress} activeOpacity={0.7}>
+                            <Ionicons name="person-circle-outline" size={28} color="#1E293B" />
+                        </TouchableOpacity>
+                    ) : null}
                 </View>
             </View>
 
@@ -34,7 +43,9 @@ export default function FoodTopHeader({
             <View style={styles.bottomRow}>
                 <TouchableOpacity style={styles.locationPill} onPress={onLocationPress} activeOpacity={0.7}>
                     <Ionicons name="location-sharp" size={16} color="#00C26F" />
-                    <Text style={styles.locationText} numberOfLines={1}>{location}</Text>
+                    <Text style={styles.locationText} numberOfLines={1}>
+                        {location || 'Set delivery location'}
+                    </Text>
                     <Ionicons name="chevron-down" size={13} color="#64748B" />
                 </TouchableOpacity>
             </View>
@@ -116,8 +127,10 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
+        maxWidth: '92%',
     },
     locationText: {
+        flexShrink: 1,
         fontSize: 13,
         fontWeight: '700',
         color: '#1E293B',

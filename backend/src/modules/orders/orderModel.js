@@ -30,6 +30,15 @@ const orderSchema = new mongoose.Schema(
             required: false,
             default: null,
         },
+        // Merchant (seller app store) that fulfils this order. Optional so legacy
+        // restaurant orders keep working; seller queries match restaurantId OR merchantId.
+        merchantId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Merchant',
+            required: false,
+            default: null,
+            index: true,
+        },
         sessionId: { type: String, default: null },
         items: {
             type: [orderItemSchema],
@@ -41,7 +50,7 @@ const orderSchema = new mongoose.Schema(
         totalAmount: { type: Number, required: true },
         status: {
             type: String,
-            enum: ['draft', 'confirmed', 'accepted', 'driver_assigned', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'],
+            enum: ['draft', 'confirmed', 'accepted', 'driver_assigned', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'cancelled'],
             default: 'draft',
             index: true,
         },

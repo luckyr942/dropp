@@ -167,7 +167,7 @@ async function runDeterministicFallback({ text, sessionId }) {
             if (rest) {
               const itemsToAdd = [];
               const parseQty = (pat) => {
-                const m = clean.match(new RegExp(`(\\d+|do|teen|char|paanch|ek|two|three|four|one)\\s+(?:${pat})`, 'i'));
+                const m = clean.match(new RegExp(`(\\d+|do|teen|char|paanch|ek|two|three|four|one)\\s+(?:(?:cold|hot|iced|filter|masala|black|veg|chicken|paneer|cheese)\\s+)?(?:${pat})`, 'i'));
                 if (!m) return 1;
                 const w = m[1].toLowerCase();
                 return ({ do: 2, two: 2, teen: 3, three: 3, char: 4, four: 4, paanch: 5, five: 5, ek: 1, one: 1 }[w] ?? parseInt(w, 10)) || 1;
@@ -260,7 +260,7 @@ async function runDeterministicFallback({ text, sessionId }) {
           const itemsToAdd = [];
 
           function parseQty(keywordPattern) {
-            const m = clean.match(new RegExp(`(\\d+|do|teen|char|paanch|ek|two|three|four|one)\\s+(?:${keywordPattern})`, 'i'));
+            const m = clean.match(new RegExp(`(\\d+|do|teen|char|paanch|ek|two|three|four|one)\\s+(?:(?:cold|hot|iced|filter|masala|black|veg|chicken|paneer|cheese)\\s+)?(?:${keywordPattern})`, 'i'));
             if (!m) return 1;
             const w = m[1].toLowerCase();
             return ({ do: 2, two: 2, teen: 3, three: 3, char: 4, four: 4, paanch: 5, five: 5, ek: 1, one: 1 }[w] ?? parseInt(w, 10)) || 1;
@@ -377,6 +377,7 @@ export async function runBrain({ conversation, sessionId }) {
     toolCallsMade.length = 0;
     let rideEstimateResult = null;
     let rideBookedResult = null;
+    let rideComparisonResult = null;
     let draftOrderResult = null;
     let restaurantsResult = null;
 
@@ -437,6 +438,9 @@ export async function runBrain({ conversation, sessionId }) {
           }
           if (name === 'book_ride' && !result.error) {
             rideBookedResult = safeResult;
+          }
+          if (name === 'compare_rides' && !result.error) {
+            rideComparisonResult = safeResult;
           }
 
           functionResponses.push({
@@ -524,6 +528,8 @@ export async function runBrain({ conversation, sessionId }) {
             restaurants: restaurantsResult,
           },
         };
+      } else if (rideComparisonResult) {
+        screenAction = { type: 'RIDE_COMPARISON', data: { ...rideComparisonResult, bookedRide: rideBookedResult, handoff: null } };
       } else if (rideBookedResult) {
         screenAction = { type: 'RIDE_BOOKED', data: rideBookedResult };
       } else if (rideEstimateResult) {

@@ -1,7 +1,9 @@
 import React from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, LogBox } from 'react-native';
+
+LogBox.ignoreAllLogs(true);
 import { ThemeProvider } from './src/theme/themeContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { Ionicons } from '@expo/vector-icons';

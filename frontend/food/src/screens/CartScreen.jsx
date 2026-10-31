@@ -1,734 +1,414 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
     TouchableOpacity,
     ScrollView,
     StyleSheet,
-    TextInput,
-    Alert,
     Image,
     Modal,
     ActivityIndicator,
     StatusBar,
-    Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { authenticatedFetch } from '../../../shared/utils/authenticatedFetch';
-import { getCustomerId } from '../../../shared/utils/authStorage';
+import { createDraftOrder, confirmOrder } from '../api/foodApi';
+import AddressSheet from '../components/AddressSheet';
+import { loadDeliveryAddress, formatAddress } from '../utils/deliveryAddress';
 
-// ─── Dynamic Image Resolver for Real Food Items ─────────────────────────────
-export const getItemImageSource = (item) => {
-    // 1. Direct restaurant image URL (Unsplash or backend CDN)
-    const rawImage = item?.image || item?.imageUrl || item?.photo;
-    if (typeof rawImage === 'string' && rawImage.trim().startsWith('http')) {
-        return { uri: rawImage.trim() };
-    }
-    // 2. Direct local asset require(...)
-    if (typeof rawImage === 'number') {
-        return rawImage;
-    }
+const rupees = (n) => `₹${Math.round(Number(n) || 0)}`;
 
-    // 3. Smart dish-name fallback mapping for realistic dynamic rendering
-    const name = (item?.name || item?.category || '').toLowerCase();
-    if (/coffee|brew|espresso|cappuccino|latte/i.test(name)) {
-        return { uri: 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=600&auto=format&fit=crop&q=80' };
-    }
-    if (/chai|tea|masala chai/i.test(name)) {
-        return { uri: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=600&auto=format&fit=crop&q=80' };
-    }
-    if (/dosa|idli|vada|uttapam/i.test(name)) {
-        return { uri: 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?w=600&auto=format&fit=crop&q=80' };
-    }
-    if (/biryani|rice|pulao/i.test(name)) {
-        return { uri: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=600&auto=format&fit=crop&q=80' };
-    }
-    if (/pizza/i.test(name)) {
-        return { uri: 'https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?w=600&auto=format&fit=crop&q=80' };
-    }
-    if (/burger/i.test(name)) {
-        return { uri: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=600&auto=format&fit=crop&q=80' };
-    }
-    if (/cake|dessert|lava|brownie|sweet|gulab/i.test(name)) {
-        return { uri: 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=600&auto=format&fit=crop&q=80' };
-    }
-    if (/croissant|snack|bread|toast|sandwich/i.test(name)) {
-        return { uri: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=600&auto=format&fit=crop&q=80' };
-    }
-    if (/paneer|thali|curry|dal/i.test(name)) {
-        return { uri: 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=600&auto=format&fit=crop&q=80' };
-    }
-
-    // Generic authentic gourmet dish fallback
-    return { uri: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80' };
-};
-
+/**
+ * Checkout flow:
+ *  1. Customer reviews items + confirms a delivery address (saved on device).
+ *  2. "Review bill" creates a draft order. The backend prices every item from
+ *     the catalog and returns subtotal / deliveryFee / totalAmount.
+ *  3. The bill sheet shows exactly that draft; "Place order" confirms it.
+ * A draft is reused while the cart and address are unchanged.
+ */
 export default function CartScreen({
-    cart = {
-        '1': {
-            id: '1',
-            name: 'Chocolate Lava Cake',
-            price: 179,
-            quantity: 4,
-            isVeg: true,
-            image: 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=600&auto=format&fit=crop&q=80',
-        },
-    },
+    cart = {},
     restaurant = null,
     onBack,
+    onBrowse,
     onPlaceOrder,
     onUpdateQuantity,
 }) {
-    // ─── State ──────────────────────────────────────────────────────────────
-    const [couponApplied, setCouponApplied] = useState(true);
-    const [discountAmount, setDiscountAmount] = useState(50);
-    const [couponCode, setCouponCode] = useState('DROPP50');
-    const [specialInstructions, setSpecialInstructions] = useState('');
-    const [showPaymentSheet, setShowPaymentSheet] = useState(false);
-    const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('COD');
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [address, setAddress] = useState(null);
+    const [addressLoaded, setAddressLoaded] = useState(false);
+    const [showAddressSheet, setShowAddressSheet] = useState(false);
 
-    // ─── Customer identity (resolved from AsyncStorage on mount) ────────────
-    const [customerId, setCustomerId] = useState(null);
+    const [draft, setDraft] = useState(null); // { key, order }
+    const [quoting, setQuoting] = useState(false);
+    const [placing, setPlacing] = useState(false);
+    const [error, setError] = useState(null);
+    const [showBillSheet, setShowBillSheet] = useState(false);
 
-    // ─── Delivery address (resolved once on mount) ───────────────────────────
-    // For the demo we use a canonical address that travels with the customer ID.
-    // When a real address management API exists, replace this with a fetch call.
-    const deliveryAddress = {
-        street: 'Sector 28, Golf Course Road',
-        city: 'Gurugram',
-        pincode: '122002',
-        label: 'Home',
-    };
-
-    // Load the real customer ID on first render
     useEffect(() => {
-        getCustomerId().then(setCustomerId).catch(() => {});
+        let alive = true;
+        loadDeliveryAddress().then((a) => {
+            if (!alive) return;
+            setAddress(a);
+            setAddressLoaded(true);
+        });
+        return () => { alive = false; };
     }, []);
 
-    // ─── Safe Computations ──────────────────────────────────────────────────
     const items = Object.values(cart || {}).filter((i) => i && i.quantity > 0);
     const totalItemCount = items.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
-    const itemTotal = items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0);
-    const deliveryPartnerFeeOriginal = 29;
-    const taxesAndGst = 24;
-    const finalDiscount = couponApplied ? discountAmount : 0;
-    const totalToPay = Math.max(0, itemTotal + taxesAndGst - finalDiscount);
+    const itemEstimate = items.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0);
+    const restaurantId = items[0]?.restaurantId || restaurant?._id || restaurant?.id || null;
+    const restaurantName = items[0]?.restaurantName || restaurant?.name || '';
 
-    // ─── Actions ────────────────────────────────────────────────────────────
-    const handleAddItems = () => {
-        if (onBack) onBack();
-    };
+    // Identity of the current cart+address; a draft is only valid for the same key
+    const cartKey = useMemo(
+        () => JSON.stringify({
+            r: restaurantId,
+            i: items.map((i) => [i.id, i.quantity]).sort(),
+            a: address ? [address.street, address.city, address.pincode] : null,
+        }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [cart, address, restaurantId]
+    );
+    const currentDraft = draft && draft.key === cartKey ? draft.order : null;
 
-    const handleConfirmPaymentAndOrder = async () => {
-        if (isSubmitting) return;
-
-        // ── Precondition guards ──────────────────────────────────────────────
-        if (items.length === 0) {
-            Alert.alert('Empty cart', 'Please add items before checking out.');
+    const requestBill = async () => {
+        if (quoting || placing) return;
+        setError(null);
+        if (items.length === 0) return;
+        if (!address) {
+            setShowAddressSheet(true);
             return;
         }
-        if (!restaurant?._id && !restaurant?.id) {
-            Alert.alert(
-                'Restaurant unavailable',
-                'Please return to the restaurant and select your items again.'
-            );
+        if (currentDraft) {
+            setShowBillSheet(true);
             return;
         }
-
-        setIsSubmitting(true);
+        setQuoting(true);
         try {
-            // ── Step 1: Create draft order ──────────────────────────────────
-            // authenticatedFetch automatically attaches the real customerId
-            // via x-customer-id header — the backend reads it as the caller.
-            const draftJson = await authenticatedFetch('/api/orders/draft', {
-                method: 'POST',
-                body: JSON.stringify({
-                    orderType: 'FOOD',
-                    restaurantId: restaurant?._id || restaurant?.id,
-                    restaurantName: restaurant?.name || '',
-                    items: items.map((i) => ({
-                        id: i.id,
-                        name: i.name,
-                        price: Number(i.price) || 0,
-                        quantity: Number(i.quantity) || 1,
-                        unitPrice: Number(i.price) || 0,
-                        totalPrice: (Number(i.price) || 0) * (Number(i.quantity) || 1),
-                        image: i.image || i.imageUrl || '',
-                        isVeg: i.isVeg !== false,
-                    })),
-                    deliveryAddress,
-                    paymentMethod: selectedPaymentMethod,
-                    specialInstructions: specialInstructions.trim(),
-                    couponCode: couponApplied ? couponCode : null,
-                }),
+            const order = await createDraftOrder({
+                restaurantId,
+                restaurantName,
+                items,
+                deliveryAddress: { street: address.street, city: address.city, pincode: address.pincode },
             });
-
-            if (!draftJson.success || !draftJson.data?._id) {
-                throw new Error(draftJson.error || 'Server did not return a valid draft order.');
-            }
-
-            const draftOrder = draftJson.data;
-
-            // ── Step 2: Confirm the order ──────────────────────────────────
-            const confirmJson = await authenticatedFetch(
-                `/api/orders/${draftOrder._id}/confirm`,
-                { method: 'POST', body: JSON.stringify({}) }
-            );
-
-            const finalOrder = confirmJson.data || draftOrder;
-
-            // ── Step 3: Navigate to tracking ─────────────────────────────
-            setShowPaymentSheet(false);
-            if (onPlaceOrder) {
-                onPlaceOrder(finalOrder);
-            }
-
+            if (!order?._id) throw new Error('The server did not return an order.');
+            setDraft({ key: cartKey, order });
+            setShowBillSheet(true);
         } catch (err) {
-            // ⚠️ A failed request must NOT navigate forward.
-            // Show the real error and stay on this screen.
-            console.error('[CartScreen] Checkout failed:', err.message);
-            Alert.alert(
-                'Order failed',
-                err.message || 'Something went wrong. Please try again.',
-                [{ text: 'OK' }]
-            );
+            setError(err?.message || 'Could not prepare your bill. Please try again.');
         } finally {
-            setIsSubmitting(false);
+            setQuoting(false);
         }
-        // NOTE: There is intentionally no fallback navigation here.
-        // If the request failed, the user stays on CartScreen and sees the error.
     };
+
+    const placeOrder = async () => {
+        if (!currentDraft || placing) return;
+        setPlacing(true);
+        setError(null);
+        try {
+            const confirmed = await confirmOrder(currentDraft._id);
+            setShowBillSheet(false);
+            onPlaceOrder?.({
+                ...currentDraft,
+                ...(confirmed || {}),
+                restaurantName: currentDraft.restaurantName || restaurantName,
+            });
+        } catch (err) {
+            // Stay on this screen; the draft is still valid unless the server says otherwise
+            setError(err?.message || 'Could not place your order. Please try again.');
+        } finally {
+            setPlacing(false);
+        }
+    };
+
+    const etaText = restaurant?.time || (restaurant?.deliveryTimeMins ? `${restaurant.deliveryTimeMins} min` : null);
+
+    // ─── Empty cart ─────────────────────────────────────────────────────────
+    if (items.length === 0) {
+        return (
+            <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
+                <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+                <Header onBack={onBack} subtitle="Your basket" />
+                <View style={styles.emptyWrap}>
+                    <View style={styles.emptyIcon}>
+                        <Ionicons name="bag-handle-outline" size={40} color="#008744" />
+                    </View>
+                    <Text style={styles.emptyTitle}>Your basket is empty</Text>
+                    <Text style={styles.emptyText}>Add dishes from a restaurant to see them here.</Text>
+                    <TouchableOpacity style={styles.primaryBtn} onPress={onBrowse || onBack} activeOpacity={0.88}>
+                        <Text style={styles.primaryBtnText}>Browse restaurants</Text>
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
+        );
+    }
 
     return (
-        <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeContainer}>
+        <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
             <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+            <Header
+                onBack={onBack}
+                subtitle={`${totalItemCount} ${totalItemCount === 1 ? 'item' : 'items'}${restaurantName ? ` from ${restaurantName}` : ''}`}
+            />
 
-            {/* ═════════════════════════════════════════════════════════════════
-                1. TOP HEADER (Back Button + Title + Subtitle)
-            ═════════════════════════════════════════════════════════════════ */}
-            <View style={styles.header}>
-                <TouchableOpacity
-                    style={styles.backButton}
-                    onPress={onBack}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                >
-                    <Ionicons name="arrow-back" size={20} color="#0F172A" />
-                </TouchableOpacity>
-
-                <View style={styles.headerTitleContainer}>
-                    <Text style={styles.headerTitle}>Review order</Text>
-                    <Text style={styles.headerSubtitle}>
-                        {totalItemCount} {totalItemCount === 1 ? 'item' : 'items'} in your basket
-                    </Text>
-                </View>
-
-                <View style={styles.headerRightSpacer} />
-            </View>
-
-            {/* ═════════════════════════════════════════════════════════════════
-                2. 3-STEP PROGRESS STEPPER (Cart ✓ ─── Review ◎ ─── Payment ○)
-            ═════════════════════════════════════════════════════════════════ */}
-            <View style={styles.stepperSection}>
-                <View style={styles.stepperNodesRow}>
-                    {/* Step 1: Cart (Completed) */}
-                    <View style={styles.stepNodeCol}>
-                        <View style={[styles.stepCircle, styles.stepCircleCompleted]}>
-                            <Ionicons name="checkmark" size={13} color="#FFFFFF" />
-                        </View>
-                        <Text style={styles.stepLabelInactive}>Cart</Text>
-                    </View>
-
-                    {/* Connecting Line 1 */}
-                    <View style={[styles.stepLine, styles.stepLineActive]} />
-
-                    {/* Step 2: Review (Current Active) */}
-                    <View style={styles.stepNodeCol}>
-                        <View style={[styles.stepCircle, styles.stepCircleActiveRing]}>
-                            <View style={styles.stepInnerDotActive} />
-                        </View>
-                        <Text style={styles.stepLabelActive}>Review</Text>
-                    </View>
-
-                    {/* Connecting Line 2 */}
-                    <View style={styles.stepLine} />
-
-                    {/* Step 3: Payment (Pending) */}
-                    <View style={styles.stepNodeCol}>
-                        <View style={[styles.stepCircle, styles.stepCirclePending]} />
-                        <Text style={styles.stepLabelInactive}>Payment</Text>
-                    </View>
-                </View>
-            </View>
-
-            {/* ═════════════════════════════════════════════════════════════════
-                3. MAIN SCROLLABLE CONTENT CARDS
-            ═════════════════════════════════════════════════════════════════ */}
             <ScrollView
-                style={styles.scrollView}
+                style={{ flex: 1 }}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
-                {/* ── CARD A: DELIVERING TO ADDRESS & ETA ── */}
+                {/* ── Address ── */}
                 <View style={styles.card}>
                     <View style={styles.addressRow}>
-                        <View style={styles.addressIconCircle}>
-                            <Ionicons name="home" size={20} color="#008744" />
+                        <View style={styles.iconCircle}>
+                            <Ionicons
+                                name={address?.label === 'Work' ? 'briefcase' : address ? 'home' : 'location'}
+                                size={19}
+                                color="#008744"
+                            />
                         </View>
-
-                        <View style={styles.addressDetailsCol}>
-                            <Text style={styles.addressLabelSmall}>Delivering to</Text>
-                            <Text style={styles.addressMainTitle}>
-                                {deliveryAddress.label} •{' '}
-                                <Text style={styles.addressSubBold}>{deliveryAddress.street}</Text>
-                            </Text>
-                            <Text style={styles.addressSecondaryText}>
-                                {deliveryAddress.city}, Haryana {deliveryAddress.pincode}
-                            </Text>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.smallLabel}>Delivering to</Text>
+                            {!addressLoaded ? (
+                                <View style={[styles.skeletonLine, { width: '70%', marginTop: 6 }]} />
+                            ) : address ? (
+                                <>
+                                    <Text style={styles.addressTitle} numberOfLines={2}>
+                                        {address.label} • {address.street}
+                                    </Text>
+                                    <Text style={styles.addressSub} numberOfLines={1}>
+                                        {[address.city, address.pincode].filter(Boolean).join(' ')}
+                                    </Text>
+                                </>
+                            ) : (
+                                <Text style={styles.addressMissing}>Add a delivery address to continue</Text>
+                            )}
                         </View>
-
-                        <TouchableOpacity style={styles.changePillBtn} activeOpacity={0.75}>
-                            <Text style={styles.changePillText}>Change</Text>
+                        <TouchableOpacity
+                            style={styles.pillBtn}
+                            onPress={() => setShowAddressSheet(true)}
+                            activeOpacity={0.75}
+                        >
+                            <Text style={styles.pillBtnText}>{address ? 'Change' : 'Add'}</Text>
                         </TouchableOpacity>
                     </View>
-
-                    <View style={styles.cardInnerDivider} />
-
-                    <View style={styles.deliveryEtaRow}>
-                        <Ionicons name="time-outline" size={16} color="#64748B" />
-                        <Text style={styles.deliveryEtaText}>
-                            Delivery in <Text style={styles.deliveryEtaHighlight}>20 – 30 mins</Text>
-                        </Text>
-                    </View>
+                    {etaText ? (
+                        <>
+                            <View style={styles.divider} />
+                            <View style={styles.inlineRow}>
+                                <Ionicons name="time-outline" size={16} color="#64748B" />
+                                <Text style={styles.mutedText}>
+                                    Usually delivered in <Text style={styles.strongText}>{etaText}</Text>
+                                </Text>
+                            </View>
+                        </>
+                    ) : null}
                 </View>
 
-                {/* ── CARD B: ORDER ITEMS LIST (DYNAMIC FROM REAL RESTAURANT) ── */}
+                {/* ── Items ── */}
                 <View style={styles.card}>
                     <View style={styles.cardHeaderRow}>
-                        <View style={styles.cardHeaderTitleGroup}>
+                        <View style={styles.inlineRow}>
                             <Ionicons name="bag-handle-outline" size={19} color="#0F172A" />
-                            <Text style={styles.cardHeaderTitle}>Order items ({items.length})</Text>
+                            <Text style={styles.cardTitle}>Order items</Text>
                         </View>
-
-                        <TouchableOpacity
-                            style={styles.addItemsBtn}
-                            onPress={handleAddItems}
-                            activeOpacity={0.7}
-                        >
+                        <TouchableOpacity style={styles.addItemsBtn} onPress={onBack} activeOpacity={0.7}>
                             <Ionicons name="add" size={16} color="#008744" />
-                            <Text style={styles.addItemsBtnText}>Add items</Text>
+                            <Text style={styles.addItemsText}>Add items</Text>
                         </TouchableOpacity>
                     </View>
 
-                    {items.length === 0 ? (
-                        <View style={styles.emptyCartBox}>
-                            <Ionicons name="cart-outline" size={44} color="#CBD5E1" />
-                            <Text style={styles.emptyCartTitle}>Your basket is empty</Text>
-                            <TouchableOpacity style={styles.browseMenuBtn} onPress={handleAddItems}>
-                                <Text style={styles.browseMenuBtnText}>Explore Menu →</Text>
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
-                        items.map((item, index) => {
-                            const isVeg = item.isVeg !== false;
-                            const imageSource = getItemImageSource(item);
-
-                            return (
-                                <View key={item.id || `cart-item-${index}`}>
-                                    <View style={styles.itemRow}>
-                                        {/* Dynamic Dish Image */}
-                                        <Image
-                                            source={imageSource}
-                                            style={styles.itemImage}
-                                            resizeMode="cover"
-                                        />
-
-                                        {/* Item Info */}
-                                        <View style={styles.itemDetailsCol}>
-                                            <View style={styles.itemTitleRow}>
-                                                {/* Veg / Non-Veg Indicator */}
-                                                <View style={[styles.vegBadge, !isVeg && styles.nonVegBadge]}>
-                                                    {isVeg ? (
-                                                        <View style={styles.vegDot} />
-                                                    ) : (
-                                                        <View style={styles.nonVegTriangle} />
-                                                    )}
-                                                </View>
-
-                                                <Text style={styles.itemNameText} numberOfLines={2}>
-                                                    {item.name}
-                                                </Text>
+                    {items.map((item, index) => {
+                        const isVeg = item.isVeg !== false;
+                        return (
+                            <View key={item.id}>
+                                <View style={styles.itemRow}>
+                                    {item.image ? (
+                                        <Image source={{ uri: item.image }} style={styles.itemImage} resizeMode="cover" />
+                                    ) : (
+                                        <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
+                                            <Ionicons name="fast-food-outline" size={22} color="#94A3B8" />
+                                        </View>
+                                    )}
+                                    <View style={{ flex: 1, gap: 4 }}>
+                                        <View style={styles.inlineRow}>
+                                            <View style={[styles.vegBox, { borderColor: isVeg ? '#00A859' : '#EF4444' }]}>
+                                                <View style={[styles.vegDot, { backgroundColor: isVeg ? '#00A859' : '#EF4444' }]} />
                                             </View>
-
-                                            <Text style={styles.itemUnitPriceText}>
-                                                ₹{item.price}{' '}
-                                                <Text style={styles.itemEachSuffix}>each</Text>
-                                            </Text>
+                                            <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
                                         </View>
-
-                                        {/* Stepper capsule [ -  4  + ] */}
-                                        <View style={styles.stepperContainer}>
-                                            <TouchableOpacity
-                                                style={styles.stepperButton}
-                                                onPress={() => onUpdateQuantity && onUpdateQuantity(item.id, -1)}
-                                                activeOpacity={0.65}
-                                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                            >
-                                                <Ionicons name="remove" size={15} color="#008744" />
-                                            </TouchableOpacity>
-
-                                            <Text style={styles.stepperQtyText}>{item.quantity}</Text>
-
-                                            <TouchableOpacity
-                                                style={styles.stepperButton}
-                                                onPress={() => onUpdateQuantity && onUpdateQuantity(item.id, 1)}
-                                                activeOpacity={0.65}
-                                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                            >
-                                                <Ionicons name="add" size={15} color="#008744" />
-                                            </TouchableOpacity>
-                                        </View>
+                                        <Text style={styles.itemPrice}>
+                                            {rupees(item.price)} <Text style={styles.mutedSmall}>each</Text>
+                                        </Text>
                                     </View>
-
-                                    {index < items.length - 1 && <View style={styles.itemDivider} />}
+                                    <View style={styles.stepper}>
+                                        <TouchableOpacity
+                                            style={styles.stepperBtn}
+                                            onPress={() => onUpdateQuantity?.(item.id, -1)}
+                                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                        >
+                                            <Ionicons name={item.quantity === 1 ? 'trash-outline' : 'remove'} size={15} color="#008744" />
+                                        </TouchableOpacity>
+                                        <Text style={styles.stepperQty}>{item.quantity}</Text>
+                                        <TouchableOpacity
+                                            style={styles.stepperBtn}
+                                            onPress={() => onUpdateQuantity?.(item.id, 1)}
+                                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                        >
+                                            <Ionicons name="add" size={15} color="#008744" />
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
-                            );
-                        })
-                    )}
+                                {index < items.length - 1 && <View style={styles.divider} />}
+                            </View>
+                        );
+                    })}
                 </View>
 
-                {/* ── CARD C: SPECIAL INSTRUCTIONS ── */}
-                <TouchableOpacity
-                    style={styles.card}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                        Alert.prompt
-                            ? Alert.prompt(
-                                'Special Instructions',
-                                'E.g. Leave at door, extra napkins, less spicy...',
-                                (text) => setSpecialInstructions(text || ''),
-                                'plain-text',
-                                specialInstructions
-                            )
-                            : null;
-                    }}
-                >
-                    <View style={styles.specialInstructionsRow}>
-                        <View style={styles.specialInstructionsLeft}>
-                            <Ionicons name="document-text-outline" size={19} color="#0F172A" />
-                            <View style={styles.specialInstructionsTexts}>
-                                <Text style={styles.instructionsTitle}>
-                                    Special instructions <Text style={styles.instructionsOptional}>(optional)</Text>
-                                </Text>
-                                <Text style={styles.instructionsPlaceholder} numberOfLines={1}>
-                                    {specialInstructions || 'E.g. Leave at door, extra napkins, less spicy...'}
-                                </Text>
-                            </View>
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-                    </View>
-                </TouchableOpacity>
-
-                {/* ── CARD D: OFFERS & DISCOUNTS ── */}
+                {/* ── Bill ── */}
                 <View style={styles.card}>
-                    <View style={styles.offersHeaderRow}>
-                        <View style={styles.offersHeaderLeft}>
-                            <View style={styles.percentBadge}>
-                                <Ionicons name="pricetag" size={14} color="#FFFFFF" />
-                            </View>
-                            <Text style={styles.cardSectionTitle}>Offers & discounts</Text>
-                        </View>
+                    <View style={[styles.inlineRow, { marginBottom: 6 }]}>
+                        <Ionicons name="receipt-outline" size={19} color="#0F172A" />
+                        <Text style={styles.cardTitle}>Bill summary</Text>
                     </View>
-
-                    {couponApplied ? (
-                        <View style={styles.appliedPromoCard}>
-                            <View style={styles.appliedPromoLeft}>
-                                <View style={styles.appliedPromoIconBox}>
-                                    <Ionicons name="receipt" size={16} color="#008744" />
-                                </View>
-                                <View style={styles.appliedPromoTextCol}>
-                                    <Text style={styles.appliedCodeTitle}>{couponCode} applied</Text>
-                                    <Text style={styles.appliedSavingsSub}>
-                                        You saved <Text style={styles.boldGreen}>₹{discountAmount}</Text> on this order
-                                    </Text>
-                                </View>
-                            </View>
-
-                            <TouchableOpacity
-                                style={styles.changeCouponPill}
-                                onPress={() => {
-                                    setCouponApplied(false);
-                                    Alert.alert('Coupon Removed', 'You can apply another promo code at checkout.');
-                                }}
-                                activeOpacity={0.7}
-                            >
-                                <Text style={styles.changeCouponText}>Change</Text>
-                            </TouchableOpacity>
-                        </View>
+                    {currentDraft ? (
+                        <BillLines order={currentDraft} />
                     ) : (
-                        <TouchableOpacity
-                            style={styles.applyCouponRow}
-                            onPress={() => {
-                                setCouponApplied(true);
-                                setDiscountAmount(50);
-                                setCouponCode('DROPP50');
-                            }}
-                            activeOpacity={0.8}
-                        >
-                            <Ionicons name="gift-outline" size={18} color="#008744" />
-                            <Text style={styles.applyCouponActionText}>Apply 'DROPP50' for ₹50 off</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-
-                {/* ── CARD E: BILL SUMMARY ── */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeaderTitleGroup}>
-                        <Ionicons name="newspaper-outline" size={19} color="#0F172A" />
-                        <Text style={styles.cardSectionTitle}>Bill summary</Text>
-                    </View>
-
-                    {/* Item Total */}
-                    <View style={styles.billLineRow}>
-                        <Text style={styles.billLineLabel}>
-                            Item total ({totalItemCount} {totalItemCount === 1 ? 'item' : 'items'})
-                        </Text>
-                        <Text style={styles.billLineValue}>₹{itemTotal}</Text>
-                    </View>
-
-                    {/* Delivery Partner Fee */}
-                    <View style={styles.billLineRow}>
-                        <View style={styles.billLabelWithInfo}>
-                            <Text style={styles.billLineLabel}>Delivery partner fee</Text>
-                            <Ionicons name="information-circle-outline" size={15} color="#94A3B8" />
-                        </View>
-                        <View style={styles.deliveryFeeValueRow}>
-                            <Text style={styles.strikethroughPrice}>₹{deliveryPartnerFeeOriginal}</Text>
-                            <Text style={styles.freeGreenBadge}>FREE</Text>
-                        </View>
-                    </View>
-
-                    {/* Platform & Taxes */}
-                    <View style={styles.billLineRow}>
-                        <View style={styles.billLabelWithInfo}>
-                            <Text style={styles.billLineLabel}>Platform & taxes (GST)</Text>
-                            <Ionicons name="information-circle-outline" size={15} color="#94A3B8" />
-                        </View>
-                        <Text style={styles.billLineValue}>₹{taxesAndGst}</Text>
-                    </View>
-
-                    {/* Coupon Savings */}
-                    {couponApplied && (
-                        <View style={styles.billLineRow}>
-                            <Text style={styles.couponSavingsLabel}>Coupon savings</Text>
-                            <Text style={styles.couponSavingsValue}>- ₹{discountAmount}</Text>
-                        </View>
-                    )}
-
-                    <View style={styles.cardInnerDivider} />
-
-                    {/* Total Amount */}
-                    <View style={styles.grandTotalRow}>
-                        <Text style={styles.grandTotalLabel}>Total amount</Text>
-                        <Text style={styles.grandTotalValue}>₹{totalToPay}</Text>
-                    </View>
-
-                    {/* Savings Green Pill Banner */}
-                    {couponApplied && (
-                        <View style={styles.savingsBanner}>
-                            <Ionicons name="leaf" size={15} color="#008744" />
-                            <Text style={styles.savingsBannerText}>
-                                You are saving ₹{discountAmount} on this order!
+                        <>
+                            <BillRow
+                                label={`Item total (${totalItemCount} ${totalItemCount === 1 ? 'item' : 'items'})`}
+                                value={rupees(itemEstimate)}
+                            />
+                            <BillRow label="Delivery fee" value="At checkout" muted />
+                            <Text style={styles.billNote}>
+                                Final prices and fees are confirmed by the restaurant's live menu when you review the bill.
                             </Text>
-                        </View>
+                        </>
                     )}
                 </View>
 
-                {/* Bottom Padding for Sticky Checkout Bar */}
-                <View style={{ height: 110 }} />
+                {/* ── Payment ── */}
+                <View style={styles.card}>
+                    <View style={styles.inlineRow}>
+                        <View style={[styles.iconCircle, { backgroundColor: '#FEF3C7' }]}>
+                            <MaterialCommunityIcons name="cash" size={20} color="#D97706" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.cardTitle}>Pay on delivery</Text>
+                            <Text style={styles.mutedText}>Cash or UPI to your delivery partner</Text>
+                        </View>
+                        <Ionicons name="checkmark-circle" size={20} color="#008744" />
+                    </View>
+                </View>
+
+                {error ? (
+                    <View style={styles.errorBox}>
+                        <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+                        <Text style={styles.errorText}>{error}</Text>
+                    </View>
+                ) : null}
             </ScrollView>
 
-            {/* ═════════════════════════════════════════════════════════════════
-                4. STICKY BOTTOM CHECKOUT BAR
-            ═════════════════════════════════════════════════════════════════ */}
-            <View style={styles.bottomBarContainer}>
-                <View style={styles.bottomBarRow}>
-                    <View style={styles.totalPayCol}>
-                        <Text style={styles.totalPayLabel}>Total to pay</Text>
-                        <View style={styles.totalPayAmountRow}>
-                            <Text style={styles.totalPayAmount}>₹{totalToPay}</Text>
-                            <Ionicons name="information-circle-outline" size={16} color="#94A3B8" />
-                        </View>
-                    </View>
-
-                    <TouchableOpacity
-                        style={[styles.placeOrderBtn, isSubmitting && { opacity: 0.75 }]}
-                        onPress={() => setShowPaymentSheet(true)}
-                        disabled={isSubmitting || items.length === 0}
-                        activeOpacity={0.88}
-                    >
-                        <Text style={styles.placeOrderBtnText}>Place order</Text>
-                        <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
-                    </TouchableOpacity>
-                </View>
-
-                {/* Trust Footer */}
-                <View style={styles.trustFooterRow}>
-                    <Ionicons name="shield-checkmark-outline" size={13} color="#008744" />
-                    <Text style={styles.trustFooterText}>
-                        Secure payment • UPI • Cards • Cash
+            {/* ── Sticky checkout bar ── */}
+            <View style={styles.bottomBar}>
+                <View style={{ flex: 1 }}>
+                    <Text style={styles.smallLabel}>{currentDraft ? 'Total to pay' : 'Item total'}</Text>
+                    <Text style={styles.bottomAmount}>
+                        {rupees(currentDraft ? currentDraft.totalAmount : itemEstimate)}
                     </Text>
                 </View>
+                <TouchableOpacity
+                    style={[styles.checkoutBtn, (quoting || placing) && { opacity: 0.75 }]}
+                    onPress={requestBill}
+                    disabled={quoting || placing}
+                    activeOpacity={0.88}
+                >
+                    {quoting ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                        <>
+                            <Text style={styles.checkoutText}>{address ? 'Review bill' : 'Add address'}</Text>
+                            <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
+                        </>
+                    )}
+                </TouchableOpacity>
             </View>
 
-            {/* ═════════════════════════════════════════════════════════════════
-                5. SELECT PAYMENT METHOD SHEET MODAL
-            ═════════════════════════════════════════════════════════════════ */}
+            <AddressSheet
+                visible={showAddressSheet}
+                initialAddress={address}
+                onClose={() => setShowAddressSheet(false)}
+                onSaved={(saved) => {
+                    setAddress(saved);
+                    setShowAddressSheet(false);
+                }}
+            />
+
+            {/* ── Server bill + confirm ── */}
             <Modal
-                visible={showPaymentSheet}
+                visible={showBillSheet && !!currentDraft}
                 transparent
                 animationType="slide"
-                onRequestClose={() => setShowPaymentSheet(false)}
+                onRequestClose={() => !placing && setShowBillSheet(false)}
             >
                 <View style={styles.modalBackdrop}>
                     <TouchableOpacity
-                        style={styles.modalDismissArea}
+                        style={{ flex: 1 }}
                         activeOpacity={1}
-                        onPress={() => !isSubmitting && setShowPaymentSheet(false)}
+                        onPress={() => !placing && setShowBillSheet(false)}
                     />
-
-                    <View style={styles.sheetContainer}>
+                    <View style={styles.sheet}>
                         <View style={styles.sheetHandle} />
-
-                        <View style={styles.sheetHeader}>
-                            <Text style={styles.sheetTitle}>Select Payment Method</Text>
+                        <View style={styles.cardHeaderRow}>
+                            <Text style={styles.sheetTitle}>Confirm your order</Text>
                             <TouchableOpacity
-                                onPress={() => setShowPaymentSheet(false)}
-                                disabled={isSubmitting}
+                                onPress={() => setShowBillSheet(false)}
+                                disabled={placing}
                                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
                                 <Ionicons name="close" size={22} color="#64748B" />
                             </TouchableOpacity>
                         </View>
-
-                        {/* Payment Options */}
-                        <View style={styles.paymentMethodsList}>
-                            {/* UPI / GPay */}
-                            <TouchableOpacity
-                                style={[
-                                    styles.paymentOptionCard,
-                                    selectedPaymentMethod === 'UPI' && styles.paymentOptionSelected,
-                                ]}
-                                onPress={() => setSelectedPaymentMethod('UPI')}
-                                activeOpacity={0.8}
-                            >
-                                <View style={styles.paymentOptionLeft}>
-                                    <View style={styles.paymentIconBox}>
-                                        <Ionicons name="flash" size={18} color="#008744" />
-                                    </View>
-                                    <View>
-                                        <Text style={styles.paymentMethodTitle}>UPI / Google Pay / PhonePe</Text>
-                                        <Text style={styles.paymentMethodSub}>Instant payment with zero fees</Text>
-                                    </View>
+                        {currentDraft ? (
+                            <>
+                                <Text style={styles.mutedText} numberOfLines={2}>
+                                    {currentDraft.restaurantName || restaurantName} → {formatAddress(currentDraft.deliveryAddress)}
+                                </Text>
+                                <View style={{ marginTop: 12 }}>
+                                    {currentDraft.items.map((it) => (
+                                        <BillRow
+                                            key={`${it.menuItemId}-${it.name}`}
+                                            label={`${it.quantity} × ${it.name}`}
+                                            value={rupees(it.totalPrice)}
+                                        />
+                                    ))}
+                                    <View style={styles.divider} />
+                                    <BillLines order={currentDraft} />
                                 </View>
-                                <Ionicons
-                                    name={selectedPaymentMethod === 'UPI' ? 'radio-button-on' : 'radio-button-off'}
-                                    size={20}
-                                    color={selectedPaymentMethod === 'UPI' ? '#008744' : '#CBD5E1'}
-                                />
-                            </TouchableOpacity>
-
-                            {/* Dropp Pay Wallet */}
-                            <TouchableOpacity
-                                style={[
-                                    styles.paymentOptionCard,
-                                    selectedPaymentMethod === 'WALLET' && styles.paymentOptionSelected,
-                                ]}
-                                onPress={() => setSelectedPaymentMethod('WALLET')}
-                                activeOpacity={0.8}
-                            >
-                                <View style={styles.paymentOptionLeft}>
-                                    <View style={styles.paymentIconBox}>
-                                        <Ionicons name="wallet-outline" size={18} color="#0284C7" />
-                                    </View>
-                                    <View>
-                                        <Text style={styles.paymentMethodTitle}>Dropp Pay Wallet (₹450)</Text>
-                                        <Text style={styles.paymentMethodSub}>1-tap instant biometric checkout</Text>
-                                    </View>
+                                <View style={[styles.inlineRow, { marginTop: 10 }]}>
+                                    <MaterialCommunityIcons name="cash" size={18} color="#D97706" />
+                                    <Text style={styles.mutedText}>Pay on delivery (cash or UPI)</Text>
                                 </View>
-                                <Ionicons
-                                    name={selectedPaymentMethod === 'WALLET' ? 'radio-button-on' : 'radio-button-off'}
-                                    size={20}
-                                    color={selectedPaymentMethod === 'WALLET' ? '#008744' : '#CBD5E1'}
-                                />
-                            </TouchableOpacity>
-
-                            {/* Credit / Debit Card */}
-                            <TouchableOpacity
-                                style={[
-                                    styles.paymentOptionCard,
-                                    selectedPaymentMethod === 'CARD' && styles.paymentOptionSelected,
-                                ]}
-                                onPress={() => setSelectedPaymentMethod('CARD')}
-                                activeOpacity={0.8}
-                            >
-                                <View style={styles.paymentOptionLeft}>
-                                    <View style={styles.paymentIconBox}>
-                                        <Ionicons name="card-outline" size={18} color="#7C3AED" />
-                                    </View>
-                                    <View>
-                                        <Text style={styles.paymentMethodTitle}>Credit / Debit Card</Text>
-                                        <Text style={styles.paymentMethodSub}>Visa, Mastercard, RuPay</Text>
-                                    </View>
-                                </View>
-                                <Ionicons
-                                    name={selectedPaymentMethod === 'CARD' ? 'radio-button-on' : 'radio-button-off'}
-                                    size={20}
-                                    color={selectedPaymentMethod === 'CARD' ? '#008744' : '#CBD5E1'}
-                                />
-                            </TouchableOpacity>
-
-                            {/* Cash on Delivery */}
-                            <TouchableOpacity
-                                style={[
-                                    styles.paymentOptionCard,
-                                    selectedPaymentMethod === 'COD' && styles.paymentOptionSelected,
-                                ]}
-                                onPress={() => setSelectedPaymentMethod('COD')}
-                                activeOpacity={0.8}
-                            >
-                                <View style={styles.paymentOptionLeft}>
-                                    <View style={styles.paymentIconBox}>
-                                        <MaterialCommunityIcons name="cash" size={19} color="#D97706" />
-                                    </View>
-                                    <View>
-                                        <Text style={styles.paymentMethodTitle}>Cash on Delivery</Text>
-                                        <Text style={styles.paymentMethodSub}>Pay cash or scan QR when delivered</Text>
-                                    </View>
-                                </View>
-                                <Ionicons
-                                    name={selectedPaymentMethod === 'COD' ? 'radio-button-on' : 'radio-button-off'}
-                                    size={20}
-                                    color={selectedPaymentMethod === 'COD' ? '#008744' : '#CBD5E1'}
-                                />
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* Pay Button */}
+                            </>
+                        ) : null}
+                        {error ? (
+                            <View style={[styles.errorBox, { marginHorizontal: 0 }]}>
+                                <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+                                <Text style={styles.errorText}>{error}</Text>
+                            </View>
+                        ) : null}
                         <TouchableOpacity
-                            style={[styles.confirmPayBtn, isSubmitting && { opacity: 0.75 }]}
-                            onPress={handleConfirmPaymentAndOrder}
-                            disabled={isSubmitting}
+                            style={[styles.confirmBtn, placing && { opacity: 0.75 }]}
+                            onPress={placeOrder}
+                            disabled={placing}
                             activeOpacity={0.88}
                         >
-                            {isSubmitting ? (
+                            {placing ? (
                                 <ActivityIndicator size="small" color="#FFFFFF" />
                             ) : (
                                 <>
-                                    <Text style={styles.confirmPayBtnText}>
-                                        Pay ₹{totalToPay} & Confirm Order
+                                    <Text style={styles.confirmText}>
+                                        Place order • {rupees(currentDraft?.totalAmount)}
                                     </Text>
                                     <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
                                 </>
@@ -741,21 +421,56 @@ export default function CartScreen({
     );
 }
 
-// ─── STYLES (MATCHING SCREENSHOT WITH HIGH-PRECISION TOKENS) ─────────────────
-const styles = StyleSheet.create({
-    safeContainer: {
-        flex: 1,
-        backgroundColor: '#F8FAF9',
-    },
+function Header({ onBack, subtitle }) {
+    return (
+        <View style={styles.header}>
+            <TouchableOpacity
+                style={styles.backButton}
+                onPress={onBack}
+                activeOpacity={0.7}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+                <Ionicons name="arrow-back" size={20} color="#0F172A" />
+            </TouchableOpacity>
+            <View style={{ alignItems: 'center', flex: 1 }}>
+                <Text style={styles.headerTitle}>Review order</Text>
+                {subtitle ? <Text style={styles.headerSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
+            </View>
+            <View style={{ width: 38 }} />
+        </View>
+    );
+}
 
-    // 1. Header
+function BillRow({ label, value, muted, strong }) {
+    return (
+        <View style={styles.billRow}>
+            <Text style={[styles.billLabel, strong && styles.billStrong]} numberOfLines={1}>{label}</Text>
+            <Text style={[styles.billValue, muted && styles.billMuted, strong && styles.billStrong]}>{value}</Text>
+        </View>
+    );
+}
+
+function BillLines({ order }) {
+    return (
+        <>
+            <BillRow label="Item total" value={rupees(order.subtotal)} />
+            <BillRow label="Delivery fee" value={rupees(order.deliveryFee)} />
+            <View style={styles.divider} />
+            <BillRow label="Total amount" value={rupees(order.totalAmount)} strong />
+        </>
+    );
+}
+
+const styles = StyleSheet.create({
+    safe: { flex: 1, backgroundColor: '#F8FAF9' },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
         paddingHorizontal: 16,
         paddingVertical: 12,
         backgroundColor: '#FFFFFF',
+        borderBottomWidth: 1,
+        borderBottomColor: '#F1F5F9',
     },
     backButton: {
         width: 38,
@@ -765,691 +480,187 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    headerTitleContainer: {
-        alignItems: 'center',
-    },
-    headerTitle: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 17,
-        color: '#0F172A',
-    },
-    headerSubtitle: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 12,
-        color: '#64748B',
-        marginTop: 2,
-    },
-    headerRightSpacer: {
-        width: 38,
-    },
+    headerTitle: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 17, color: '#0F172A' },
+    headerSubtitle: { fontFamily: 'PlusJakartaSans_500Medium', fontSize: 12, color: '#64748B', marginTop: 2 },
 
-    // 2. Stepper
-    stepperSection: {
-        backgroundColor: '#FFFFFF',
-        paddingVertical: 12,
-        paddingHorizontal: 24,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F1F5F9',
-    },
-    stepperNodesRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    stepNodeCol: {
-        alignItems: 'center',
-        gap: 4,
-    },
-    stepCircle: {
-        width: 22,
-        height: 22,
-        borderRadius: 11,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    stepCircleCompleted: {
-        backgroundColor: '#008744',
-    },
-    stepCircleActiveRing: {
-        backgroundColor: '#FFFFFF',
-        borderWidth: 2.5,
-        borderColor: '#008744',
-    },
-    stepInnerDotActive: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#008744',
-    },
-    stepCirclePending: {
-        backgroundColor: '#FFFFFF',
-        borderWidth: 1.5,
-        borderColor: '#CBD5E1',
-    },
-    stepLine: {
-        flex: 1,
-        height: 2,
-        backgroundColor: '#E2E8F0',
-        marginHorizontal: 8,
-        marginBottom: 16,
-    },
-    stepLineActive: {
-        backgroundColor: '#008744',
-    },
-    stepLabelActive: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 11,
-        color: '#008744',
-    },
-    stepLabelInactive: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 11,
-        color: '#94A3B8',
-    },
-
-    // 3. Scroll Content
-    scrollView: {
-        flex: 1,
-    },
-    scrollContent: {
-        paddingHorizontal: 16,
-        paddingTop: 12,
-        gap: 12,
-    },
-
-    // Card Base
+    scrollContent: { paddingTop: 14, paddingBottom: 130 },
     card: {
         backgroundColor: '#FFFFFF',
+        marginHorizontal: 16,
+        marginBottom: 12,
         borderRadius: 20,
         padding: 16,
         borderWidth: 1,
-        borderColor: '#EDF2F0',
-        shadowColor: '#000000',
-        shadowOffset: { width: 0, height: 1 },
+        borderColor: '#EEF2EF',
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.03,
-        shadowRadius: 6,
+        shadowRadius: 8,
         elevation: 1,
-        gap: 12,
     },
     cardHeaderRow: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+        marginBottom: 8,
     },
-    cardHeaderTitleGroup: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    cardHeaderTitle: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 15,
-        color: '#0F172A',
-    },
-    cardSectionTitle: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 15,
-        color: '#0F172A',
-    },
-    cardInnerDivider: {
-        height: 1,
-        backgroundColor: '#F1F5F9',
-        marginVertical: 2,
-    },
+    cardTitle: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 15, color: '#0F172A' },
+    inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    divider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 10 },
+    smallLabel: { fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 11.5, color: '#64748B' },
+    mutedText: { fontFamily: 'PlusJakartaSans_500Medium', fontSize: 12.5, color: '#64748B', flexShrink: 1 },
+    mutedSmall: { fontFamily: 'PlusJakartaSans_500Medium', fontSize: 11, color: '#94A3B8' },
+    strongText: { fontFamily: 'PlusJakartaSans_700Bold', color: '#0F172A' },
 
-    // Address Card
-    addressRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    addressIconCircle: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: '#E8F6EF',
+    addressRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    iconCircle: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#ECFDF5',
         alignItems: 'center',
         justifyContent: 'center',
     },
-    addressDetailsCol: {
-        flex: 1,
-        gap: 2,
+    addressTitle: { fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14, color: '#0F172A', marginTop: 2 },
+    addressSub: { fontFamily: 'PlusJakartaSans_500Medium', fontSize: 12, color: '#64748B', marginTop: 2 },
+    addressMissing: { fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14, color: '#B45309', marginTop: 2 },
+    pillBtn: {
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#BBF7D0',
+        backgroundColor: '#F0FDF4',
     },
-    addressLabelSmall: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 11,
-        color: '#64748B',
-    },
-    addressMainTitle: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 13,
-        color: '#0F172A',
-    },
-    addressSubBold: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        color: '#0F172A',
-    },
-    addressSecondaryText: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 11,
-        color: '#64748B',
-    },
-    changePillBtn: {
-        backgroundColor: '#F1F5F9',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 14,
-    },
-    changePillText: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 12,
-        color: '#0F172A',
-    },
-    deliveryEtaRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    deliveryEtaText: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 12,
-        color: '#64748B',
-    },
-    deliveryEtaHighlight: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        color: '#008744',
-    },
+    pillBtnText: { fontFamily: 'PlusJakartaSans_700Bold', fontSize: 12.5, color: '#008744' },
 
-    // Items List
-    addItemsBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        backgroundColor: '#E8F6EF',
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 12,
-    },
-    addItemsBtnText: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 12,
-        color: '#008744',
-    },
-    itemRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        paddingVertical: 4,
-    },
-    itemImage: {
-        width: 60,
-        height: 60,
-        borderRadius: 12,
-        backgroundColor: '#F1F5F9',
-    },
-    itemDetailsCol: {
-        flex: 1,
-        gap: 4,
-    },
-    itemTitleRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    vegBadge: {
+    addItemsBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+    addItemsText: { fontFamily: 'PlusJakartaSans_700Bold', fontSize: 13, color: '#008744' },
+    itemRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 },
+    itemImage: { width: 56, height: 56, borderRadius: 14, backgroundColor: '#F1F5F9' },
+    itemImagePlaceholder: { alignItems: 'center', justifyContent: 'center' },
+    vegBox: {
         width: 14,
         height: 14,
         borderWidth: 1.5,
-        borderColor: '#008744',
         borderRadius: 3,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    nonVegBadge: {
-        borderColor: '#DC2626',
-    },
-    vegDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: '#008744',
-    },
-    nonVegTriangle: {
-        width: 0,
-        height: 0,
-        backgroundColor: 'transparent',
-        borderStyle: 'solid',
-        borderLeftWidth: 3.5,
-        borderRightWidth: 3.5,
-        borderBottomWidth: 6,
-        borderLeftColor: 'transparent',
-        borderRightColor: 'transparent',
-        borderBottomColor: '#DC2626',
-    },
-    itemNameText: {
-        flex: 1,
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 13,
-        color: '#0F172A',
-    },
-    itemUnitPriceText: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 13,
-        color: '#0F172A',
-    },
-    itemEachSuffix: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 11,
-        color: '#94A3B8',
-    },
-    itemDivider: {
-        height: 1,
-        backgroundColor: '#F8FAFC',
-        marginVertical: 8,
-    },
-
-    // Stepper
-    stepperContainer: {
+    vegDot: { width: 6, height: 6, borderRadius: 3 },
+    itemName: { flex: 1, fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14, color: '#0F172A' },
+    itemPrice: { fontFamily: 'PlusJakartaSans_700Bold', fontSize: 13, color: '#0F172A' },
+    stepper: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#F0FAF4',
-        borderWidth: 1,
-        borderColor: '#D4EFE0',
-        borderRadius: 16,
+        gap: 10,
+        backgroundColor: '#ECFDF5',
+        borderRadius: 18,
         paddingHorizontal: 8,
-        paddingVertical: 4,
-        gap: 10,
-    },
-    stepperButton: {
-        padding: 2,
-    },
-    stepperQtyText: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 13,
-        color: '#008744',
-        minWidth: 14,
-        textAlign: 'center',
-    },
-
-    // Empty Cart
-    emptyCartBox: {
-        alignItems: 'center',
-        paddingVertical: 24,
-        gap: 8,
-    },
-    emptyCartTitle: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 14,
-        color: '#64748B',
-    },
-    browseMenuBtn: {
-        backgroundColor: '#008744',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 12,
-        marginTop: 6,
-    },
-    browseMenuBtnText: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 12,
-        color: '#FFFFFF',
-    },
-
-    // Special Instructions
-    specialInstructionsRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    specialInstructionsLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-        flex: 1,
-        marginRight: 8,
-    },
-    specialInstructionsTexts: {
-        flex: 1,
-        gap: 2,
-    },
-    instructionsTitle: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 13,
-        color: '#0F172A',
-    },
-    instructionsOptional: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        color: '#94A3B8',
-        fontSize: 11,
-    },
-    instructionsPlaceholder: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 11,
-        color: '#94A3B8',
-    },
-
-    // Offers & Discounts
-    offersHeaderRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    offersHeaderLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    percentBadge: {
-        width: 22,
-        height: 22,
-        borderRadius: 11,
-        backgroundColor: '#008744',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    appliedPromoCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: '#F0FAF4',
-        borderWidth: 1,
-        borderColor: '#D4EFE0',
-        padding: 12,
-        borderRadius: 14,
-    },
-    appliedPromoLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-        flex: 1,
-    },
-    appliedPromoIconBox: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: '#FFFFFF',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    appliedPromoTextCol: {
-        gap: 2,
-    },
-    appliedCodeTitle: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 13,
-        color: '#065F46',
-    },
-    appliedSavingsSub: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 11,
-        color: '#047857',
-    },
-    boldGreen: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        color: '#008744',
-    },
-    changeCouponPill: {
-        backgroundColor: '#FFFFFF',
-        paddingHorizontal: 12,
         paddingVertical: 6,
-        borderRadius: 12,
         borderWidth: 1,
-        borderColor: '#D4EFE0',
+        borderColor: '#BBF7D0',
     },
-    changeCouponText: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 11,
-        color: '#0F172A',
-    },
-    applyCouponRow: {
+    stepperBtn: { padding: 2 },
+    stepperQty: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 14, color: '#0F172A', minWidth: 16, textAlign: 'center' },
+
+    billRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5, gap: 12 },
+    billLabel: { flex: 1, fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13.5, color: '#475569' },
+    billValue: { fontFamily: 'PlusJakartaSans_700Bold', fontSize: 13.5, color: '#0F172A' },
+    billMuted: { color: '#94A3B8', fontFamily: 'PlusJakartaSans_600SemiBold' },
+    billStrong: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 15.5, color: '#0F172A' },
+    billNote: { fontFamily: 'PlusJakartaSans_500Medium', fontSize: 11.5, color: '#94A3B8', marginTop: 6, lineHeight: 16 },
+
+    errorBox: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        paddingVertical: 4,
-    },
-    applyCouponActionText: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 12,
-        color: '#008744',
-    },
-
-    // Bill Summary
-    billLineRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    billLabelWithInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    billLineLabel: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 12,
-        color: '#64748B',
-    },
-    billLineValue: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 13,
-        color: '#0F172A',
-    },
-    deliveryFeeValueRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    strikethroughPrice: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 12,
-        color: '#94A3B8',
-        textDecorationLine: 'line-through',
-    },
-    freeGreenBadge: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 12,
-        color: '#008744',
-    },
-    couponSavingsLabel: {
-        fontFamily: 'PlusJakartaSans_600SemiBold',
-        fontSize: 12,
-        color: '#008744',
-    },
-    couponSavingsValue: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 13,
-        color: '#008744',
-    },
-    grandTotalRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingTop: 4,
-    },
-    grandTotalLabel: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 16,
-        color: '#0F172A',
-    },
-    grandTotalValue: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 20,
-        color: '#0F172A',
-    },
-    savingsBanner: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        backgroundColor: '#E8F6EF',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 12,
+        backgroundColor: '#FEF2F2',
+        borderWidth: 1,
+        borderColor: '#FECACA',
+        borderRadius: 14,
+        padding: 12,
+        marginHorizontal: 16,
         marginTop: 4,
     },
-    savingsBannerText: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 11,
-        color: '#008744',
-    },
+    errorText: { flex: 1, fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12.5, color: '#B91C1C' },
 
-    // 4. Sticky Bottom Bar
-    bottomBarContainer: {
+    bottomBar: {
         position: 'absolute',
-        bottom: 0,
         left: 0,
         right: 0,
+        bottom: 0,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 16,
         backgroundColor: '#FFFFFF',
-        borderTopWidth: 1,
-        borderTopColor: '#EDF2F0',
         paddingHorizontal: 20,
-        paddingTop: 12,
-        paddingBottom: Platform.OS === 'ios' ? 24 : 14,
-        shadowColor: '#000000',
+        paddingTop: 14,
+        paddingBottom: 30,
+        borderTopWidth: 1,
+        borderTopColor: '#F1F5F9',
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.06,
+        shadowOpacity: 0.05,
         shadowRadius: 10,
-        elevation: 8,
-        gap: 8,
+        elevation: 10,
     },
-    bottomBarRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    totalPayCol: {
-        gap: 2,
-    },
-    totalPayLabel: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 11,
-        color: '#64748B',
-    },
-    totalPayAmountRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    totalPayAmount: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 20,
-        color: '#0F172A',
-    },
-    placeOrderBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#005C30',
-        paddingVertical: 14,
-        paddingHorizontal: 28,
-        borderRadius: 30,
-        gap: 8,
-    },
-    placeOrderBtnText: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 14,
-        color: '#FFFFFF',
-    },
-    trustFooterRow: {
+    bottomAmount: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 20, color: '#0F172A', marginTop: 2 },
+    checkoutBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 6,
+        gap: 8,
+        backgroundColor: '#008744',
+        borderRadius: 26,
+        paddingHorizontal: 24,
+        height: 52,
+        minWidth: 170,
     },
-    trustFooterText: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 11,
-        color: '#64748B',
-    },
+    checkoutText: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 15, color: '#FFFFFF' },
 
-    // 5. Payment Modal Sheet
-    modalBackdrop: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'flex-end',
+    emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 8 },
+    emptyIcon: {
+        width: 84,
+        height: 84,
+        borderRadius: 42,
+        backgroundColor: '#ECFDF5',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 8,
     },
-    modalDismissArea: {
-        flex: 1,
+    emptyTitle: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 18, color: '#0F172A' },
+    emptyText: { fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13.5, color: '#64748B', textAlign: 'center' },
+    primaryBtn: {
+        marginTop: 14,
+        backgroundColor: '#008744',
+        borderRadius: 24,
+        paddingHorizontal: 24,
+        paddingVertical: 13,
     },
-    sheetContainer: {
+    primaryBtnText: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 14, color: '#FFFFFF' },
+    skeletonLine: { height: 12, borderRadius: 6, backgroundColor: '#E2E8F0' },
+
+    modalBackdrop: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
+    sheet: {
         backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 28,
         borderTopRightRadius: 28,
         paddingHorizontal: 20,
-        paddingTop: 12,
-        paddingBottom: Platform.OS === 'ios' ? 36 : 24,
-        gap: 16,
+        paddingTop: 10,
+        paddingBottom: 34,
     },
-    sheetHandle: {
-        width: 44,
-        height: 5,
-        borderRadius: 2.5,
-        backgroundColor: '#CBD5E1',
-        alignSelf: 'center',
-        marginBottom: 4,
-    },
-    sheetHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    sheetTitle: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 17,
-        color: '#0F172A',
-    },
-    paymentMethodsList: {
-        gap: 10,
-    },
-    paymentOptionCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 14,
-        borderRadius: 16,
-        backgroundColor: '#F8FAFC',
-        borderWidth: 1.5,
-        borderColor: '#E2E8F0',
-    },
-    paymentOptionSelected: {
-        backgroundColor: '#F0FAF4',
-        borderColor: '#008744',
-    },
-    paymentOptionLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    paymentIconBox: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: '#FFFFFF',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    paymentMethodTitle: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 13,
-        color: '#0F172A',
-    },
-    paymentMethodSub: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 11,
-        color: '#64748B',
-        marginTop: 1,
-    },
-    confirmPayBtn: {
+    sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#E2E8F0', marginBottom: 12 },
+    sheetTitle: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 18, color: '#0F172A' },
+    confirmBtn: {
+        marginTop: 18,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
+        gap: 8,
         backgroundColor: '#008744',
-        paddingVertical: 16,
-        borderRadius: 20,
-        gap: 10,
-        marginTop: 6,
+        borderRadius: 18,
+        height: 54,
     },
-    confirmPayBtnText: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 15,
-        color: '#FFFFFF',
-    },
+    confirmText: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 15.5, color: '#FFFFFF' },
 });

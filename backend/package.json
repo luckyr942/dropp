@@ -6,10 +6,13 @@
   "scripts": {
     "dev": "node --watch src/main.js",
     "start": "node src/main.js",
-    "seed": "node src/scripts/seed.js"
+    "seed": "node src/scripts/seed.js",
+    "mcp:test": "node src/scripts/mcpSmokeTest.js",
+    "voice:setup": "node src/scripts/setupBolnaSellerAgent.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "amqplib": "^0.10.3",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

@@ -196,7 +196,8 @@ export async function handleRateRide(req, res, next) {
 export async function handleGetLatestDriverOffer(req, res, next) {
     try {
         // Queue-based (supports multiple simultaneous rides)
-        const offer = getLatestOffer() || getLatestDriverOffer();
+        // Queue only: accepted, cancelled and expired offers are removed from it, so they never resurface
+        const offer = getLatestOffer();
         return res.status(200).json({ success: true, data: offer });
     } catch (err) {
         next(err);

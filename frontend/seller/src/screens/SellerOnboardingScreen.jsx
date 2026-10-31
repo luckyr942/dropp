@@ -1,20 +1,13 @@
-import React, { useState } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    TouchableOpacity,
-    ScrollView,
-    TextInput,
-    Image,
-    ActivityIndicator,
-    Alert,
-} from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Colors, Shadows } from '../theme/sellerTheme.js';
+import { Colors, Radius, Shadows, Spacing, Type } from '../theme/sellerTheme.js';
+import { Button, Card, Field } from '../components/ui.jsx';
+import { formatTime24 } from '../utils/format.js';
 import * as sellerApi from '../api/sellerApi.js';
 
+// Must match MERCHANT_CATEGORIES in backend/src/modules/merchants/merchantModel.js
 const CATEGORIES = [
     { id: 'Restaurant & Food', label: 'Restaurant\n& Food', icon: 'silverware-fork-knife', color: '#EA580C', bg: '#FFF7ED' },
     { id: 'Grocery & Supermarket', label: 'Grocery &\nSupermarket', icon: 'cart-outline', color: '#16A34A', bg: '#F0FDF4' },
@@ -26,754 +19,530 @@ const CATEGORIES = [
     { id: 'Other Services', label: 'Other\nServices', icon: 'toolbox-outline', color: '#4B5563', bg: '#F3F4F6' },
 ];
 
-export default function SellerOnboardingScreen({ onFinish, onLogin }) {
-    const [step, setStep] = useState(1); // 1: Welcome, 2: Category, 3: Details, 4: Products, 5: Review, 6: Success
+const PHONE_RX = /^(\+91|91|0)?[6-9]\d{9}$/;
+const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const TIME_RX = /^([01]\d|2[0-3]):[0-5]\d$/;
+const PIN_RX = /^[1-9][0-9]{5}$/;
+const cleanPhone = (p) => p.replace(/[\s-]/g, '');
+
+/**
+ * Seller onboarding.
+ * - Not signed in: Welcome → Account (real /api/auth/register) → Category → Details → Review → Success
+ * - Signed in without a store: Category → Details → Review → Success
+ */
+export default function SellerOnboardingScreen({ user, onFinish, onLogin, onLogout }) {
+    const [account, setAccount] = useState(user || null);
+    const steps = useMemo(
+        () => (user ? ['category', 'details', 'review'] : ['welcome', 'account', 'category', 'details', 'review']),
+        [user]
+    );
+    const [stepIndex, setStepIndex] = useState(0);
+    const [done, setDone] = useState(null); // created store
+    const step = done ? 'success' : steps[stepIndex];
+    const progressSteps = steps.filter((s) => s !== 'welcome');
+
+    // Account
+    const [name, setName] = useState('');
+    const [phone, setPhone] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [accountErrors, setAccountErrors] = useState({});
+
+    // Store
+    const [category, setCategory] = useState(null);
+    const [storeName, setStoreName] = useState('');
+    const [description, setDescription] = useState('');
+    const [storePhone, setStorePhone] = useState(user?.phone ? user.phone.replace(/^\+91/, '') : '');
+    const [openTime, setOpenTime] = useState('');
+    const [closeTime, setCloseTime] = useState('');
+    const [street, setStreet] = useState('');
+    const [area, setArea] = useState('');
+    const [city, setCity] = useState('');
+    const [stateName, setStateName] = useState('');
+    const [pincode, setPincode] = useState('');
+    const [detailErrors, setDetailErrors] = useState({});
+
     const [loading, setLoading] = useState(false);
+    const [formError, setFormError] = useState('');
 
-    // Form state
-    const [category, setCategory] = useState('Grocery & Supermarket');
-    const [storeName, setStoreName] = useState('FreshMart');
-    const [description, setDescription] = useState('Fresh fruits, vegetables and daily essentials delivered to your doorstep.');
-    const [businessHours, setBusinessHours] = useState('09:00 AM - 11:00 PM');
-    const [address, setAddress] = useState('MG Road, Bengaluru, Karnataka');
-    const [phone, setPhone] = useState('9876543210');
-    const [createdStore, setCreatedStore] = useState(null);
+    const next = () => {
+        setFormError('');
+        setStepIndex((i) => Math.min(i + 1, steps.length - 1));
+    };
+    const back = () => {
+        setFormError('');
+        setStepIndex((i) => Math.max(i - 1, 0));
+    };
 
-    // Initial starter products
-    const [sampleProducts, setSampleProducts] = useState([
-        { name: 'Fresh Apple (1 Kg)', price: 120, unit: '1 Kg', stockQuantity: 30, category: 'Fruits' },
-        { name: 'Fresh Milk (1 L)', price: 62, unit: '1 L', stockQuantity: 50, category: 'Dairy' },
-        { name: 'Whole Wheat Bread', price: 45, unit: '400g', stockQuantity: 20, category: 'Bakery' },
-    ]);
+    const submitAccount = async () => {
+        const errs = {};
+        if (name.trim().length < 2) errs.name = 'Enter your full name';
+        if (!PHONE_RX.test(cleanPhone(phone))) errs.phone = 'Enter a valid 10-digit Indian mobile number';
+        if (!EMAIL_RX.test(email.trim())) errs.email = 'Enter a valid email address';
+        if (password.length < 8) errs.password = 'Use at least 8 characters';
+        setAccountErrors(errs);
+        if (Object.keys(errs).length) return;
 
-    const handlePublish = async () => {
         setLoading(true);
+        setFormError('');
         try {
-            // 1. Ensure user registered/authenticated
-            const testEmail = `seller_${Date.now()}@dropp.local`;
-            await sellerApi.registerMerchant({
-                name: storeName,
-                phone: phone.trim(),
-                email: testEmail,
-                password: 'DroppSeller2026#',
-            }).catch(() => {
-                return sellerApi.loginMerchant(phone.trim(), 'DroppSeller2026#');
-            });
-
-            // 2. Create the store
-            const store = await sellerApi.createStore({
-                name: storeName,
-                category,
-                description,
-                address: {
-                    street: address.split(',')[0]?.trim() || 'MG Road',
-                    city: 'Bengaluru',
-                    state: 'Karnataka',
-                    pincode: '560001',
-                },
-                contact: { phone: phone.trim() },
-                openTime: '09:00',
-                closeTime: '23:00',
-            });
-
-            // 3. Add sample products to this store
-            for (const prod of sampleProducts) {
-                await sellerApi.addProduct(store._id, prod).catch(() => null);
-            }
-
-            setCreatedStore(store);
-            setStep(6); // Success screen
+            const created = await sellerApi.register({ name, phone: cleanPhone(phone), email, password });
+            setAccount(created);
+            if (!storePhone) setStorePhone(cleanPhone(phone).slice(-10));
+            next();
         } catch (err) {
-            Alert.alert('Registration Note', err.message);
+            setFormError(err.message);
         } finally {
             setLoading(false);
         }
     };
 
+    const submitDetails = () => {
+        const errs = {};
+        if (storeName.trim().length < 2) errs.storeName = 'Enter your store name';
+        if (!PHONE_RX.test(cleanPhone(storePhone))) errs.storePhone = 'Enter a valid 10-digit mobile number';
+        if (!TIME_RX.test(openTime)) errs.openTime = 'Use HH:mm, e.g. 09:00';
+        if (!TIME_RX.test(closeTime)) errs.closeTime = 'Use HH:mm, e.g. 21:00';
+        if (street.trim().length < 3) errs.street = 'Enter street / building';
+        if (city.trim().length < 2) errs.city = 'Enter city';
+        if (stateName.trim().length < 2) errs.stateName = 'Enter state';
+        if (!PIN_RX.test(pincode.trim())) errs.pincode = 'Enter a valid 6-digit pincode';
+        setDetailErrors(errs);
+        if (!Object.keys(errs).length) next();
+    };
+
+    const publish = async () => {
+        setLoading(true);
+        setFormError('');
+        try {
+            const store = await sellerApi.createStore({
+                name: storeName.trim(),
+                category,
+                ...(description.trim() ? { description: description.trim() } : {}),
+                address: {
+                    street: street.trim(),
+                    ...(area.trim() ? { area: area.trim() } : {}),
+                    city: city.trim(),
+                    state: stateName.trim(),
+                    pincode: pincode.trim(),
+                },
+                contact: { phone: cleanPhone(storePhone), ...(account?.email ? { email: account.email } : {}) },
+                openTime,
+                closeTime,
+            });
+            setDone(store);
+        } catch (err) {
+            setFormError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const progressIndex = progressSteps.indexOf(step);
+    const showHeader = step !== 'welcome' && step !== 'success';
+
     return (
         <SafeAreaView style={styles.container}>
-            {/* Header / Back Navigation */}
-            {step > 1 && step < 6 && (
+            {showHeader && (
                 <View style={styles.wizardHeader}>
-                    <TouchableOpacity onPress={() => setStep(step - 1)} style={styles.backButton}>
-                        <Feather name="chevron-left" size={24} color={Colors.textPrimary} />
-                    </TouchableOpacity>
+                    {stepIndex > 0 && !(account && steps[stepIndex - 1] === 'account') ? (
+                        <TouchableOpacity onPress={back} style={styles.backButton} hitSlop={8}>
+                            <Feather name="chevron-left" size={24} color={Colors.textPrimary} />
+                        </TouchableOpacity>
+                    ) : (
+                        <View style={styles.backButton} />
+                    )}
                     <View style={styles.progressDots}>
-                        {[2, 3, 4, 5].map((s) => (
+                        {progressSteps.map((s, i) => (
                             <View
                                 key={s}
-                                style={[styles.dot, step === s ? styles.dotActive : step > s ? styles.dotDone : null]}
+                                style={[styles.dot, i === progressIndex ? styles.dotActive : i < progressIndex ? styles.dotDone : null]}
                             />
                         ))}
                     </View>
-                    <View style={{ width: 40 }} />
+                    {account && onLogout ? (
+                        <TouchableOpacity onPress={onLogout} hitSlop={8} style={styles.headerLink}>
+                            <Text style={styles.headerLinkText}>Log out</Text>
+                        </TouchableOpacity>
+                    ) : (
+                        <View style={styles.backButton} />
+                    )}
                 </View>
             )}
 
-            {/* ════ SCREEN 1: WELCOME ════ */}
-            {step === 1 && (
-                <View style={styles.screenInner}>
-                    <View style={styles.welcomeTop}>
-                        <View style={styles.brandRow}>
-                            <View style={styles.logoCircle}>
-                                <Ionicons name="storefront-outline" size={28} color={Colors.primary} />
-                            </View>
-                            <Text style={styles.brandTitle}>Dropp</Text>
-                        </View>
-                        <Text style={styles.heroHeading}>Become a Seller</Text>
-                        <Text style={styles.heroSubheading}>
-                            List your business and reach thousands of customers on Dropp
-                        </Text>
-                    </View>
-
-                    <View style={styles.illustrationWrapper}>
-                        <Image
-                            source={{ uri: 'https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=800&auto=format&fit=crop&q=80' }}
-                            style={styles.heroImage}
-                        />
-                    </View>
-
-                    <View style={styles.bottomCta}>
-                        <TouchableOpacity
-                            style={[styles.primaryButton, Shadows.button]}
-                            activeOpacity={0.88}
-                            onPress={() => setStep(2)}
-                        >
-                            <Text style={styles.primaryButtonText}>Get Started</Text>
-                            <Feather name="arrow-right" size={18} color="#FFFFFF" />
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={styles.loginLink} onPress={() => setStep(2)}>
-                            <Text style={styles.loginText}>
-                                Already have an account? <Text style={styles.loginHighlight}>Login</Text>
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            )}
-
-            {/* ════ SCREEN 2: CHOOSE BUSINESS TYPE ════ */}
-            {step === 2 && (
-                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                    <Text style={styles.stepTitle}>Choose Your Business Type</Text>
-                    <Text style={styles.stepSubtitle}>Select the category that best describes your business</Text>
-
-                    <View style={styles.categoryGrid}>
-                        {CATEGORIES.map((cat) => {
-                            const selected = category === cat.id;
-                            return (
-                                <TouchableOpacity
-                                    key={cat.id}
-                                    style={[
-                                        styles.categoryCard,
-                                        selected && styles.categoryCardSelected,
-                                        Shadows.card,
-                                    ]}
-                                    activeOpacity={0.8}
-                                    onPress={() => setCategory(cat.id)}
-                                >
-                                    <View style={[styles.catIconCircle, { backgroundColor: cat.bg }]}>
-                                        <MaterialCommunityIcons name={cat.icon} size={28} color={cat.color} />
-                                    </View>
-                                    <Text style={[styles.catLabel, selected && styles.catLabelSelected]}>
-                                        {cat.label}
-                                    </Text>
-                                    {selected && (
-                                        <View style={styles.selectedBadge}>
-                                            <Ionicons name="checkmark" size={12} color="#FFFFFF" />
-                                        </View>
-                                    )}
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </View>
-
-                    <TouchableOpacity
-                        style={[styles.primaryButton, Shadows.button, { marginTop: 24 }]}
-                        onPress={() => setStep(3)}
-                    >
-                        <Text style={styles.primaryButtonText}>Continue</Text>
-                    </TouchableOpacity>
-                </ScrollView>
-            )}
-
-            {/* ════ SCREEN 3: BUSINESS DETAILS ════ */}
-            {step === 3 && (
-                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                    <Text style={styles.stepTitle}>Business Details</Text>
-                    <Text style={styles.stepSubtitle}>Tell us about your store</Text>
-
-                    {/* Store Logo Picker Preview */}
-                    <View style={styles.avatarSection}>
-                        <View style={styles.storeAvatarWrapper}>
-                            <Image
-                                source={{ uri: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80' }}
-                                style={styles.storeAvatar}
-                            />
-                            <View style={styles.cameraCircle}>
-                                <Ionicons name="camera" size={14} color="#FFFFFF" />
-                            </View>
-                        </View>
-                    </View>
-
-                    {/* Inputs */}
-                    <Text style={styles.fieldLabel}>Store Name</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={storeName}
-                        onChangeText={setStoreName}
-                        placeholder="e.g. FreshMart"
-                    />
-
-                    <Text style={styles.fieldLabel}>Business Description</Text>
-                    <TextInput
-                        style={[styles.input, styles.textArea]}
-                        value={description}
-                        onChangeText={setDescription}
-                        placeholder="Brief summary of what you offer..."
-                        multiline
-                    />
-
-                    <Text style={styles.fieldLabel}>Contact Phone Number</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={phone}
-                        onChangeText={setPhone}
-                        placeholder="10-digit mobile number"
-                        keyboardType="phone-pad"
-                    />
-
-                    <Text style={styles.fieldLabel}>Business Hours</Text>
-                    <View style={styles.pickerInputRow}>
-                        <Ionicons name="time-outline" size={18} color={Colors.textSecondary} />
-                        <TextInput
-                            style={styles.nestedInput}
-                            value={businessHours}
-                            onChangeText={setBusinessHours}
-                        />
-                        <Feather name="chevron-down" size={16} color={Colors.textMuted} />
-                    </View>
-
-                    <Text style={styles.fieldLabel}>Address</Text>
-                    <View style={styles.pickerInputRow}>
-                        <Ionicons name="location-outline" size={18} color={Colors.textSecondary} />
-                        <TextInput
-                            style={styles.nestedInput}
-                            value={address}
-                            onChangeText={setAddress}
-                        />
-                        <Ionicons name="navigate-outline" size={16} color={Colors.primary} />
-                    </View>
-
-                    <TouchableOpacity
-                        style={[styles.primaryButton, Shadows.button, { marginTop: 24 }]}
-                        onPress={() => setStep(4)}
-                    >
-                        <Text style={styles.primaryButtonText}>Continue</Text>
-                    </TouchableOpacity>
-                </ScrollView>
-            )}
-
-            {/* ════ SCREEN 4: ADD PRODUCTS ════ */}
-            {step === 4 && (
-                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                    <Text style={styles.stepTitle}>Add Products</Text>
-                    <Text style={styles.stepSubtitle}>Start by adding a few products to your catalogue</Text>
-
-                    {/* Add Manually Card */}
-                    <TouchableOpacity
-                        style={[styles.productOptionCard, Shadows.card]}
-                        activeOpacity={0.8}
-                        onPress={() => setStep(5)}
-                    >
-                        <View style={styles.bluePlusCircle}>
-                            <Feather name="plus" size={24} color="#FFFFFF" />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={styles.optionTitle}>Add Manually</Text>
-                            <Text style={styles.optionSubtitle}>Add products one by one with photos, price, unit etc.</Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* Import from File */}
-                    <TouchableOpacity
-                        style={[styles.productOptionCard, Shadows.card]}
-                        activeOpacity={0.8}
-                        onPress={() => Alert.alert('CSV Import', 'CSV and Excel auto-mapping ready.')}
-                    >
-                        <View style={[styles.bluePlusCircle, { backgroundColor: '#F1F5F9' }]}>
-                            <Feather name="download" size={20} color={Colors.primary} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={styles.optionTitle}>Import from File</Text>
-                            <Text style={styles.optionSubtitle}>Upload CSV/Excel file to add multiple products in bulk</Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* Tip card */}
-                    <View style={styles.tipCard}>
-                        <Ionicons name="bulb-outline" size={22} color="#D97706" />
-                        <View style={{ flex: 1, marginLeft: 10 }}>
-                            <Text style={styles.tipTitle}>Tip</Text>
-                            <Text style={styles.tipDesc}>
-                                You can add or modify products anytime using voice commands with Aura from your dashboard!
-                            </Text>
-                        </View>
-                    </View>
-
-                    <TouchableOpacity
-                        style={[styles.primaryButton, Shadows.button, { marginTop: 40 }]}
-                        onPress={() => setStep(5)}
-                    >
-                        <Text style={styles.primaryButtonText}>Review & Publish</Text>
-                    </TouchableOpacity>
-                </ScrollView>
-            )}
-
-            {/* ════ SCREEN 5: REVIEW & PUBLISH ════ */}
-            {step === 5 && (
-                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                    <Text style={styles.stepTitle}>Review & Publish</Text>
-                    <Text style={styles.stepSubtitle}>Almost done! Review your store details before going live</Text>
-
-                    {/* Store Card Preview */}
-                    <View style={[styles.storeSummaryCard, Shadows.card]}>
-                        <Image
-                            source={{ uri: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80' }}
-                            style={styles.summaryImage}
-                        />
-                        <View style={{ flex: 1, marginLeft: 14 }}>
-                            <Text style={styles.summaryName}>{storeName}</Text>
-                            <Text style={styles.summaryCategory}>{category}</Text>
-                            <Text style={styles.summaryAddress} numberOfLines={1}>{address}</Text>
-                        </View>
-                    </View>
-
-                    {/* Checklist */}
-                    <View style={styles.checklist}>
-                        {[
-                            'Business details added',
-                            'Store hours set (9:00 AM - 11:00 PM)',
-                            'Address verified on map',
-                            `${sampleProducts.length} starter products ready`,
-                            'Instant payout method linked',
-                        ].map((item, idx) => (
-                            <View key={idx} style={styles.checkItem}>
-                                <View style={styles.greenCheckCircle}>
-                                    <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+                {/* ════ WELCOME ════ */}
+                {step === 'welcome' && (
+                    <View style={styles.screenInner}>
+                        <View style={styles.welcomeTop}>
+                            <View style={styles.brandRow}>
+                                <View style={styles.logoCircle}>
+                                    <Ionicons name="storefront-outline" size={28} color={Colors.primary} />
                                 </View>
-                                <Text style={styles.checkText}>{item}</Text>
+                                <Text style={styles.brandTitle}>Dropp</Text>
                             </View>
-                        ))}
-                    </View>
-
-                    <TouchableOpacity
-                        style={[styles.primaryButton, Shadows.button, { marginTop: 32 }]}
-                        activeOpacity={0.88}
-                        onPress={handlePublish}
-                        disabled={loading}
-                    >
-                        {loading ? (
-                            <ActivityIndicator color="#FFFFFF" />
-                        ) : (
-                            <Text style={styles.primaryButtonText}>Publish Store</Text>
-                        )}
-                    </TouchableOpacity>
-                </ScrollView>
-            )}
-
-            {/* ════ SCREEN 6: SUCCESS ════ */}
-            {step === 6 && (
-                <View style={styles.screenInner}>
-                    <View style={styles.successCenter}>
-                        <View style={styles.celebrationCircle}>
-                            <Ionicons name="checkmark-sharp" size={44} color="#FFFFFF" />
+                            <Text style={styles.heroHeading}>Become a Seller</Text>
+                            <Text style={styles.heroSubheading}>
+                                List your business and reach customers nearby on Dropp.
+                            </Text>
                         </View>
-                        <Text style={styles.successHeading}>Your Store is Live! 🎉</Text>
-                        <Text style={styles.successDesc}>
-                            You can now start receiving orders on Dropp. Manage your store, products and orders from your dashboard.
+
+                        <View style={styles.heroArt}>
+                            {[
+                                { icon: 'receipt-outline', text: 'Receive orders live' },
+                                { icon: 'grid-outline', text: 'Manage your catalogue & stock' },
+                                { icon: 'bar-chart-outline', text: 'Track sales every day' },
+                            ].map((f) => (
+                                <View key={f.text} style={styles.featureRow}>
+                                    <View style={styles.featureIcon}>
+                                        <Ionicons name={f.icon} size={20} color={Colors.primary} />
+                                    </View>
+                                    <Text style={styles.featureText}>{f.text}</Text>
+                                </View>
+                            ))}
+                        </View>
+
+                        <View>
+                            <Button title="Get started" icon="arrow-forward" onPress={next} />
+                            <TouchableOpacity style={styles.loginLink} onPress={onLogin}>
+                                <Text style={styles.loginText}>
+                                    Already have an account? <Text style={styles.loginHighlight}>Log in</Text>
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
+
+                {/* ════ ACCOUNT ════ */}
+                {step === 'account' && (
+                    <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+                        <Text style={styles.stepTitle}>Create your account</Text>
+                        <Text style={styles.stepSubtitle}>You'll use this to log in to Dropp Seller</Text>
+
+                        <Field label="Full name" value={name} onChangeText={setName} placeholder="Your name" error={accountErrors.name} autoCapitalize="words" />
+                        <Field
+                            label="Mobile number"
+                            value={phone}
+                            onChangeText={setPhone}
+                            placeholder="10-digit mobile number"
+                            keyboardType="phone-pad"
+                            error={accountErrors.phone}
+                        />
+                        <Field
+                            label="Email"
+                            value={email}
+                            onChangeText={setEmail}
+                            placeholder="you@store.com"
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            error={accountErrors.email}
+                        />
+                        <Field
+                            label="Password"
+                            value={password}
+                            onChangeText={setPassword}
+                            placeholder="At least 8 characters"
+                            secureTextEntry
+                            autoCapitalize="none"
+                            textContentType="newPassword"
+                            error={accountErrors.password}
+                        />
+
+                        {formError ? <ErrorBanner message={formError} /> : null}
+                        <Button title="Create account" onPress={submitAccount} loading={loading} style={{ marginTop: Spacing.sm }} />
+                        <TouchableOpacity style={styles.loginLink} onPress={onLogin}>
+                            <Text style={styles.loginText}>
+                                Already have an account? <Text style={styles.loginHighlight}>Log in</Text>
+                            </Text>
+                        </TouchableOpacity>
+                    </ScrollView>
+                )}
+
+                {/* ════ CATEGORY ════ */}
+                {step === 'category' && (
+                    <ScrollView contentContainerStyle={styles.scrollContent}>
+                        <Text style={styles.stepTitle}>Choose your business type</Text>
+                        <Text style={styles.stepSubtitle}>
+                            {account?.name ? `Hi ${account.name.split(' ')[0]}! ` : ''}Select the category that best describes your store
                         </Text>
-                    </View>
 
-                    <View style={styles.bottomCta}>
-                        <TouchableOpacity
-                            style={[styles.primaryButton, Shadows.button]}
-                            onPress={() => onFinish && onFinish(createdStore)}
-                        >
-                            <Text style={styles.primaryButtonText}>Go to Dashboard</Text>
-                        </TouchableOpacity>
+                        <View style={styles.categoryGrid}>
+                            {CATEGORIES.map((cat) => {
+                                const selected = category === cat.id;
+                                return (
+                                    <TouchableOpacity
+                                        key={cat.id}
+                                        style={[styles.categoryCard, Shadows.card, selected && styles.categoryCardSelected]}
+                                        activeOpacity={0.8}
+                                        onPress={() => setCategory(cat.id)}
+                                    >
+                                        <View style={[styles.catIconCircle, { backgroundColor: cat.bg }]}>
+                                            <MaterialCommunityIcons name={cat.icon} size={28} color={cat.color} />
+                                        </View>
+                                        <Text style={[styles.catLabel, selected && styles.catLabelSelected]}>{cat.label}</Text>
+                                        {selected && (
+                                            <View style={styles.selectedBadge}>
+                                                <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                                            </View>
+                                        )}
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
 
-                        <TouchableOpacity
-                            style={[styles.secondaryButton, { marginTop: 12 }]}
-                            onPress={() => onFinish && onFinish(createdStore)}
-                        >
-                            <Text style={styles.secondaryButtonText}>Add More Products</Text>
-                        </TouchableOpacity>
+                        <Button title="Continue" onPress={next} disabled={!category} style={{ marginTop: Spacing.xxl }} />
+                    </ScrollView>
+                )}
+
+                {/* ════ DETAILS ════ */}
+                {step === 'details' && (
+                    <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+                        <Text style={styles.stepTitle}>Business details</Text>
+                        <Text style={styles.stepSubtitle}>Customers will see these on Dropp</Text>
+
+                        <Field label="Store name" value={storeName} onChangeText={setStoreName} placeholder="e.g. Sharma General Store" error={detailErrors.storeName} />
+                        <Field
+                            label="Description (optional)"
+                            value={description}
+                            onChangeText={setDescription}
+                            placeholder="What do you sell?"
+                            multiline
+                            maxLength={500}
+                        />
+                        <Field
+                            label="Store phone"
+                            value={storePhone}
+                            onChangeText={setStorePhone}
+                            placeholder="10-digit mobile number"
+                            keyboardType="phone-pad"
+                            error={detailErrors.storePhone}
+                        />
+
+                        <Text style={styles.groupLabel}>Business hours (24-hour)</Text>
+                        <View style={styles.row}>
+                            <Field style={{ flex: 1 }} label="Opens" value={openTime} onChangeText={setOpenTime} placeholder="09:00" keyboardType="numbers-and-punctuation" maxLength={5} error={detailErrors.openTime} />
+                            <Field style={{ flex: 1 }} label="Closes" value={closeTime} onChangeText={setCloseTime} placeholder="21:00" keyboardType="numbers-and-punctuation" maxLength={5} error={detailErrors.closeTime} />
+                        </View>
+
+                        <Text style={styles.groupLabel}>Store address</Text>
+                        <Field label="Street / building" value={street} onChangeText={setStreet} placeholder="Shop no., building, street" error={detailErrors.street} />
+                        <Field label="Area / locality (optional)" value={area} onChangeText={setArea} placeholder="Locality" />
+                        <View style={styles.row}>
+                            <Field style={{ flex: 1 }} label="City" value={city} onChangeText={setCity} placeholder="City" error={detailErrors.city} />
+                            <Field style={{ flex: 1 }} label="Pincode" value={pincode} onChangeText={setPincode} placeholder="6 digits" keyboardType="number-pad" maxLength={6} error={detailErrors.pincode} />
+                        </View>
+                        <Field label="State" value={stateName} onChangeText={setStateName} placeholder="State" error={detailErrors.stateName} />
+
+                        <Button title="Continue" onPress={submitDetails} style={{ marginTop: Spacing.sm }} />
+                    </ScrollView>
+                )}
+
+                {/* ════ REVIEW ════ */}
+                {step === 'review' && (
+                    <ScrollView contentContainerStyle={styles.scrollContent}>
+                        <Text style={styles.stepTitle}>Review & publish</Text>
+                        <Text style={styles.stepSubtitle}>Check your store details before going live</Text>
+
+                        <Card>
+                            <View style={styles.summaryTop}>
+                                <View style={styles.summaryIcon}>
+                                    <MaterialCommunityIcons
+                                        name={CATEGORIES.find((c) => c.id === category)?.icon || 'storefront-outline'}
+                                        size={26}
+                                        color={Colors.primary}
+                                    />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.summaryName}>{storeName}</Text>
+                                    <Text style={styles.summaryCategory}>{category}</Text>
+                                </View>
+                            </View>
+                            <SummaryRow icon="call-outline" text={cleanPhone(storePhone)} />
+                            <SummaryRow icon="time-outline" text={`${formatTime24(openTime)} – ${formatTime24(closeTime)}`} />
+                            <SummaryRow
+                                icon="location-outline"
+                                text={[street, area, city, stateName, pincode].map((s) => s.trim()).filter(Boolean).join(', ')}
+                            />
+                            {description.trim() ? <SummaryRow icon="document-text-outline" text={description.trim()} /> : null}
+                        </Card>
+
+                        <View style={styles.tipCard}>
+                            <Ionicons name="bulb-outline" size={20} color="#D97706" />
+                            <Text style={styles.tipDesc}>You can add products and edit settings from your dashboard after publishing.</Text>
+                        </View>
+
+                        {formError ? <ErrorBanner message={formError} /> : null}
+                        <Button title="Publish store" onPress={publish} loading={loading} style={{ marginTop: Spacing.lg }} />
+                    </ScrollView>
+                )}
+
+                {/* ════ SUCCESS ════ */}
+                {step === 'success' && (
+                    <View style={styles.screenInner}>
+                        <View style={styles.successCenter}>
+                            <View style={styles.celebrationCircle}>
+                                <Ionicons name="checkmark-sharp" size={44} color="#FFFFFF" />
+                            </View>
+                            <Text style={styles.successHeading}>Your store is live!</Text>
+                            <Text style={styles.successDesc}>
+                                {done?.name} can now receive orders on Dropp. Add products from the dashboard to start selling.
+                            </Text>
+                        </View>
+                        <Button title="Go to dashboard" onPress={() => onFinish(done)} />
                     </View>
-                </View>
-            )}
+                )}
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
 
+function SummaryRow({ icon, text }) {
+    return (
+        <View style={styles.summaryRow}>
+            <Ionicons name={icon} size={16} color={Colors.textSecondary} />
+            <Text style={styles.summaryText}>{text}</Text>
+        </View>
+    );
+}
+
+function ErrorBanner({ message }) {
+    return (
+        <View style={styles.errorBox}>
+            <Ionicons name="alert-circle" size={18} color={Colors.danger} />
+            <Text style={styles.errorText}>{message}</Text>
+        </View>
+    );
+}
+
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: Colors.background,
-    },
-    screenInner: {
-        flex: 1,
-        paddingHorizontal: 24,
-        justifyContent: 'space-between',
-        paddingBottom: 24,
-    },
-    scrollContent: {
-        paddingHorizontal: 24,
-        paddingBottom: 40,
-    },
+    container: { flex: 1, backgroundColor: Colors.background },
+    screenInner: { flex: 1, paddingHorizontal: Spacing.xxl, justifyContent: 'space-between', paddingBottom: Spacing.xxl },
+    scrollContent: { paddingHorizontal: Spacing.xxl, paddingBottom: 48 },
     wizardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingHorizontal: Spacing.lg,
+        paddingVertical: Spacing.sm,
     },
-    backButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: Colors.surface,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    progressDots: {
-        flexDirection: 'row',
-        gap: 6,
-    },
-    dot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#CBD5E1',
-    },
-    dotActive: {
-        backgroundColor: Colors.primary,
-        width: 22,
-    },
-    dotDone: {
-        backgroundColor: Colors.success,
-    },
+    backButton: { width: 56, height: 40, justifyContent: 'center' },
+    headerLink: { width: 56, height: 40, justifyContent: 'center', alignItems: 'flex-end' },
+    headerLinkText: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary },
+    progressDots: { flexDirection: 'row', gap: 6 },
+    dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.border },
+    dotActive: { width: 24, backgroundColor: Colors.primary },
+    dotDone: { backgroundColor: Colors.primaryBorder },
 
-    // Step 1 Welcome
-    welcomeTop: {
-        marginTop: 32,
-    },
-    brandRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        marginBottom: 20,
-    },
+    welcomeTop: { paddingTop: 40 },
+    brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 28 },
     logoCircle: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 48,
+        height: 48,
+        borderRadius: 24,
         backgroundColor: Colors.primaryLight,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    brandTitle: {
-        fontSize: 24,
-        fontWeight: '800',
-        color: Colors.primary,
+    brandTitle: { fontSize: 22, fontWeight: '800', color: Colors.textPrimary },
+    heroHeading: { ...Type.title, fontSize: 32 },
+    heroSubheading: { ...Type.caption, fontSize: 16, marginTop: 8, lineHeight: 23 },
+    heroArt: {
+        backgroundColor: Colors.surface,
+        borderRadius: Radius.xl,
+        padding: Spacing.xl,
+        gap: Spacing.lg,
+        borderWidth: 1,
+        borderColor: Colors.borderLight,
+        ...Shadows.card,
     },
-    heroHeading: {
-        fontSize: 32,
-        fontWeight: '800',
-        color: Colors.textPrimary,
-        letterSpacing: -0.5,
-    },
-    heroSubheading: {
-        fontSize: 16,
-        color: Colors.textSecondary,
-        marginTop: 8,
-        lineHeight: 22,
-    },
-    illustrationWrapper: {
-        alignItems: 'center',
-        marginVertical: 20,
-    },
-    heroImage: {
-        width: '100%',
-        height: 240,
-        borderRadius: 24,
-    },
-    bottomCta: {
-        width: '100%',
-    },
-    primaryButton: {
-        backgroundColor: Colors.primary,
-        paddingVertical: 16,
-        borderRadius: 14,
-        flexDirection: 'row',
+    featureRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+    featureIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: Radius.md,
+        backgroundColor: Colors.primaryLight,
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 8,
     },
-    primaryButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    loginLink: {
-        alignItems: 'center',
-        marginTop: 16,
-    },
-    loginText: {
-        fontSize: 14,
-        color: Colors.textSecondary,
-    },
-    loginHighlight: {
-        color: Colors.primary,
-        fontWeight: '700',
-    },
+    featureText: { ...Type.body, fontSize: 15 },
+    loginLink: { marginTop: Spacing.lg, alignItems: 'center', paddingVertical: Spacing.sm },
+    loginText: { fontSize: 14, color: Colors.textSecondary },
+    loginHighlight: { color: Colors.primary, fontWeight: '700' },
 
-    // Step Typography
-    stepTitle: {
-        fontSize: 24,
-        fontWeight: '800',
-        color: Colors.textPrimary,
-        marginTop: 8,
-    },
-    stepSubtitle: {
-        fontSize: 14,
-        color: Colors.textSecondary,
-        marginTop: 4,
-        marginBottom: 20,
-    },
+    stepTitle: { ...Type.title, marginTop: Spacing.sm },
+    stepSubtitle: { ...Type.caption, fontSize: 14, marginTop: 4, marginBottom: Spacing.xxl },
+    groupLabel: { ...Type.heading, fontSize: 15, marginTop: Spacing.md, marginBottom: Spacing.md },
+    row: { flexDirection: 'row', gap: Spacing.md },
 
-    // Step 2 Category Grid
-    categoryGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 12,
-        justifyContent: 'space-between',
-    },
+    categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: Spacing.md },
     categoryCard: {
         width: '48%',
         backgroundColor: Colors.surface,
-        borderRadius: 16,
-        padding: 16,
+        borderRadius: Radius.lg,
+        paddingVertical: Spacing.lg,
         alignItems: 'center',
         borderWidth: 1.5,
-        borderColor: 'transparent',
-        position: 'relative',
+        borderColor: Colors.borderLight,
     },
-    categoryCardSelected: {
-        borderColor: Colors.primary,
-        backgroundColor: '#F8FAFF',
-    },
-    catIconCircle: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 10,
-    },
-    catLabel: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: Colors.textPrimary,
-        textAlign: 'center',
-        lineHeight: 18,
-    },
-    catLabelSelected: {
-        color: Colors.primary,
-        fontWeight: '700',
-    },
+    categoryCardSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
+    catIconCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+    catLabel: { fontSize: 13, fontWeight: '600', color: Colors.textPrimary, textAlign: 'center', lineHeight: 18 },
+    catLabelSelected: { color: Colors.primary },
     selectedBadge: {
         position: 'absolute',
-        top: 8,
-        right: 8,
-        width: 18,
-        height: 18,
-        borderRadius: 9,
+        top: 10,
+        right: 10,
+        width: 20,
+        height: 20,
+        borderRadius: 10,
         backgroundColor: Colors.primary,
         alignItems: 'center',
         justifyContent: 'center',
     },
 
-    // Step 3 Details
-    avatarSection: {
-        alignItems: 'center',
-        marginBottom: 20,
-    },
-    storeAvatarWrapper: {
-        position: 'relative',
-    },
-    storeAvatar: {
-        width: 84,
-        height: 84,
-        borderRadius: 42,
-    },
-    cameraCircle: {
-        position: 'absolute',
-        bottom: 0,
-        right: 0,
-        backgroundColor: Colors.primary,
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 2,
-        borderColor: '#FFFFFF',
-    },
-    fieldLabel: {
-        fontSize: 13,
-        fontWeight: '700',
-        color: Colors.textPrimary,
-        marginTop: 14,
-        marginBottom: 6,
-    },
-    input: {
-        backgroundColor: Colors.surface,
-        borderRadius: 12,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        borderWidth: 1,
-        borderColor: Colors.border,
-        fontSize: 15,
-        color: Colors.textPrimary,
-    },
-    textArea: {
-        minHeight: 64,
-        textAlignVertical: 'top',
-    },
-    pickerInputRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: Colors.surface,
-        borderRadius: 12,
-        paddingHorizontal: 14,
-        borderWidth: 1,
-        borderColor: Colors.border,
-    },
-    nestedInput: {
-        flex: 1,
-        paddingVertical: 12,
-        paddingHorizontal: 8,
-        fontSize: 15,
-        color: Colors.textPrimary,
-    },
-
-    // Step 4 Options
-    productOptionCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: Colors.surface,
-        padding: 18,
-        borderRadius: 16,
-        marginBottom: 14,
-        gap: 16,
-    },
-    bluePlusCircle: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: Colors.primary,
+    summaryTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
+    summaryIcon: {
+        width: 52,
+        height: 52,
+        borderRadius: Radius.md,
+        backgroundColor: Colors.primaryLight,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    optionTitle: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: Colors.textPrimary,
+    summaryName: { ...Type.heading, fontSize: 18 },
+    summaryCategory: { ...Type.caption, marginTop: 2 },
+    summaryRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: Spacing.sm,
+        paddingVertical: Spacing.sm,
+        borderTopWidth: 1,
+        borderTopColor: Colors.borderLight,
     },
-    optionSubtitle: {
-        fontSize: 13,
-        color: Colors.textSecondary,
-        marginTop: 2,
-    },
+    summaryText: { ...Type.body, flex: 1, lineHeight: 20 },
     tipCard: {
         flexDirection: 'row',
-        backgroundColor: '#FEF3C7',
-        padding: 16,
-        borderRadius: 14,
-        marginTop: 10,
+        gap: Spacing.sm,
+        alignItems: 'center',
+        backgroundColor: Colors.warningLight,
+        borderRadius: Radius.md,
+        padding: Spacing.md,
+        marginTop: Spacing.lg,
     },
-    tipTitle: {
-        fontSize: 13,
-        fontWeight: '700',
-        color: '#92400E',
-    },
-    tipDesc: {
-        fontSize: 12,
-        color: '#B45309',
-        marginTop: 2,
-        lineHeight: 17,
-    },
-
-    // Step 5 Review
-    storeSummaryCard: {
+    tipDesc: { fontSize: 13, color: '#92400E', flex: 1, lineHeight: 18 },
+    errorBox: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.surface,
-        padding: 14,
-        borderRadius: 16,
-        marginBottom: 24,
+        gap: Spacing.sm,
+        backgroundColor: Colors.dangerLight,
+        borderRadius: Radius.sm,
+        padding: Spacing.md,
+        marginTop: Spacing.md,
     },
-    summaryImage: {
-        width: 60,
-        height: 60,
-        borderRadius: 12,
-    },
-    summaryName: {
-        fontSize: 17,
-        fontWeight: '700',
-        color: Colors.textPrimary,
-    },
-    summaryCategory: {
-        fontSize: 13,
-        color: Colors.primary,
-        fontWeight: '600',
-        marginTop: 2,
-    },
-    summaryAddress: {
-        fontSize: 12,
-        color: Colors.textMuted,
-        marginTop: 2,
-    },
-    checklist: {
-        gap: 14,
-    },
-    checkItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    greenCheckCircle: {
-        width: 22,
-        height: 22,
-        borderRadius: 11,
-        backgroundColor: Colors.success,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    checkText: {
-        fontSize: 15,
-        fontWeight: '500',
-        color: Colors.textPrimary,
-    },
+    errorText: { color: Colors.danger, fontSize: 13, fontWeight: '600', flex: 1 },
 
-    // Step 6 Success
-    successCenter: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: 20,
-    },
+    successCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     celebrationCircle: {
         width: 88,
         height: 88,
@@ -781,28 +550,8 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.success,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 24,
+        marginBottom: Spacing.xxl,
     },
-    successHeading: {
-        fontSize: 28,
-        fontWeight: '800',
-        color: Colors.textPrimary,
-        textAlign: 'center',
-    },
-    successDesc: {
-        fontSize: 15,
-        color: Colors.textSecondary,
-        textAlign: 'center',
-        marginTop: 10,
-        lineHeight: 22,
-    },
-    secondaryButton: {
-        paddingVertical: 14,
-        alignItems: 'center',
-    },
-    secondaryButtonText: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: Colors.textSecondary,
-    },
+    successHeading: { ...Type.title, textAlign: 'center' },
+    successDesc: { ...Type.caption, fontSize: 15, textAlign: 'center', marginTop: Spacing.sm, lineHeight: 22, paddingHorizontal: Spacing.lg },
 });

@@ -5,127 +5,75 @@ import {
     View,
     TouchableOpacity,
     ScrollView,
-    SafeAreaView,
     StatusBar,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../theme/themeContext';
 import BottomNavBar from '../components/bottomNavBar';
 
-const PAYMENT_METHODS = [
-    { id: 'dropp_pay', title: 'Dropp Pay Balance', sub: '₹450 Available', icon: 'wallet-outline', isDefault: true },
-    { id: 'upi_gpay', title: 'Google Pay / PhonePe', sub: 'UPI Linked', icon: 'phone-portrait-outline', isDefault: false },
-    { id: 'card_visa', title: 'Visa •••• 4821', sub: 'Expires 08/28', icon: 'card-outline', isDefault: false },
-    { id: 'cash', title: 'Cash on Delivery / Ride', sub: 'Pay driver directly', icon: 'cash-outline', isDefault: false },
-];
-
-const TRANSACTIONS = [
-    { id: 't1', title: 'Top-Up via UPI', date: 'Today, 1:20 PM', amount: '+₹500', positive: true, icon: 'add-circle-outline' },
-    { id: 't2', title: 'Ride to Airport', date: 'Yesterday, 3:45 PM', amount: '-₹384', positive: false, icon: 'car-sport-outline' },
-    { id: 't3', title: 'Dropp CashBack Reward', date: 'Oct 4, 10:00 AM', amount: '+₹50', positive: true, icon: 'gift-outline' },
-    { id: 't4', title: 'Food Order - Dosa King', date: 'Oct 2, 7:15 PM', amount: '-₹230', positive: false, icon: 'fast-food-outline' },
+// There is no wallet backend yet: this screen only describes how payment works today.
+const PAY_ON_DELIVERY = [
+    { id: 'cash', title: 'Cash', sub: 'Pay your delivery partner or driver directly', icon: 'cash' },
+    { id: 'upi', title: 'UPI on delivery', sub: 'Scan and pay with any UPI app when your order arrives', icon: 'qrcode-scan' },
 ];
 
 export default function WalletScreen({ onNavigate }) {
     const { theme, isDark } = useTheme();
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-            <StatusBar
-                barStyle={isDark ? 'light-content' : 'dark-content'}
-                backgroundColor={theme.background}
-            />
+        <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: theme.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                <Text style={[styles.title, { color: theme.textPrimary }]}>Dropp Pay Wallet</Text>
+                <Text style={[styles.title, { color: theme.textPrimary }]}>Payments</Text>
 
-                {/* Main Wallet Balance Hero Card */}
-                <View style={[styles.balanceCard, { backgroundColor: '#166534' }]}>
-                    <View style={styles.balanceHeader}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={styles.heroCard}>
+                    <View style={styles.heroHeader}>
+                        <View style={styles.inlineRow}>
                             <Ionicons name="sparkles" size={16} color="#4ADE80" />
-                            <Text style={styles.cardLabel}>DROPP PAY</Text>
+                            <Text style={styles.heroLabel}>DROPP PAY</Text>
                         </View>
-                        <Text style={styles.cardBadge}>Active</Text>
+                        <Text style={styles.soonBadge}>Coming soon</Text>
                     </View>
-
-                    <Text style={styles.balanceAmount}>₹450</Text>
-                    <Text style={styles.balanceSub}>Auto-refill enabled • 5% CashBack Active</Text>
-
-                    <View style={styles.quickActions}>
-                        <TouchableOpacity
-                            style={styles.actionBtn}
-                            onPress={() => alert('Add Money to Wallet')}
-                            activeOpacity={0.8}
-                        >
-                            <Ionicons name="add" size={18} color="#000" />
-                            <Text style={styles.actionText}>Add Money</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.actionBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
-                            onPress={() => alert('Transfer to Bank')}
-                            activeOpacity={0.8}
-                        >
-                            <Ionicons name="arrow-redo-outline" size={16} color="#FFF" />
-                            <Text style={[styles.actionText, { color: '#FFF' }]}>Transfer</Text>
-                        </TouchableOpacity>
-                    </View>
+                    <Text style={styles.heroTitle}>One-tap payments are on the way</Text>
+                    <Text style={styles.heroSub}>
+                        A Dropp wallet for rides and food is in the works. Until then, every order is paid on delivery — no balance or card needed.
+                    </Text>
                 </View>
 
-                {/* Saved Payment Methods */}
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Payment Methods</Text>
+                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>How you pay today</Text>
                 <View style={styles.methodList}>
-                    {PAYMENT_METHODS.map((method) => (
-                        <View
-                            key={method.id}
-                            style={[styles.methodCard, { backgroundColor: theme.surface }]}
-                        >
+                    {PAY_ON_DELIVERY.map((m) => (
+                        <View key={m.id} style={[styles.methodCard, { backgroundColor: theme.surface }]}>
                             <View style={[styles.methodIconBox, { backgroundColor: theme.inputBg }]}>
-                                <Ionicons name={method.icon} size={22} color={theme.primaryGreen} />
+                                <MaterialCommunityIcons name={m.icon} size={22} color={theme.primaryGreen} />
                             </View>
-
-                            <View style={styles.methodMeta}>
-                                <Text style={[styles.methodTitle, { color: theme.textPrimary }]}>{method.title}</Text>
-                                <Text style={[styles.methodSub, { color: theme.textSecondary }]}>{method.sub}</Text>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.methodTitle, { color: theme.textPrimary }]}>{m.title}</Text>
+                                <Text style={[styles.methodSub, { color: theme.textSecondary }]}>{m.sub}</Text>
                             </View>
-
-                            {method.isDefault ? (
-                                <View style={[styles.defaultBadge, { backgroundColor: theme.tierCardActiveBg }]}>
-                                    <Text style={[styles.defaultText, { color: theme.primaryGreen }]}>Default</Text>
-                                </View>
-                            ) : (
-                                <Ionicons name="chevron-forward" size={18} color={theme.placeholder} />
-                            )}
+                            <Ionicons name="checkmark-circle" size={20} color={theme.primaryGreen} />
                         </View>
                     ))}
                 </View>
 
-                {/* Transaction History */}
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary, marginTop: 24 }]}>Recent Transactions</Text>
-                <View style={styles.txList}>
-                    {TRANSACTIONS.map((tx) => (
-                        <View key={tx.id} style={[styles.txCard, { backgroundColor: theme.surface }]}>
-                            <View style={[styles.txIconBox, { backgroundColor: theme.inputBg }]}>
-                                <Ionicons
-                                    name={tx.icon}
-                                    size={20}
-                                    color={tx.positive ? theme.primaryGreen : theme.textSecondary}
-                                />
-                            </View>
-                            <View style={styles.txMeta}>
-                                <Text style={[styles.txTitle, { color: theme.textPrimary }]}>{tx.title}</Text>
-                                <Text style={[styles.txDate, { color: theme.textSecondary }]}>{tx.date}</Text>
-                            </View>
-                            <Text style={[
-                                styles.txAmount,
-                                { color: tx.positive ? theme.primaryGreen : theme.textPrimary }
-                            ]}>
-                                {tx.amount}
-                            </Text>
-                        </View>
-                    ))}
+                <View style={[styles.infoCard, { backgroundColor: theme.surface, borderColor: theme.inputSeparator }]}>
+                    <Ionicons name="shield-checkmark-outline" size={20} color={theme.primaryGreen} />
+                    <Text style={[styles.infoText, { color: theme.textSecondary }]}>
+                        Food orders show a delivery OTP. Only share it with your partner once you have your order.
+                    </Text>
                 </View>
+
+                <TouchableOpacity
+                    style={[styles.linkBtn, { backgroundColor: theme.surface }]}
+                    onPress={() => onNavigate?.('Activity')}
+                    activeOpacity={0.8}
+                >
+                    <Ionicons name="receipt-outline" size={18} color={theme.primaryGreen} />
+                    <Text style={[styles.linkText, { color: theme.textPrimary }]}>See your order history</Text>
+                    <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+                </TouchableOpacity>
             </ScrollView>
 
             <BottomNavBar
@@ -144,84 +92,47 @@ export default function WalletScreen({ onNavigate }) {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    scrollContent: { padding: 20, paddingBottom: 100 },
-    title: { fontSize: 28, fontWeight: '800', marginBottom: 16 },
-    balanceCard: {
-        borderRadius: 24,
-        padding: 20,
-        marginBottom: 24,
-        elevation: 6,
-    },
-    balanceHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    cardLabel: { color: '#4ADE80', fontWeight: '900', fontSize: 13, letterSpacing: 1 },
-    cardBadge: {
+    scrollContent: { padding: 20, paddingBottom: 110 },
+    title: { fontSize: 28, fontWeight: '800', marginBottom: 16, letterSpacing: -0.5 },
+    inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    heroCard: { backgroundColor: '#166534', borderRadius: 24, padding: 20, marginBottom: 24 },
+    heroHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    heroLabel: { color: '#4ADE80', fontWeight: '900', fontSize: 13, letterSpacing: 1 },
+    soonBadge: {
         backgroundColor: 'rgba(255,255,255,0.2)',
-        color: '#FFF',
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 8,
-        fontSize: 11,
-        fontWeight: '700',
-    },
-    balanceAmount: { color: '#FFFFFF', fontSize: 36, fontWeight: '900', marginVertical: 10 },
-    balanceSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginBottom: 18 },
-    quickActions: { flexDirection: 'row', gap: 10 },
-    actionBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#4ADE80',
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 14,
-        gap: 6,
-    },
-    actionText: { color: '#000', fontWeight: '800', fontSize: 13 },
-    sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 12 },
-    methodList: { gap: 10 },
-    methodCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 14,
-        borderRadius: 16,
-    },
-    methodIconBox: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 12,
-    },
-    methodMeta: { flex: 1 },
-    methodTitle: { fontSize: 15, fontWeight: '700' },
-    methodSub: { fontSize: 12, marginTop: 2 },
-    defaultBadge: {
+        color: '#FFFFFF',
         paddingHorizontal: 8,
         paddingVertical: 3,
         borderRadius: 8,
+        fontSize: 11,
+        fontWeight: '700',
+        overflow: 'hidden',
     },
-    defaultText: { fontSize: 11, fontWeight: '700' },
-    txList: { gap: 10 },
-    txCard: {
+    heroTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '900', marginTop: 14, letterSpacing: -0.3 },
+    heroSub: { color: 'rgba(255,255,255,0.82)', fontSize: 13, lineHeight: 19, marginTop: 8 },
+    sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 12 },
+    methodList: { gap: 10 },
+    methodCard: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, gap: 12 },
+    methodIconBox: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+    methodTitle: { fontSize: 15, fontWeight: '700' },
+    methodSub: { fontSize: 12, marginTop: 2, lineHeight: 16 },
+    infoCard: {
         flexDirection: 'row',
         alignItems: 'center',
+        gap: 10,
         padding: 14,
         borderRadius: 16,
+        borderWidth: 1,
+        marginTop: 16,
     },
-    txIconBox: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+    infoText: { flex: 1, fontSize: 12.5, lineHeight: 18 },
+    linkBtn: {
+        flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 12,
+        gap: 10,
+        padding: 16,
+        borderRadius: 16,
+        marginTop: 16,
     },
-    txMeta: { flex: 1 },
-    txTitle: { fontSize: 14, fontWeight: '700' },
-    txDate: { fontSize: 12, marginTop: 2 },
-    txAmount: { fontSize: 15, fontWeight: '800' },
+    linkText: { flex: 1, fontSize: 14.5, fontWeight: '700' },
 });

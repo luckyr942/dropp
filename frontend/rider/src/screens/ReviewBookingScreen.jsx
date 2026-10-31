@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
 import { API_BASE } from '../../../shared/utils/apiConfig';
+import { getCustomerId } from '../../../shared/utils/authStorage';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const Images = {
@@ -72,43 +73,35 @@ export default function ReviewBookingScreen({ onBack, onNavigate }) {
         setBooking(true);
         setBookErr(null);
         try {
+            const customerId = await getCustomerId();
             const body = {
                 ...(quoteId
                     ? { quoteId, rideType: vehicle }
                     : { pickup, drop, rideType: vehicle }),
                 serviceType: serviceType || 'RIDE',
                 packageDetails: packageDetails || null,
+                customerId,
             };
 
             const res = await fetch(`${API_BASE}/api/rides/book`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'x-customer-id': customerId },
                 body: JSON.stringify(body),
             });
-            const json = await res.json();
-            if (json.data?._id) {
-                setRideId(json.data._id);
+            const json = await res.json().catch(() => ({}));
+            const ride = json.data;
+            if (!res.ok || !json.success || !ride?._id) {
+                setBookErr(json.error || 'Could not book your ride. Please try again.');
+                return;
             }
-            if (json.data?.customerId) {
-                setCustomerId(json.data.customerId);
-            }
-            if (json.data?.driver) {
-                const d = json.data.driver;
-                const vehicleParts = (d.vehicle || '').split('•').map(p => p.trim());
-                setDriver({
-                    ...d,
-                    plate: d.plate || vehicleParts[1] || 'DL 1Z A 4421',
-                    vehicle: vehicleParts[0] || d.vehicle || 'Swift Dzire',
-                    avatar: d.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80',
-                });
-            }
-            if (json.data?.otp) {
-                setDeliveryOtp(json.data.otp);
-            }
+            // The ride starts "searching": FindingDriver waits for a real driver to accept
+            setRideId(ride._id);
+            setCustomerId(ride.customerId || customerId);
+            setDriver(null);
+            if (ride.otp) setDeliveryOtp(ride.otp);
             if (onNavigate) onNavigate('FindingDriver');
         } catch (err) {
-            console.warn('[ReviewBooking] Book error fallback:', err.message);
-            if (onNavigate) onNavigate('FindingDriver');
+            setBookErr('No connection to Dropp. Check your network and try again.');
         } finally {
             setBooking(false);
         }

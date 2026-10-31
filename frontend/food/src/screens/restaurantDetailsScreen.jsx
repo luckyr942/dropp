@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -6,82 +6,138 @@ import {
     Image,
     ScrollView,
     StyleSheet,
-    Dimensions,
     Modal,
+    Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getMenuForRestaurant } from '../data/restaurantMenus';
 import { getMenuByRestaurant } from '../api/foodApi';
 
-const { width, height } = Dimensions.get('window');
+const FALLBACK_HERO = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=900&auto=format&fit=crop&q=80';
 
 export default function RestaurantDetailsScreen({
-    restaurant = {
-        id: 'pizza-palace',
-        name: 'Pizza Palace',
-        cuisines: 'Pizza • Italian • Fast Food',
-        rating: '4.8',
-        reviews: '810',
-        time: '25–35 min',
-        offerPrimary: '15% OFF',
-        image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=900&auto=format&fit=crop&q=85',
-    },
+    restaurant,
     onBack,
     onViewCart,
     cart = {},
     onAddToCart,
     onRemoveFromCart,
 }) {
-    // 1. Resolve matching menu and categories based on the restaurant passed
-    const restaurantKey = restaurant?.id || restaurant?.name || 'pizza-palace';
-    const menuData = getMenuForRestaurant(restaurantKey);
+    const restaurantId = restaurant?._id || restaurant?.id || null;
 
-    const [categories, setCategories] = useState(menuData.categories || ['All']);
+    const [categories, setCategories] = useState(['All']);
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [isFav, setIsFav] = useState(false);
-    const [menuItems, setMenuItems] = useState(menuData.items || []);
+    const [menuItems, setMenuItems] = useState([]);
+    const [menuStatus, setMenuStatus] = useState('loading'); // loading | ready | error
+    const [menuError, setMenuError] = useState(null);
     const [isMenuModalVisible, setIsMenuModalVisible] = useState(false);
 
-    // If restaurant prop changes, dynamically switch the categories and dishes
-    useEffect(() => {
-        const freshMenu = getMenuForRestaurant(restaurant?.id || restaurant?.name);
-        setCategories(freshMenu.categories || ['All']);
-        setSelectedCategory('All');
-        setMenuItems(freshMenu.items || []);
-
-        const restId = restaurant?._id || restaurant?.id;
-        if (restId && typeof restId === 'string' && restId.length === 24) {
-            getMenuByRestaurant(restId)
-                .then((backendMenu) => {
-                    if (backendMenu?.items?.length) {
-                        setCategories(backendMenu.categories);
-                        setSelectedCategory(backendMenu.categories[0]);
-                        setMenuItems(backendMenu.items);
-                    }
-                })
-                .catch(() => {});
+    const loadMenu = useCallback(async () => {
+        if (!restaurantId) {
+            setMenuStatus('error');
+            setMenuError('No restaurant selected.');
+            return;
         }
-    }, [restaurant?.id, restaurant?.name, restaurant?._id]);
+        setMenuStatus('loading');
+        setMenuError(null);
+        try {
+            const menu = await getMenuByRestaurant(restaurantId);
+            setCategories(menu.categories || ['All']);
+            setSelectedCategory('All');
+            setMenuItems(menu.items || []);
+            setMenuStatus('ready');
+        } catch (err) {
+            setMenuItems([]);
+            setMenuError(err?.message || 'Could not load the menu.');
+            setMenuStatus('error');
+        }
+    }, [restaurantId]);
+
+    useEffect(() => {
+        loadMenu();
+    }, [loadMenu]);
 
     const filteredItems = menuItems.filter((item) => {
         if (!selectedCategory || selectedCategory === 'All') return true;
         return item.category === selectedCategory;
     });
 
-    // Cart calculations
-    const cartCount = Object.values(cart).reduce((sum, item) => sum + (item.quantity || 0), 0);
-    const cartTotal = Object.values(cart).reduce((sum, item) => sum + item.price * (item.quantity || 0), 0);
+    // Cart calculations (only this restaurant's items count towards the capsule)
+    const cartItems = Object.values(cart);
+    const cartCount = cartItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    const cartTotal = cartItems.reduce((sum, item) => sum + (Number(item.price) || 0) * (item.quantity || 0), 0);
 
-    const restaurantCuisines = Array.isArray(restaurant.cuisine)
+    const restaurantCuisines = Array.isArray(restaurant?.cuisine)
         ? restaurant.cuisine.join(' • ')
-        : restaurant.cuisines || restaurant.cuisine || 'Fast Food • Multi-Cuisine';
+        : restaurant?.cuisines || restaurant?.cuisine || '';
+
+    const addItem = (item) => {
+        const cartItem = { ...item, restaurantId, restaurantName: restaurant?.name || '' };
+        const otherKitchen = cartItems.find((i) => i.restaurantId && i.restaurantId !== restaurantId);
+        if (!otherKitchen) {
+            onAddToCart?.(cartItem);
+            return;
+        }
+        Alert.alert(
+            'Start a new cart?',
+            `Your cart has items from ${otherKitchen.restaurantName || 'another restaurant'}. Adding this will clear it.`,
+            [
+                { text: 'Keep cart', style: 'cancel' },
+                { text: 'Start new', style: 'destructive', onPress: () => onAddToCart?.(cartItem, { replaceCart: true }) },
+            ]
+        );
+    };
 
     // Count items per category
     const getCategoryCount = (cat) => {
         if (cat === 'All') return menuItems.length;
         return menuItems.filter((item) => item.category === cat).length;
+    };
+
+    const renderMenuState = () => {
+        if (menuStatus === 'loading') {
+            return (
+                <View style={styles.menuList}>
+                    {[1, 2, 3, 4].map((i) => (
+                        <View key={i} style={styles.dishCard}>
+                            <View style={[styles.dishImg, styles.skeleton]} />
+                            <View style={[styles.dishInfoCol, { gap: 8 }]}>
+                                <View style={[styles.skeletonLine, { width: '70%' }]} />
+                                <View style={[styles.skeletonLine, { width: '30%' }]} />
+                                <View style={[styles.skeletonLine, { width: '90%' }]} />
+                            </View>
+                        </View>
+                    ))}
+                </View>
+            );
+        }
+        if (menuStatus === 'error') {
+            return (
+                <View style={styles.stateBox}>
+                    <Ionicons name="cloud-offline-outline" size={36} color="#94A3B8" />
+                    <Text style={styles.stateTitle}>Couldn't load the menu</Text>
+                    <Text style={styles.stateText}>{menuError}</Text>
+                    {restaurantId ? (
+                        <TouchableOpacity style={styles.retryBtn} onPress={loadMenu} activeOpacity={0.85}>
+                            <Ionicons name="refresh" size={16} color="#FFFFFF" />
+                            <Text style={styles.retryText}>Try again</Text>
+                        </TouchableOpacity>
+                    ) : null}
+                </View>
+            );
+        }
+        if (menuItems.length === 0) {
+            return (
+                <View style={styles.stateBox}>
+                    <Ionicons name="restaurant-outline" size={36} color="#94A3B8" />
+                    <Text style={styles.stateTitle}>No dishes available right now</Text>
+                    <Text style={styles.stateText}>This kitchen hasn't published any items yet. Check back soon.</Text>
+                </View>
+            );
+        }
+        return null;
     };
 
     return (
@@ -97,9 +153,7 @@ export default function RestaurantDetailsScreen({
                 <View style={styles.heroBox}>
                     <Image
                         source={{
-                            uri:
-                                restaurant.image ||
-                                'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=900&auto=format&fit=crop&q=85',
+                            uri: restaurant?.image || FALLBACK_HERO,
                         }}
                         style={styles.heroImg}
                         resizeMode="cover"
@@ -147,33 +201,34 @@ export default function RestaurantDetailsScreen({
                     {/* Restaurant Meta (Title, Cuisine, Ratings, Time, Offer) */}
                     <View style={styles.restaurantMeta}>
                         <Text style={styles.restTitle} numberOfLines={1}>
-                            {restaurant.name || 'Pizza Palace'}
+                            {restaurant?.name || 'Restaurant'}
                         </Text>
                         <Text style={styles.restCuisine} numberOfLines={1}>
                             {restaurantCuisines}
                         </Text>
 
-                        {/* Badges Row */}
+                        {/* Badges Row (real catalog fields only) */}
                         <View style={styles.badgeRow}>
-                            <View style={styles.ratingBadge}>
-                                <Ionicons name="star" size={12} color="#F59E0B" />
-                                <Text style={styles.ratingText}>
-                                    {restaurant.rating || '4.8'} ({restaurant.reviews || '810'})
-                                </Text>
-                            </View>
+                            {restaurant?.rating ? (
+                                <View style={styles.ratingBadge}>
+                                    <Ionicons name="star" size={12} color="#F59E0B" />
+                                    <Text style={styles.ratingText}>{restaurant.rating}</Text>
+                                </View>
+                            ) : null}
 
-                            <View style={styles.etaBadge}>
-                                <Ionicons name="bicycle" size={13} color="#FFFFFF" />
-                                <Text style={styles.etaText}>
-                                    {restaurant.time || '25–35 min'}
-                                </Text>
-                            </View>
+                            {restaurant?.time ? (
+                                <View style={styles.etaBadge}>
+                                    <Ionicons name="bicycle" size={13} color="#FFFFFF" />
+                                    <Text style={styles.etaText}>{restaurant.time}</Text>
+                                </View>
+                            ) : null}
 
-                            <View style={styles.offerBadge}>
-                                <Text style={styles.offerText}>
-                                    {restaurant.offerPrimary || restaurant.offer || '15% OFF'}
-                                </Text>
-                            </View>
+                            {restaurant?.minOrder ? (
+                                <View style={styles.etaBadge}>
+                                    <Ionicons name="bag-outline" size={12} color="#FFFFFF" />
+                                    <Text style={styles.etaText}>Min ₹{restaurant.minOrder}</Text>
+                                </View>
+                            ) : null}
                         </View>
                     </View>
                 </View>
@@ -233,6 +288,8 @@ export default function RestaurantDetailsScreen({
                 {/* ══════════════════════════════════════════════════════════════
                     3. MENU CARDS (Image Left, Info Center, Add/+ Right)
                 ══════════════════════════════════════════════════════════════ */}
+                {renderMenuState()}
+                {menuStatus === 'ready' && menuItems.length > 0 && (
                 <View style={styles.menuList}>
                     {filteredItems.map((item) => {
                         const cartItem = cart[item.id];
@@ -241,11 +298,17 @@ export default function RestaurantDetailsScreen({
                         return (
                             <View key={item.id} style={styles.dishCard}>
                                 {/* Left: High-Res Rounded Thumbnail */}
-                                <Image
-                                    source={{ uri: item.image }}
-                                    style={styles.dishImg}
-                                    resizeMode="cover"
-                                />
+                                {item.image ? (
+                                    <Image
+                                        source={{ uri: item.image }}
+                                        style={styles.dishImg}
+                                        resizeMode="cover"
+                                    />
+                                ) : (
+                                    <View style={[styles.dishImg, styles.dishImgPlaceholder]}>
+                                        <Ionicons name="fast-food-outline" size={30} color="#94A3B8" />
+                                    </View>
+                                )}
 
                                 {/* Middle: Veg Dot, Title, Price, Description */}
                                 <View style={styles.dishInfoCol}>
@@ -270,9 +333,11 @@ export default function RestaurantDetailsScreen({
 
                                     <Text style={styles.dishName}>{item.name}</Text>
                                     <Text style={styles.dishPrice}>₹{item.price}</Text>
-                                    <Text style={styles.dishDesc} numberOfLines={2}>
-                                        {item.desc}
-                                    </Text>
+                                    {item.desc ? (
+                                        <Text style={styles.dishDesc} numberOfLines={2}>
+                                            {item.desc}
+                                        </Text>
+                                    ) : null}
                                 </View>
 
                                 {/* Right: + Add Pill or Stepper */}
@@ -280,7 +345,7 @@ export default function RestaurantDetailsScreen({
                                     {qty === 0 ? (
                                         <TouchableOpacity
                                             style={styles.addPill}
-                                            onPress={() => onAddToCart && onAddToCart(item)}
+                                            onPress={() => addItem(item)}
                                             activeOpacity={0.85}
                                         >
                                             <Ionicons name="add" size={16} color="#FFFFFF" />
@@ -301,7 +366,7 @@ export default function RestaurantDetailsScreen({
                                             <Text style={styles.stepperQtyText}>{qty}</Text>
 
                                             <TouchableOpacity
-                                                onPress={() => onAddToCart && onAddToCart(item)}
+                                                onPress={() => addItem(item)}
                                                 style={styles.stepperTouch}
                                                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                                             >
@@ -316,6 +381,7 @@ export default function RestaurantDetailsScreen({
                         );
                     })}
                 </View>
+                )}
             </ScrollView>
 
             {/* ══════════════════════════════════════════════════════════════
@@ -415,7 +481,7 @@ export default function RestaurantDetailsScreen({
                                     selectedCategory === 'All' && styles.menuSheetCatNameActive,
                                 ]}
                             >
-                                🍽️ All Dishes
+                                All Dishes
                             </Text>
                             <View style={styles.menuSheetCountBadge}>
                                 <Text style={styles.menuSheetCountText}>{menuItems.length}</Text>
@@ -567,6 +633,46 @@ const styles = StyleSheet.create({
         fontFamily: 'PlusJakartaSans_800ExtraBold',
         fontSize: 12,
         color: '#065F46',
+    },
+
+    // Loading / empty / error states
+    skeleton: { backgroundColor: '#E2E8F0' },
+    skeletonLine: { height: 12, borderRadius: 6, backgroundColor: '#E2E8F0' },
+    dishImgPlaceholder: { backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+    stateBox: {
+        alignItems: 'center',
+        paddingHorizontal: 32,
+        paddingVertical: 48,
+        gap: 8,
+    },
+    stateTitle: {
+        fontFamily: 'PlusJakartaSans_800ExtraBold',
+        fontSize: 16,
+        color: '#0F172A',
+        marginTop: 6,
+        textAlign: 'center',
+    },
+    stateText: {
+        fontFamily: 'PlusJakartaSans_500Medium',
+        fontSize: 13,
+        color: '#64748B',
+        textAlign: 'center',
+        lineHeight: 19,
+    },
+    retryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#008744',
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+        borderRadius: 20,
+        marginTop: 10,
+    },
+    retryText: {
+        fontFamily: 'PlusJakartaSans_700Bold',
+        fontSize: 13,
+        color: '#FFFFFF',
     },
 
     // 2. Category Chips Bar

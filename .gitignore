@@ -19,3 +19,8 @@ Thumbs.db
 .expo-shared/
 web-build/
 dist/
+backend/src/aura/audio_cache/*.wav
+
+# Demo video build artifacts (large)
+demo-video/*.mp4
+demo-video/*.wav

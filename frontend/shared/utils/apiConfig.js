@@ -15,7 +15,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 // Default Mac LAN IP fallback when running on the local network
-const DEFAULT_LAN_IP = '192.168.1.33';
+const DEFAULT_LAN_IP = '192.168.1.39';
 const BACKEND_PORT = 4000;
 
 /**

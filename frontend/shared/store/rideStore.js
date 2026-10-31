@@ -1,13 +1,23 @@
 import { create } from 'zustand';
 
+const EMPTY_DRIVER = {
+    name: '',          // filled by backend when a driver accepts
+    vehicle: '',
+    plate: '',
+    rating: null,
+    avatar: null,
+    etaMinutes: null,
+    phone: '',
+};
+
 const initialTripState = {
     pickupLocation: "",
     destination: "",
     selectedVehicleTier: "standard",
-    fare: 18.50,
+    fare: null,
     serviceType: 'ride',
     rideStatus: 'IDLE',
-    deliveryOtp: '4821',
+    deliveryOtp: null,     // real OTP from the booked ride; never a placeholder
     quoteId: null,
     rideId: null,          // MongoDB _id of the active Ride document
     customerId: null,      // real customer ID — used for WebSocket room
@@ -29,17 +39,7 @@ export const useRideStore = create((set) => ({
     ...initialTripState,
 
     // Driver assigned to trip — populated by backend on ride.driver_assigned event
-    driver: {
-        name: '',          // filled by backend
-        vehicle: '',
-        plate: '',
-        rating: 5.0,
-        avatar: null,
-        etaMinutes: 4,
-        seats: 4,
-        tripsCount: 0,
-        phone: '',
-    },
+    driver: { ...EMPTY_DRIVER },
 
     // Driver App Mode State
     isDriverOnline: false,
@@ -71,8 +71,9 @@ export const useRideStore = create((set) => ({
         durationMins: durationMins || null,
         allFares: fares || [],
     }),
+    // setDriver(null) clears it (a freshly booked ride has no driver until someone accepts)
     setDriver: (driverData) => set((state) => ({
-        driver: { ...state.driver, ...driverData },
+        driver: driverData ? { ...state.driver, ...driverData } : { ...EMPTY_DRIVER },
     })),
     setDeliveryOtp: (otp) => set({ deliveryOtp: otp }),
     setCustomerId: (id) => set({ customerId: id }),
@@ -88,5 +89,6 @@ export const useRideStore = create((set) => ({
         rideStatus: 'IDLE',
         rideId: null,
         activeOffer: null,
+        driver: { ...EMPTY_DRIVER },
     }),
 }));

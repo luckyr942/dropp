@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
+import { API_BASE } from '../../../shared/utils/apiConfig';
 
 const COMPLIMENTS = [
     { id: '1', label: '🚗 Smooth Drive' },
@@ -40,11 +40,12 @@ export default function RideCompletedScreen({ onNavigate, onDone }) {
         pickupLocation,
         destination,
         rideId,
+        customerId,
         resetTripState,
     } = useRideStore();
 
     const [rating, setRating] = useState(5);
-    const [selectedCompliments, setSelectedCompliments] = useState(['1', '2']);
+    const [selectedCompliments, setSelectedCompliments] = useState([]);
     const [selectedTip, setSelectedTip] = useState(0);
     const [submitting, setSubmitting] = useState(false);
 
@@ -60,12 +61,12 @@ export default function RideCompletedScreen({ onNavigate, onDone }) {
             if (rideId) {
                 await fetch(`${API_BASE}/api/rides/${rideId}/rate`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ rating }),
+                    headers: { 'Content-Type': 'application/json', ...(customerId ? { 'x-customer-id': customerId } : {}) },
+                    body: JSON.stringify({ rating, customerId, tip: selectedTip, compliments: selectedCompliments }),
                 });
             }
         } catch (_) {
-            // Silently complete
+            // Rating is best-effort; never block the user from finishing
         } finally {
             setSubmitting(false);
             resetTripState();
@@ -74,13 +75,11 @@ export default function RideCompletedScreen({ onNavigate, onDone }) {
         }
     };
 
-    const driverName = driver?.name || 'Captain Vikram';
-    const vehicle = driver?.vehicle || 'Swift Dzire • DL 1Z A 4421';
-    const avatar =
-        driver?.avatar ||
-        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80';
+    const driverName = driver?.name || 'your driver';
+    const vehicle = [driver?.vehicle, driver?.plate].filter(Boolean).join(' • ');
+    const avatar = driver?.avatar || null;
 
-    const baseFare = Number(fare || 165);
+    const baseFare = Number(fare || 0);
     const totalWithTip = baseFare + selectedTip;
 
     return (
@@ -104,14 +103,20 @@ export default function RideCompletedScreen({ onNavigate, onDone }) {
 
                 {/* ── Captain Card ── */}
                 <View style={styles.driverCard}>
-                    <Image source={{ uri: avatar }} style={styles.driverAvatar} />
+                    {avatar ? (
+                        <Image source={{ uri: avatar }} style={styles.driverAvatar} />
+                    ) : (
+                        <View style={[styles.driverAvatar, { backgroundColor: '#E6F7EF', alignItems: 'center', justifyContent: 'center' }]}>
+                            <Text style={{ color: '#00A859', fontSize: 24, fontWeight: '800' }}>{driverName.charAt(0).toUpperCase()}</Text>
+                        </View>
+                    )}
                     <View style={styles.driverInfo}>
                         <Text style={styles.driverName}>{driverName}</Text>
-                        <Text style={styles.driverVehicle}>{vehicle}</Text>
+                        {!!vehicle && <Text style={styles.driverVehicle}>{vehicle}</Text>}
                         <View style={styles.ratingBadge}>
                             <Ionicons name="star" size={13} color="#F59E0B" />
                             <Text style={styles.ratingBadgeText}>
-                                {Number(driver?.rating || 4.89).toFixed(1)} Rating
+                                {driver?.rating != null ? `${Number(driver.rating).toFixed(1)} Rating` : 'New partner'}
                             </Text>
                         </View>
                     </View>

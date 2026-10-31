@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRideStore } from '../../../shared/store/rideStore';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000';
+import { API_BASE } from '../../../shared/utils/apiConfig';
 
 const QUICK_PLACES = [
     { id: 'rajiv', label: 'Rajiv Chowk Metro', address: 'Connaught Place, Central Delhi', lat: 28.6328, lng: 77.2197, icon: 'business', color: '#FF3B30' },

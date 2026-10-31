@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -8,510 +8,601 @@ import {
     StyleSheet,
     Linking,
     StatusBar,
-    Animated,
     Alert,
+    ActivityIndicator,
+    RefreshControl,
 } from 'react-native';
 import * as Speech from 'expo-speech';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { API_BASE, WS_BASE } from '../../../shared/utils/apiConfig';
+import { Ionicons } from '@expo/vector-icons';
+import LiveMap from '../../../shared/components/LiveMap';
+import { API_BASE, getWsBase } from '../../../shared/utils/apiConfig';
+import { getCustomerId } from '../../../shared/utils/authStorage';
+import { getOrderById, getRestaurantById, cancelOrder } from '../api/foodApi';
+import { loadDeliveryAddress, formatAddress } from '../utils/deliveryAddress';
 
-const WS_URL = WS_BASE;
-
-const ORDER_STEPS = [
-    { id: 1, title: 'Confirmed', time: '6:02 PM' },
-    { id: 2, title: 'Preparing', time: 'In Progress' },
-    { id: 3, title: 'On the Way', time: 'Live GPS' },
-    { id: 4, title: 'Delivered', time: 'Expected' },
+const STEPS = [
+    { key: 'confirmed', title: 'Confirmed' },
+    { key: 'preparing', title: 'Preparing' },
+    { key: 'out_for_delivery', title: 'On the way' },
+    { key: 'delivered', title: 'Delivered' },
 ];
 
-export default function OrderTrackingScreen({
-    order = {
-        id: '#DRP-84920',
-        restaurantName: 'The Daily Grind',
-        etaMinutes: 18,
-        etaTime: '6:25 PM',
-        items: [
-            { id: '1', name: 'Signature Vanilla Cold Brew', quantity: 2, price: 210 },
-            { id: '3', name: 'Butter Croissant', quantity: 1, price: 130 },
-        ],
-        totalAmount: 514,
-        deliveryAddress: 'Flat 402, Tower B, Sector 28, Gurugram',
-        deliveryOtp: '4821',
-    },
-    onBack,
-}) {
-    const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
-    const [assignedDriver, setAssignedDriver] = useState(order?.driver?.name ? order.driver : null);
-    const [currentStepIndex, setCurrentStepIndex] = useState(
-        order?.status === 'delivered' ? 3 :
-            order?.status === 'out_for_delivery' ? 2 :
-                (order?.driver?.name || order?.status === 'driver_assigned') ? 1 : 0
-    );
-    const [statusBannerText, setStatusBannerText] = useState(
-        order?.status === 'confirmed' ? 'Order confirmed. Waiting for the kitchen.' : 'Kitchen Preparing Your Meal'
-    );
-    const [driverPos, setDriverPos] = useState({ lat: 28.5427, lng: 77.0492, bearing: 0 });
+const STEP_BY_STATUS = {
+    draft: -1,
+    confirmed: 0,
+    accepted: 1,
+    preparing: 1,
+    driver_assigned: 1,
+    ready_for_pickup: 1,
+    out_for_delivery: 2,
+    delivered: 3,
+};
 
-    const scooterAnim = useRef(new Animated.Value(0)).current;
+const STATUS_TEXT = {
+    draft: 'Order not placed yet',
+    confirmed: 'Order placed. Waiting for the restaurant to accept.',
+    accepted: 'The restaurant accepted your order.',
+    preparing: 'The kitchen is preparing your food.',
+    driver_assigned: 'A delivery partner has been assigned.',
+    ready_for_pickup: 'Your food is packed and ready for pickup.',
+    out_for_delivery: 'Your order is on the way.',
+    delivered: 'Delivered. Enjoy your meal!',
+    cancelled: 'This order was cancelled.',
+};
 
-    // ── Hydrate Live DB Order & Assigned Driver on Mount ────────────
+const CANCELLABLE = ['confirmed', 'accepted'];
+const TERMINAL = ['delivered', 'cancelled'];
+
+const idOf = (v) => (v && typeof v === 'object' ? String(v._id || '') : v ? String(v) : '');
+const rupees = (n) => `₹${Math.round(Number(n) || 0)}`;
+const timeOf = (d) => {
+    if (!d) return null;
+    const date = new Date(d);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+};
+
+export default function OrderTrackingScreen({ orderId: orderIdProp, initialOrder: initialOrderProp = null, order: legacyOrder = null, onBack, onBrowse }) {
+    // `order` is accepted for older callers; only a real backend _id is tracked
+    const initialOrder = initialOrderProp || legacyOrder;
+    const orderId = orderIdProp || idOf(legacyOrder?._id) || null;
+    const [order, setOrder] = useState(initialOrder && idOf(initialOrder._id) === orderId ? initialOrder : null);
+    const [loadState, setLoadState] = useState(orderId ? 'loading' : 'none'); // loading | ready | error | none
+    const [loadError, setLoadError] = useState(null);
+    const [refreshing, setRefreshing] = useState(false);
+    const [restaurant, setRestaurant] = useState(null);
+    const [dropPoint, setDropPoint] = useState(null);
+    const [driverPos, setDriverPos] = useState(null);
+    const [arrivedAtPickup, setArrivedAtPickup] = useState(false);
+    const [stepTimes, setStepTimes] = useState({});
+    const [cancelling, setCancelling] = useState(false);
+    const [wsLive, setWsLive] = useState(false);
+    const [summaryOpen, setSummaryOpen] = useState(true);
+
+    // Current assigned driver id, read inside the socket handler without re-subscribing
+    const driverIdRef = useRef(null);
+    driverIdRef.current = order?.driver?.driverId || null;
+
+    // ── Load the real order document ────────────────────────────────
+    const loadOrder = useCallback(async () => {
+        if (!orderId) return;
+        try {
+            const fresh = await getOrderById(orderId);
+            setOrder(fresh);
+            setLoadState('ready');
+            setLoadError(null);
+        } catch (err) {
+            setLoadError(err?.message || 'Could not load your order.');
+            setLoadState((s) => (s === 'ready' ? 'ready' : 'error'));
+        }
+    }, [orderId]);
+
     useEffect(() => {
-        let isMounted = true;
-        const targetId = order?._id || (order?.id && !String(order.id).startsWith('#') ? order.id : null);
-        if (!targetId) return;
+        loadOrder();
+    }, [loadOrder]);
 
-        fetch(`${API_BASE}/api/orders/${targetId}`)
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await loadOrder();
+        setRefreshing(false);
+    };
+
+    // ── Restaurant location (pickup pin) ────────────────────────────
+    const restaurantId = idOf(order?.restaurantId);
+    useEffect(() => {
+        if (!restaurantId) return;
+        let alive = true;
+        getRestaurantById(restaurantId)
+            .then((r) => alive && setRestaurant(r))
+            .catch(() => {});
+        return () => { alive = false; };
+    }, [restaurantId]);
+
+    // ── Delivery pin: coordinates saved with the address on this device ──
+    const dropStreet = order?.deliveryAddress?.street || '';
+    useEffect(() => {
+        let alive = true;
+        loadDeliveryAddress().then((saved) => {
+            if (!alive || !saved) return;
+            if (saved.street === dropStreet && Number.isFinite(saved.lat) && Number.isFinite(saved.lng)) {
+                setDropPoint({ lat: saved.lat, lng: saved.lng });
+            }
+        });
+        return () => { alive = false; };
+    }, [dropStreet]);
+
+    // ── Seed the driver marker from the driver's last known position ──
+    const assignedDriverId = order?.driver?.driverId || null;
+    useEffect(() => {
+        if (!assignedDriverId) return;
+        let alive = true;
+        fetch(`${API_BASE}/api/drivers/${assignedDriverId}`)
             .then((r) => r.json())
             .then((json) => {
-                if (!isMounted || !json?.data) return;
-                const d = json.data;
-                if (d.driver) setAssignedDriver(d.driver);
-                if (d.status === 'delivered') {
-                    setCurrentStepIndex(3);
-                    setStatusBannerText('Order Delivered! Enjoy your meal 🍕');
-                } else if (d.status === 'out_for_delivery') {
-                    setCurrentStepIndex(2);
-                    setStatusBannerText('Order collected! Your food is out for delivery 🛵');
-                } else if (d.status === 'driver_assigned' || d.status === 'preparing') {
-                    setCurrentStepIndex(1);
-                    setStatusBannerText(d.driver ? `${d.driver.name} is on the way to pick up your order!` : 'Kitchen Preparing Your Meal');
+                const loc = json?.data?.location;
+                if (alive && loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng)) {
+                    setDriverPos((prev) => prev || { lat: loc.lat, lng: loc.lng, bearing: loc.bearing || 0 });
                 }
             })
             .catch(() => {});
+        return () => { alive = false; };
+    }, [assignedDriverId]);
 
-        return () => { isMounted = false; };
-    }, [order?._id, order?.id]);
-
-    // ── WebSocket Real-Time Listener ────────────────────────────────
+    // ── Live updates over WebSocket (one connection per order id) ────
     useEffect(() => {
-        let ws;
-        let isMounted = true;
+        if (!orderId) return undefined;
+        let ws = null;
+        let closedByUs = false;
+        let retryTimer = null;
+        let attempt = 0;
 
-        const custId = order?.customerId || 'cust_live_001';
+        const markStep = (status, at) => {
+            setStepTimes((prev) => (prev[status] ? prev : { ...prev, [status]: at || new Date().toISOString() }));
+        };
 
-        function connect() {
-            try {
-                ws = new WebSocket(`${WS_URL}?customerId=${custId}`);
+        const applyStatus = (status, extra = {}, at) => {
+            setOrder((prev) => (prev ? { ...prev, ...extra, status } : prev));
+            markStep(status, at);
+        };
 
-                ws.onopen = () => {
-                    console.log('[FoodTracking] Connected to WS for customer:', custId);
-                };
-
-                ws.onmessage = (e) => {
-                    try {
-                        const msg = JSON.parse(e.data);
-                        const type = msg.type;
-                        const data = msg.data || {};
-
-                        if (type === 'ORDER_STATUS_UPDATE' && (!data.orderId || data.orderId === (order?._id || order?.id))) {
-                            const stepByStatus = {
-                                confirmed: 0,
-                                accepted: 1,
-                                driver_assigned: 1,
-                                preparing: 1,
-                                out_for_delivery: 2,
-                                delivered: 3,
-                            };
-                            const nextStep = stepByStatus[data.status];
-                            if (typeof nextStep === 'number') setCurrentStepIndex(nextStep);
-                            if (data.driver) setAssignedDriver(data.driver);
-                            const message = data.message || `Your order is now ${String(data.status || '').replace(/_/g, ' ')}.`;
-                            setStatusBannerText(message);
-                            if (data.status === 'out_for_delivery') {
-                                Animated.timing(scooterAnim, { toValue: 1, duration: 15000, useNativeDriver: true }).start();
-                            }
-                            if (data.status === 'delivered') {
-                                Alert.alert('Order Delivered', 'Your meal has arrived. Enjoy your meal!');
-                            }
-                            Speech.stop();
-                            Speech.speak(message, { language: 'en-IN', rate: 0.94 });
-                            return;
-                        }
-
-                        if (type === 'order.driver_confirmed' || type === 'ride.driver_confirmed') {
-                            if (data.driver) {
-                                setAssignedDriver(data.driver);
-                                setCurrentStepIndex(1);
-                                setStatusBannerText(`${data.driver.name} is on the way to pick up your order!`);
-                            }
-                        } else if (type === 'order.driver_arrived_pickup') {
-                            if (data.driver) setAssignedDriver(data.driver);
-                            setCurrentStepIndex(1);
-                            setStatusBannerText('Delivery partner arrived at restaurant. Packing your food.');
-                        } else if (type === 'order.out_for_delivery') {
-                            if (data.driver) setAssignedDriver(data.driver);
-                            setCurrentStepIndex(2);
-                            setStatusBannerText('Order collected! Your food is out for delivery 🛵');
-                            Animated.timing(scooterAnim, {
-                                toValue: 1,
-                                duration: 15000,
-                                useNativeDriver: true,
-                            }).start();
-                        } else if (type === 'driver.location_update') {
-                            setDriverPos({
-                                lat: data.lat,
-                                lng: data.lng,
-                                bearing: data.bearing || 0,
-                            });
-                            if (currentStepIndex === 1) setCurrentStepIndex(2);
-                        } else if (type === 'order.delivered') {
-                            if (data.driver) setAssignedDriver(data.driver);
-                            setCurrentStepIndex(3);
-                            setStatusBannerText('Order Delivered! Enjoy your meal 🍕');
-                            Alert.alert('🎉 Order Delivered!', 'Your meal has arrived. Enjoy your meal!');
-                        } else if (type === 'ORDER_STATUS_UPDATE') {
-                            const s = data.status;
-                            if (s === 'accepted') {
-                                setCurrentStepIndex(0);
-                                setStatusBannerText(data.message || 'Restaurant accepted your order!');
-                            } else if (s === 'preparing') {
-                                setCurrentStepIndex(1);
-                                setStatusBannerText(data.message || 'Kitchen preparing your meal 👨‍🍳');
-                            } else if (s === 'out_for_delivery') {
-                                setCurrentStepIndex(2);
-                                setStatusBannerText(data.message || 'Order collected! Out for delivery 🛵');
-                            } else if (s === 'delivered') {
-                                setCurrentStepIndex(3);
-                                setStatusBannerText('Order Delivered! Enjoy your meal 🍽️');
-                            }
-                        }
-                    } catch (err) {
-                        console.warn('[FoodTracking] Parse error:', err.message);
-                    }
-                };
-
-                ws.onclose = () => {
-                    if (isMounted) setTimeout(connect, 3000);
-                };
-
-                ws.onerror = () => {
-                    try { ws.close(); } catch (_) { }
-                };
-            } catch (err) {
-                console.warn('[FoodTracking] WS error:', err.message);
+        const handle = (msg) => {
+            const { type, data = {}, at } = msg || {};
+            if (type === 'driver.location_update') {
+                if (driverIdRef.current && String(data.driverId) === String(driverIdRef.current)) {
+                    setDriverPos({ lat: Number(data.lat), lng: Number(data.lng), bearing: Number(data.bearing) || 0 });
+                }
+                return;
             }
-        }
+            if (String(data.orderId || '') !== String(orderId)) return;
+
+            switch (type) {
+                case 'ORDER_CONFIRMED':
+                    applyStatus('confirmed', {}, at);
+                    break;
+                case 'ORDER_STATUS_UPDATE':
+                    if (data.status) applyStatus(data.status, {}, at);
+                    if (data.message) {
+                        Speech.stop();
+                        Speech.speak(data.message, { language: 'en-IN', rate: 0.94 });
+                    }
+                    break;
+                case 'order.driver_confirmed':
+                    applyStatus('driver_assigned', data.driver ? { driver: data.driver } : {}, at);
+                    break;
+                case 'order.driver_arrived_pickup':
+                    setArrivedAtPickup(true);
+                    if (data.driver) setOrder((prev) => (prev ? { ...prev, driver: { ...prev.driver, ...data.driver } } : prev));
+                    break;
+                case 'order.out_for_delivery':
+                    applyStatus('out_for_delivery', {}, at);
+                    break;
+                case 'order.delivered':
+                    applyStatus('delivered', {}, at);
+                    break;
+                case 'ORDER_CANCELLED':
+                    applyStatus('cancelled', {}, at);
+                    break;
+                default:
+                    return;
+            }
+            // Pull the full document so driver details/timestamps stay authoritative
+            loadOrder();
+        };
+
+        const connect = async () => {
+            const customerId = await getCustomerId();
+            if (closedByUs) return;
+            try {
+                ws = new WebSocket(`${getWsBase()}?customerId=${encodeURIComponent(customerId)}`);
+            } catch (_) {
+                scheduleRetry();
+                return;
+            }
+            ws.onopen = () => {
+                attempt = 0;
+                setWsLive(true);
+            };
+            ws.onmessage = (e) => {
+                try {
+                    handle(JSON.parse(e.data));
+                } catch (_) {
+                    // ignore malformed frames
+                }
+            };
+            ws.onerror = () => {
+                try { ws?.close(); } catch (_) { /* noop */ }
+            };
+            ws.onclose = () => {
+                setWsLive(false);
+                if (!closedByUs) scheduleRetry();
+            };
+        };
+
+        const scheduleRetry = () => {
+            attempt += 1;
+            const delay = Math.min(30000, 2000 * 2 ** Math.min(attempt, 4));
+            retryTimer = setTimeout(() => {
+                // Catch up on anything missed while disconnected
+                loadOrder();
+                connect();
+            }, delay);
+        };
 
         connect();
-
         return () => {
-            isMounted = false;
-            try { ws?.close(); } catch (_) { }
+            closedByUs = true;
+            clearTimeout(retryTimer);
+            try { ws?.close(); } catch (_) { /* noop */ }
         };
-    }, [order]);
+    }, [orderId, loadOrder]);
 
-    // Active driver details (live or fallback placeholder)
-    const driver = assignedDriver || {
-        name: 'Searching for nearby partner...',
-        rating: '5.0',
-        trips: 'Top Rated',
-        vehicle: 'Dropp Courier Scooter',
-        phone: '+91 98765 43210',
-        avatar: require('../../../assets/icon.png'),
-    };
-
-    const avatarSource = typeof driver.avatar === 'number'
-        ? driver.avatar
-        : (typeof driver.avatar === 'string' && driver.avatar.startsWith('http'))
-            ? { uri: driver.avatar }
-            : require('../../../assets/icon.png');
-
-    const handleCallDriver = () => {
-        if (!assignedDriver) {
-            Alert.alert('Assigning Partner', 'We will assign a delivery partner shortly.');
-            return;
+    // ── Cancel ──────────────────────────────────────────────────────
+    const doCancel = async () => {
+        setCancelling(true);
+        try {
+            const updated = await cancelOrder(orderId);
+            setOrder((prev) => ({ ...(prev || {}), ...(updated || {}), status: 'cancelled' }));
+        } catch (err) {
+            Alert.alert('Could not cancel', err?.message || 'Please try again.');
+            loadOrder();
+        } finally {
+            setCancelling(false);
         }
-        Linking.openURL(`tel:${driver.phone}`).catch(() => {
-            Alert.alert('Calling Partner', `Calling ${driver.name} at ${driver.phone}`);
-        });
     };
 
-    const handleChatDriver = () => {
-        Alert.alert('Chat Support', `Chat with ${driver.name} is ready.`);
+    const confirmCancel = () => {
+        Alert.alert('Cancel this order?', 'The restaurant will be notified right away.', [
+            { text: 'Keep order', style: 'cancel' },
+            { text: 'Cancel order', style: 'destructive', onPress: doCancel },
+        ]);
     };
+
+    // ── No order / loading / error ─────────────────────────────────
+    if (!orderId) {
+        return (
+            <Shell onBack={onBack}>
+                <StateView
+                    icon="receipt-outline"
+                    title="No active order"
+                    text="Orders you place will show up here with live tracking."
+                    actionLabel="Browse restaurants"
+                    onAction={onBrowse || onBack}
+                />
+            </Shell>
+        );
+    }
+    if (!order && loadState === 'loading') {
+        return (
+            <Shell onBack={onBack}>
+                <View style={styles.centerFill}>
+                    <ActivityIndicator size="large" color="#00A859" />
+                    <Text style={styles.mutedText}>Loading your order…</Text>
+                </View>
+            </Shell>
+        );
+    }
+    if (!order) {
+        return (
+            <Shell onBack={onBack}>
+                <StateView
+                    icon="cloud-offline-outline"
+                    title="Couldn't load this order"
+                    text={loadError}
+                    actionLabel="Try again"
+                    onAction={() => { setLoadState('loading'); loadOrder(); }}
+                />
+            </Shell>
+        );
+    }
+
+    const status = order.status || 'confirmed';
+    const isCancelled = status === 'cancelled';
+    const stepIndex = STEP_BY_STATUS[status] ?? 0;
+    const driver = order.driver?.driverId || order.driver?.name ? order.driver : null;
+    const restaurantName = order.restaurantId?.name || order.restaurantName || restaurant?.name || 'Restaurant';
+    const shortId = `#${String(order._id).slice(-6).toUpperCase()}`;
+
+    let statusText = STATUS_TEXT[status] || `Status: ${String(status).replace(/_/g, ' ')}`;
+    if (arrivedAtPickup && stepIndex === 1) statusText = `${driver?.name || 'Your delivery partner'} has reached the restaurant.`;
+    else if (status === 'driver_assigned' && driver?.name) statusText = `${driver.name} is heading to the restaurant.`;
+
+    // Estimated arrival from the restaurant's own delivery time
+    const placedAt = order.confirmedAt || order.createdAt;
+    const expectedBy = restaurant?.deliveryTimeMins && placedAt
+        ? timeOf(new Date(new Date(placedAt).getTime() + restaurant.deliveryTimeMins * 60000))
+        : null;
+    const headerPill = isCancelled
+        ? 'Cancelled'
+        : status === 'delivered'
+            ? 'Delivered'
+            : expectedBy
+                ? `Expected by ${expectedBy}`
+                : 'Tracking live';
+
+    const stepTime = (key, idx) => {
+        if (idx > stepIndex) return null;
+        if (key === 'confirmed') return timeOf(order.confirmedAt || order.createdAt);
+        if (key === 'delivered' && status === 'delivered') return timeOf(stepTimes.delivered || order.updatedAt);
+        const t = stepTimes[key] || (key === 'preparing' && (stepTimes.accepted || stepTimes.driver_assigned));
+        return timeOf(t);
+    };
+
+    const pickup = restaurant?.location || null;
+    const showMap = !isCancelled && status !== 'delivered' && (pickup || dropPoint || driverPos);
 
     return (
+        <Shell
+            onBack={onBack}
+            center={
+                <View style={[styles.etaPill, isCancelled && { backgroundColor: '#EF4444' }]}>
+                    <View style={[styles.pillDot, wsLive && !TERMINAL.includes(status) && styles.pillDotLive]} />
+                    <Text style={styles.etaPillText}>{headerPill}</Text>
+                </View>
+            }
+        >
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scroll}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00A859" />}
+            >
+                {showMap ? (
+                    <View style={styles.mapCard}>
+                        <LiveMap
+                            style={styles.map}
+                            pickup={pickup}
+                            drop={dropPoint}
+                            driver={driverPos}
+                            driverIcon="bicycle"
+                            pickupLabel={restaurantName}
+                            dropLabel="Your address"
+                        />
+                        <View style={styles.mapBadge}>
+                            <View style={[styles.pillDot, wsLive ? styles.pillDotLive : { backgroundColor: '#94A3B8' }]} />
+                            <Text style={styles.mapBadgeText}>
+                                {driverPos ? 'Live partner location' : wsLive ? 'Live updates on' : 'Reconnecting…'}
+                            </Text>
+                        </View>
+                        {pickup?.approximate ? (
+                            <Text style={styles.mapCaption}>Restaurant pin is approximate (from its pincode).</Text>
+                        ) : null}
+                    </View>
+                ) : null}
+
+                {/* Status + OTP */}
+                <View style={[styles.card, isCancelled && styles.cancelledCard]}>
+                    <View style={styles.inlineRow}>
+                        <View style={[styles.statusIcon, isCancelled && { backgroundColor: '#FEE2E2' }]}>
+                            <Ionicons
+                                name={isCancelled ? 'close' : status === 'delivered' ? 'checkmark-done' : 'restaurant'}
+                                size={18}
+                                color={isCancelled ? '#DC2626' : '#00A859'}
+                            />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.statusTitle}>{statusText}</Text>
+                            <Text style={styles.mutedText}>{shortId} • {restaurantName}</Text>
+                        </View>
+                    </View>
+
+                    {!isCancelled && status !== 'delivered' && order.deliveryOtp ? (
+                        <View style={styles.otpBox}>
+                            <View style={styles.inlineRow}>
+                                <Ionicons name="shield-checkmark" size={18} color="#00C96B" />
+                                <View>
+                                    <Text style={styles.otpLabel}>DELIVERY OTP</Text>
+                                    <Text style={styles.otpSub}>Share only with your delivery partner</Text>
+                                </View>
+                            </View>
+                            <View style={styles.otpPill}>
+                                <Text style={styles.otpDigits}>{order.deliveryOtp}</Text>
+                            </View>
+                        </View>
+                    ) : null}
+                </View>
+
+                {/* Timeline */}
+                {!isCancelled && (
+                    <View style={styles.card}>
+                        <Text style={styles.cardTitle}>Order status</Text>
+                        <View style={styles.timelineRow}>
+                            {STEPS.map((step, idx) => {
+                                const done = idx <= stepIndex;
+                                const active = idx === stepIndex && status !== 'delivered';
+                                const t = stepTime(step.key, idx);
+                                return (
+                                    <View key={step.key} style={styles.timelineStep}>
+                                        <View style={styles.stepIndicatorRow}>
+                                            <View style={[styles.stepCircle, done && styles.stepCircleDone, active && styles.stepCircleActive]}>
+                                                {done && !active ? (
+                                                    <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                                                ) : (
+                                                    <View style={active ? styles.activeDot : styles.idleDot} />
+                                                )}
+                                            </View>
+                                            {idx < STEPS.length - 1 && (
+                                                <View style={[styles.stepLine, idx < stepIndex && styles.stepLineDone]} />
+                                            )}
+                                        </View>
+                                        <Text style={[styles.stepTitle, done && styles.stepTitleDone]} numberOfLines={1}>
+                                            {step.title}
+                                        </Text>
+                                        <Text style={styles.stepTime}>{t || (active ? 'Now' : ' ')}</Text>
+                                    </View>
+                                );
+                            })}
+                        </View>
+                    </View>
+                )}
+
+                {/* Delivery partner (only when one is really assigned) */}
+                {!isCancelled && (
+                    <View style={styles.card}>
+                        <Text style={styles.cardTitle}>Delivery partner</Text>
+                        {driver ? (
+                            <View style={styles.driverRow}>
+                                {typeof driver.avatar === 'string' && driver.avatar.startsWith('http') ? (
+                                    <Image source={{ uri: driver.avatar }} style={styles.driverAvatar} />
+                                ) : (
+                                    <View style={[styles.driverAvatar, styles.driverAvatarFallback]}>
+                                        <Text style={styles.driverInitial}>{(driver.name || '?').charAt(0).toUpperCase()}</Text>
+                                    </View>
+                                )}
+                                <View style={{ flex: 1 }}>
+                                    <View style={styles.inlineRow}>
+                                        <Text style={styles.driverName}>{driver.name || 'Delivery partner'}</Text>
+                                        {driver.rating ? (
+                                            <View style={styles.ratingBadge}>
+                                                <Ionicons name="star" size={11} color="#F59E0B" />
+                                                <Text style={styles.ratingText}>{Number(driver.rating).toFixed(1)}</Text>
+                                            </View>
+                                        ) : null}
+                                    </View>
+                                    {driver.vehicle ? <Text style={styles.mutedText}>{driver.vehicle}</Text> : null}
+                                </View>
+                                {driver.phone ? (
+                                    <TouchableOpacity
+                                        style={styles.callBtn}
+                                        onPress={() => Linking.openURL(`tel:${driver.phone}`).catch(() => {})}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Ionicons name="call" size={16} color="#00A859" />
+                                    </TouchableOpacity>
+                                ) : null}
+                            </View>
+                        ) : (
+                            <View style={[styles.inlineRow, { marginTop: 10 }]}>
+                                {status !== 'delivered' && <ActivityIndicator size="small" color="#00A859" />}
+                                <Text style={styles.mutedText}>
+                                    {status === 'delivered' ? 'Delivered by a Dropp partner.' : "We'll show your partner here once one is assigned."}
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+                )}
+
+                {/* Summary */}
+                <View style={styles.card}>
+                    <TouchableOpacity style={styles.summaryHeader} onPress={() => setSummaryOpen(!summaryOpen)} activeOpacity={0.8}>
+                        <View>
+                            <Text style={styles.cardTitle}>Order summary</Text>
+                            <Text style={styles.mutedText}>{shortId} • {timeOf(order.createdAt) || ''}</Text>
+                        </View>
+                        <Ionicons name={summaryOpen ? 'chevron-up' : 'chevron-down'} size={20} color="#0F172A" />
+                    </TouchableOpacity>
+                    {summaryOpen && (
+                        <View style={{ marginTop: 12, gap: 8 }}>
+                            {(order.items || []).map((item, i) => (
+                                <View key={`${idOf(item.menuItemId)}-${i}`} style={styles.summaryRow}>
+                                    <Text style={styles.summaryName} numberOfLines={1}>{item.name}</Text>
+                                    <Text style={styles.summaryQty}>×{item.quantity}</Text>
+                                    <Text style={styles.summaryPrice}>{rupees(item.totalPrice ?? item.unitPrice * item.quantity)}</Text>
+                                </View>
+                            ))}
+                            <View style={styles.divider} />
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.summaryName}>Item total</Text>
+                                <Text style={styles.summaryPrice}>{rupees(order.subtotal)}</Text>
+                            </View>
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.summaryName}>Delivery fee</Text>
+                                <Text style={styles.summaryPrice}>{rupees(order.deliveryFee)}</Text>
+                            </View>
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.totalLabel}>{status === 'delivered' ? 'Total paid' : 'To pay on delivery'}</Text>
+                                <Text style={styles.totalValue}>{rupees(order.totalAmount)}</Text>
+                            </View>
+                            {formatAddress(order.deliveryAddress) ? (
+                                <View style={styles.addressBox}>
+                                    <Ionicons name="location-outline" size={16} color="#00A859" />
+                                    <Text style={styles.addressText} numberOfLines={2}>{formatAddress(order.deliveryAddress)}</Text>
+                                </View>
+                            ) : null}
+                        </View>
+                    )}
+                </View>
+
+                {CANCELLABLE.includes(status) && (
+                    <TouchableOpacity
+                        style={[styles.cancelBtn, cancelling && { opacity: 0.6 }]}
+                        activeOpacity={0.8}
+                        onPress={confirmCancel}
+                        disabled={cancelling}
+                    >
+                        {cancelling ? (
+                            <ActivityIndicator size="small" color="#EF4444" />
+                        ) : (
+                            <Ionicons name="close-circle-outline" size={18} color="#EF4444" />
+                        )}
+                        <Text style={styles.cancelText}>{cancelling ? 'Cancelling…' : 'Cancel order'}</Text>
+                    </TouchableOpacity>
+                )}
+
+                {TERMINAL.includes(status) && (
+                    <TouchableOpacity style={styles.primaryBtn} onPress={onBrowse || onBack} activeOpacity={0.88}>
+                        <Text style={styles.primaryBtnText}>Order something else</Text>
+                    </TouchableOpacity>
+                )}
+            </ScrollView>
+        </Shell>
+    );
+}
+
+function Shell({ onBack, center, children }) {
+    return (
         <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor="#EEF9F1" />
-            {/* 1. Header */}
+            <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
             <View style={styles.header}>
                 <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.8}>
                     <Ionicons name="arrow-back" size={20} color="#0F172A" />
                 </TouchableOpacity>
-
-                <View style={styles.etaPill}>
-                    <View style={[styles.pulsingDot, currentStepIndex === 3 && { backgroundColor: '#00C96B' }]} />
-                    <Text style={styles.etaPillText}>
-                        {currentStepIndex === 3 ? 'Delivered 🎉' : `Arriving in ${order.etaMinutes || 20} mins`}
-                    </Text>
-                </View>
-
-                <TouchableOpacity
-                    style={styles.helpBtn}
-                    onPress={() => alert('Support: 24/7 Helpline available')}
-                    activeOpacity={0.8}
-                >
-                    <Ionicons name="help-circle-outline" size={22} color="#00A859" />
-                </TouchableOpacity>
+                {center || <Text style={styles.headerTitle}>Your order</Text>}
+                <View style={{ width: 38 }} />
             </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-                {/* 2. Stylized Map View Simulation */}
-                <View style={styles.mapContainer}>
-                    {/* Stylized streets background */}
-                    <View style={styles.mapRoad1} />
-                    <View style={styles.mapRoad2} />
-                    <View style={styles.mapRoadDiagonal} />
-
-                    {/* Restaurant Origin Pin */}
-                    <View style={styles.restaurantPin}>
-                        <Ionicons name="restaurant" size={16} color="#FFFFFF" />
-                    </View>
-
-                    {/* Route Dashed Line */}
-                    <View style={styles.routePath} />
-
-                    {/* Moving Courier Scooter */}
-                    <View style={styles.scooterMarker}>
-                        <Ionicons name="bicycle" size={18} color="#FFFFFF" />
-                    </View>
-
-                    {/* Destination Home Pin */}
-                    <View style={styles.homePin}>
-                        <Ionicons name="home" size={16} color="#FFFFFF" />
-                    </View>
-
-                    {/* Live Tracking Floating Badge */}
-                    <View style={styles.liveBadge}>
-                        <Text style={styles.liveBadgeText}>⚡ Live GPS Tracking</Text>
-                    </View>
-                </View>
-
-                {/* 2.5 Live Status & Delivery Verification OTP */}
-                <View style={styles.liveOtpCard}>
-                    <View style={styles.liveStatusRow}>
-                        <View style={styles.liveDotRing}>
-                            <View style={styles.liveDotInner} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={styles.liveStatusTitle}>{statusBannerText}</Text>
-                            <Text style={styles.liveStatusSub}>
-                                {assignedDriver ? `${assignedDriver.name} (${assignedDriver.vehicle || 'Courier'})` : 'Matching nearest delivery partner...'}
-                            </Text>
-                        </View>
-                    </View>
-
-                    <View style={styles.otpBox}>
-                        <View style={styles.otpLeft}>
-                            <Ionicons name="shield-checkmark" size={18} color="#00C96B" />
-                            <View>
-                                <Text style={styles.otpLabel}>DELIVERY OTP</Text>
-                                <Text style={styles.otpSub}>Share with partner at delivery</Text>
-                            </View>
-                        </View>
-                        <View style={styles.otpPill}>
-                            <Text style={styles.otpDigitText}>{order?.deliveryOtp || '4821'}</Text>
-                        </View>
-                    </View>
-                </View>
-
-                {/* 3. Order Status Timeline Card */}
-                <View style={styles.card}>
-                    <Text style={styles.cardHeaderTitle}>Order Status Timeline</Text>
-
-                    <View style={styles.timelineRow}>
-                        {ORDER_STEPS.map((step, idx) => {
-                            const isDone = idx <= currentStepIndex;
-                            const isActive = idx === currentStepIndex;
-
-                            return (
-                                <View key={step.id} style={styles.timelineStep}>
-                                    <View style={styles.stepIndicatorRow}>
-                                        <View
-                                            style={[
-                                                styles.stepCircle,
-                                                isDone && styles.stepCircleDone,
-                                                isActive && styles.stepCircleActive,
-                                            ]}
-                                        >
-                                            {isDone && !isActive ? (
-                                                <Ionicons name="checkmark" size={12} color="#FFFFFF" />
-                                            ) : isActive ? (
-                                                <View style={styles.activeDot} />
-                                            ) : (
-                                                <View style={styles.idleDot} />
-                                            )}
-                                        </View>
-                                        {idx < ORDER_STEPS.length - 1 && (
-                                            <View
-                                                style={[
-                                                    styles.stepLine,
-                                                    idx < currentStepIndex && styles.stepLineDone,
-                                                ]}
-                                            />
-                                        )}
-                                    </View>
-                                    <Text
-                                        style={[
-                                            styles.stepTitle,
-                                            isDone && styles.stepTitleDone,
-                                            isActive && styles.stepTitleActive,
-                                        ]}
-                                        numberOfLines={2}
-                                    >
-                                        {step.title}
-                                    </Text>
-                                </View>
-                            );
-                        })}
-                    </View>
-                </View>
-
-                {/* 4. Delivery Partner Card */}
-                <View style={styles.card}>
-                    <Text style={styles.cardHeaderTitle}>Delivery Partner</Text>
-
-                    <View style={styles.driverRow}>
-                        <Image source={avatarSource} style={styles.driverAvatar} />
-
-                        <View style={styles.driverInfo}>
-                            <View style={styles.driverNameRow}>
-                                <Text style={styles.driverName}>{driver.name}</Text>
-                                <View style={styles.ratingBadge}>
-                                    <Ionicons name="star" size={11} color="#F59E0B" />
-                                    <Text style={styles.ratingText}>{driver.rating}</Text>
-                                </View>
-                            </View>
-                            <Text style={styles.driverVehicle}>{driver.vehicle}</Text>
-                        </View>
-
-                        <View style={styles.driverActions}>
-                            <TouchableOpacity
-                                style={styles.actionCircleBtn}
-                                onPress={handleCallDriver}
-                                activeOpacity={0.8}
-                            >
-                                <Ionicons name="call" size={16} color="#00A859" />
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.actionCircleBtn}
-                                onPress={handleChatDriver}
-                                activeOpacity={0.8}
-                            >
-                                <Ionicons name="chatbubble-ellipses" size={16} color="#00A859" />
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-
-                {/* 5. Order Summary Accordion */}
-                <View style={styles.card}>
-                    <TouchableOpacity
-                        style={styles.summaryHeader}
-                        onPress={() => setIsSummaryExpanded(!isSummaryExpanded)}
-                        activeOpacity={0.8}
-                    >
-                        <View>
-                            <Text style={styles.cardHeaderTitle}>Order Summary</Text>
-                            <Text style={styles.orderIdText}>{order.id} • {order.restaurantName}</Text>
-                        </View>
-                        <Ionicons
-                            name={isSummaryExpanded ? 'chevron-up' : 'chevron-down'}
-                            size={20}
-                            color="#0F172A"
-                        />
-                    </TouchableOpacity>
-
-                    {isSummaryExpanded && (
-                        <View style={styles.summaryBody}>
-                            {order.items.map((item) => (
-                                <View key={item.id} style={styles.summaryItemRow}>
-                                    <Text style={styles.summaryItemName} numberOfLines={1}>
-                                        {item.name}
-                                    </Text>
-                                    <Text style={styles.summaryItemQty}>x{item.quantity}</Text>
-                                    <Text style={styles.summaryItemPrice}>
-                                        ₹{item.price * item.quantity}
-                                    </Text>
-                                </View>
-                            ))}
-
-                            <View style={styles.divider} />
-
-                            <View style={styles.totalRow}>
-                                <Text style={styles.totalLabel}>Total Paid</Text>
-                                <Text style={styles.totalValue}>₹{order.totalAmount}</Text>
-                            </View>
-
-                            <View style={styles.addressBox}>
-                                <Ionicons name="location-outline" size={16} color="#00A859" />
-                                <Text style={styles.addressText} numberOfLines={2}>
-                                    {order.deliveryAddress}
-                                </Text>
-                            </View>
-                        </View>
-                    )}
-                </View>
-                {/* Cancel Order — visible while order is still pending or kitchen is preparing */}
-                {currentStepIndex < 2 && (
-                    <TouchableOpacity
-                        style={styles.cancelOrderBtn}
-                        activeOpacity={0.8}
-                        onPress={() => {
-                            Alert.alert(
-                                'Cancel Order',
-                                'Are you sure you want to cancel? Cancellation charges may apply if kitchen has started preparing.',
-                                [
-                                    { text: 'Keep Order', style: 'cancel' },
-                                    {
-                                        text: 'Yes, Cancel',
-                                        style: 'destructive',
-                                        onPress: () => {
-                                            Alert.alert(
-                                                'Order Cancelled',
-                                                'Your order has been cancelled. Refund will be processed in 3-5 business days.',
-                                                [{ text: 'OK', onPress: () => { if (onBack) onBack(); } }]
-                                            );
-                                        },
-                                    },
-                                ]
-                            );
-                        }}
-                    >
-                        <Ionicons name="close-circle-outline" size={18} color="#EF4444" />
-                        <Text style={styles.cancelOrderText}>Cancel Order</Text>
-                    </TouchableOpacity>
-                )}
-            </ScrollView>
+            {children}
         </SafeAreaView>
     );
 }
 
+function StateView({ icon, title, text, actionLabel, onAction }) {
+    return (
+        <View style={styles.centerFill}>
+            <View style={styles.stateIcon}>
+                <Ionicons name={icon} size={36} color="#00A859" />
+            </View>
+            <Text style={styles.stateTitle}>{title}</Text>
+            {text ? <Text style={[styles.mutedText, { textAlign: 'center' }]}>{text}</Text> : null}
+            {actionLabel ? (
+                <TouchableOpacity style={styles.primaryBtn} onPress={onAction} activeOpacity={0.88}>
+                    <Text style={styles.primaryBtnText}>{actionLabel}</Text>
+                </TouchableOpacity>
+            ) : null}
+        </View>
+    );
+}
+
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#EEF9F1',
-    },
-    cancelOrderBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        paddingVertical: 14,
-        borderRadius: 14,
-        borderWidth: 1.5,
-        borderColor: '#FCA5A5',
-        backgroundColor: '#FFF5F5',
-        marginTop: 4,
-    },
-    cancelOrderText: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#EF4444',
-        fontFamily: 'PlusJakartaSans_600SemiBold',
-    },
+    container: { flex: 1, backgroundColor: '#EEF9F1' },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -522,6 +613,7 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#E2E8F0',
     },
+    headerTitle: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 16, color: '#0F172A' },
     backBtn: {
         width: 38,
         height: 38,
@@ -539,455 +631,179 @@ const styles = StyleSheet.create({
         borderRadius: 20,
         gap: 7,
     },
-    pulsingDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#FFFFFF',
-    },
-    etaPillText: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 12.5,
-        color: '#FFFFFF',
-    },
-    helpBtn: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
-        backgroundColor: '#F0FDF4',
+    pillDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.6)' },
+    pillDotLive: { backgroundColor: '#4ADE80' },
+    etaPillText: { fontFamily: 'PlusJakartaSans_700Bold', fontSize: 12.5, color: '#FFFFFF' },
+
+    scroll: { padding: 16, paddingBottom: 48, gap: 14 },
+    centerFill: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 10 },
+    stateIcon: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#DCFCE7',
         alignItems: 'center',
         justifyContent: 'center',
+        marginBottom: 4,
     },
-    scroll: {
-        padding: 16,
-        gap: 14,
-        paddingBottom: 40,
-    },
+    stateTitle: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 18, color: '#0F172A' },
 
-    // Stylized Map Simulation
-    mapContainer: {
-        height: 190,
-        backgroundColor: '#E6F4EA',
+    mapCard: {
         borderRadius: 22,
         overflow: 'hidden',
-        position: 'relative',
+        backgroundColor: '#FFFFFF',
         borderWidth: 1,
-        borderColor: '#C6E7D1',
+        borderColor: '#DCEFE3',
     },
-    mapRoad1: {
+    map: { height: 250 },
+    mapBadge: {
         position: 'absolute',
-        top: 30,
-        left: 0,
-        right: 0,
-        height: 14,
-        backgroundColor: '#FFFFFF',
-        opacity: 0.8,
-    },
-    mapRoad2: {
-        position: 'absolute',
-        bottom: 40,
-        left: 0,
-        right: 0,
-        height: 14,
-        backgroundColor: '#FFFFFF',
-        opacity: 0.8,
-    },
-    mapRoadDiagonal: {
-        position: 'absolute',
-        top: 10,
-        left: 20,
-        width: 250,
-        height: 12,
-        backgroundColor: '#FFFFFF',
-        transform: [{ rotate: '32deg' }],
-        opacity: 0.8,
-    },
-    restaurantPin: {
-        position: 'absolute',
-        top: 60,
-        left: 36,
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: '#0F172A',
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 3,
-    },
-    routePath: {
-        position: 'absolute',
-        top: 76,
-        left: 60,
-        width: 170,
-        height: 3,
-        borderWidth: 1.5,
-        borderColor: '#00A859',
-        borderStyle: 'dashed',
-        transform: [{ rotate: '-18deg' }],
-    },
-    scooterMarker: {
-        position: 'absolute',
-        top: 65,
-        left: 140,
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: '#00A859',
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: '#00A859',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.35,
-        shadowRadius: 5,
-        elevation: 4,
-    },
-    homePin: {
-        position: 'absolute',
-        top: 30,
-        right: 40,
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: '#0F172A',
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 3,
-    },
-    liveBadge: {
-        position: 'absolute',
-        bottom: 10,
+        top: 12,
         left: 12,
-        backgroundColor: '#FFFFFF',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: 'rgba(15,23,42,0.82)',
         paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.08,
-        shadowRadius: 2,
-        elevation: 1,
+        paddingVertical: 6,
+        borderRadius: 14,
     },
-    liveBadgeText: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 10,
-        color: '#00A859',
+    mapBadgeText: { fontFamily: 'PlusJakartaSans_700Bold', fontSize: 11, color: '#FFFFFF' },
+    mapCaption: {
+        fontFamily: 'PlusJakartaSans_500Medium',
+        fontSize: 11,
+        color: '#64748B',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
     },
 
-    // Card generic
     card: {
         backgroundColor: '#FFFFFF',
         borderRadius: 20,
         padding: 16,
-        gap: 12,
         borderWidth: 1,
-        borderColor: '#E8EEE9',
+        borderColor: '#E7F0EA',
         shadowColor: '#0F172A',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.04,
-        shadowRadius: 6,
-        elevation: 2,
+        shadowOpacity: 0.03,
+        shadowRadius: 8,
+        elevation: 1,
     },
-    cardHeaderTitle: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 14,
-        color: '#0F172A',
-    },
-
-    // Timeline
-    timelineRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginTop: 6,
-    },
-    timelineStep: {
-        flex: 1,
+    cancelledCard: { borderColor: '#FECACA', backgroundColor: '#FFFBFB' },
+    cardTitle: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 15, color: '#0F172A' },
+    inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    mutedText: { fontFamily: 'PlusJakartaSans_500Medium', fontSize: 12.5, color: '#64748B', flexShrink: 1 },
+    statusIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#DCFCE7',
         alignItems: 'center',
-    },
-    stepIndicatorRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        width: '100%',
         justifyContent: 'center',
     },
+    statusTitle: { fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14.5, color: '#0F172A', marginBottom: 2 },
+
+    otpBox: {
+        marginTop: 14,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#F0FDF4',
+        borderRadius: 14,
+        padding: 12,
+    },
+    otpLabel: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 11, color: '#047857', letterSpacing: 0.6 },
+    otpSub: { fontFamily: 'PlusJakartaSans_500Medium', fontSize: 11, color: '#64748B' },
+    otpPill: { backgroundColor: '#0F172A', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
+    otpDigits: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 18, color: '#FFFFFF', letterSpacing: 4 },
+
+    timelineRow: { flexDirection: 'row', marginTop: 14 },
+    timelineStep: { flex: 1 },
+    stepIndicatorRow: { flexDirection: 'row', alignItems: 'center' },
     stepCircle: {
         width: 22,
         height: 22,
         borderRadius: 11,
         backgroundColor: '#F1F5F9',
-        alignItems: 'center',
-        justifyContent: 'center',
         borderWidth: 2,
         borderColor: '#E2E8F0',
-        zIndex: 2,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    stepCircleDone: {
-        backgroundColor: '#00A859',
-        borderColor: '#00A859',
-    },
-    stepCircleActive: {
-        backgroundColor: '#EEF9F1',
-        borderColor: '#00A859',
-    },
-    activeDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#00A859',
-    },
-    idleDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: '#CBD5E1',
-    },
-    stepLine: {
-        position: 'absolute',
-        left: '50%',
-        right: '-50%',
-        height: 2,
-        backgroundColor: '#E2E8F0',
-        top: 10,
-        zIndex: 1,
-    },
-    stepLineDone: {
-        backgroundColor: '#00A859',
-    },
-    stepTitle: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 9.5,
-        color: '#94A3B8',
-        textAlign: 'center',
-        marginTop: 6,
-    },
-    stepTitleDone: {
-        color: '#0F172A',
-    },
-    stepTitleActive: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        color: '#00A859',
-    },
+    stepCircleDone: { backgroundColor: '#00A859', borderColor: '#00A859' },
+    stepCircleActive: { backgroundColor: '#FFFFFF', borderColor: '#00A859' },
+    activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#00A859' },
+    idleDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CBD5E1' },
+    stepLine: { flex: 1, height: 2, backgroundColor: '#E2E8F0', marginHorizontal: 4 },
+    stepLineDone: { backgroundColor: '#00A859' },
+    stepTitle: { fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 11.5, color: '#94A3B8', marginTop: 8 },
+    stepTitleDone: { color: '#0F172A', fontFamily: 'PlusJakartaSans_700Bold' },
+    stepTime: { fontFamily: 'PlusJakartaSans_500Medium', fontSize: 10.5, color: '#64748B', marginTop: 2 },
 
-    // Driver Card
-    driverRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    driverAvatar: {
-        width: 46,
-        height: 46,
-        borderRadius: 23,
-        backgroundColor: '#E2E8F0',
-    },
-    driverInfo: {
-        flex: 1,
-        gap: 3,
-    },
-    driverNameRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    driverName: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 14,
-        color: '#0F172A',
-    },
+    driverRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12 },
+    driverAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#E2E8F0' },
+    driverAvatarFallback: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F172A' },
+    driverInitial: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 18, color: '#FFFFFF' },
+    driverName: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 15, color: '#0F172A' },
     ratingBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 2,
-        backgroundColor: '#FEF3C7',
-        paddingHorizontal: 5,
-        paddingVertical: 1,
-        borderRadius: 6,
+        gap: 3,
+        backgroundColor: '#FFFBEB',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 8,
     },
-    ratingText: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 10,
-        color: '#B45309',
-    },
-    driverVehicle: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 11,
-        color: '#64748B',
-    },
-    driverActions: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    actionCircleBtn: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
-        backgroundColor: '#EEF9F1',
+    ratingText: { fontFamily: 'PlusJakartaSans_700Bold', fontSize: 11, color: '#92400E' },
+    callBtn: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#F0FDF4',
+        borderWidth: 1,
+        borderColor: '#BBF7D0',
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: '#D1FAE5',
     },
 
-    // Order Summary
-    summaryHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    orderIdText: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 11,
-        color: '#64748B',
-        marginTop: 2,
-    },
-    summaryBody: {
-        marginTop: 8,
-        gap: 8,
-    },
-    summaryItemRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    summaryItemName: {
-        flex: 1,
-        fontFamily: 'PlusJakartaSans_600SemiBold',
-        fontSize: 12.5,
-        color: '#0F172A',
-    },
-    summaryItemQty: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 12,
-        color: '#64748B',
-        paddingHorizontal: 12,
-    },
-    summaryItemPrice: {
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: 12.5,
-        color: '#0F172A',
-    },
-    divider: {
-        height: 1,
-        backgroundColor: '#F1F5F9',
-        marginVertical: 4,
-    },
-    totalRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    totalLabel: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 13,
-        color: '#0F172A',
-    },
-    totalValue: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 15,
-        color: '#00A859',
-    },
+    summaryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    summaryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    summaryName: { flex: 1, fontFamily: 'PlusJakartaSans_500Medium', fontSize: 13.5, color: '#334155' },
+    summaryQty: { fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12.5, color: '#64748B' },
+    summaryPrice: { fontFamily: 'PlusJakartaSans_700Bold', fontSize: 13.5, color: '#0F172A', minWidth: 56, textAlign: 'right' },
+    divider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 4 },
+    totalLabel: { flex: 1, fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 14.5, color: '#0F172A' },
+    totalValue: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 15.5, color: '#0F172A' },
     addressBox: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
+        gap: 8,
         backgroundColor: '#F8FAFC',
-        padding: 10,
         borderRadius: 12,
-        marginTop: 4,
+        padding: 10,
+        marginTop: 6,
     },
-    addressText: {
-        flex: 1,
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 11,
-        color: '#64748B',
-    },
-    liveOtpCard: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 20,
-        padding: 16,
-        gap: 14,
-        borderWidth: 1,
-        borderColor: '#E8EEE9',
-        shadowColor: '#0F172A',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.04,
-        shadowRadius: 6,
-        elevation: 2,
-    },
-    liveStatusRow: {
+    addressText: { flex: 1, fontFamily: 'PlusJakartaSans_500Medium', fontSize: 12.5, color: '#334155' },
+
+    cancelBtn: {
         flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    liveDotRing: {
-        width: 22,
-        height: 22,
-        borderRadius: 11,
-        backgroundColor: 'rgba(0, 201, 107, 0.15)',
         alignItems: 'center',
         justifyContent: 'center',
-    },
-    liveDotInner: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        backgroundColor: '#00C96B',
-    },
-    liveStatusTitle: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 14,
-        color: '#0F172A',
-    },
-    liveStatusSub: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 12,
-        color: '#64748B',
-        marginTop: 2,
-    },
-    otpBox: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: '#F3FAF6',
+        gap: 8,
+        paddingVertical: 14,
         borderRadius: 14,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderWidth: 1,
-        borderColor: 'rgba(0, 201, 107, 0.25)',
+        borderWidth: 1.5,
+        borderColor: '#FCA5A5',
+        backgroundColor: '#FFF5F5',
     },
-    otpLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
+    cancelText: { fontFamily: 'PlusJakartaSans_700Bold', fontSize: 14, color: '#EF4444' },
+    primaryBtn: {
+        alignSelf: 'center',
+        marginTop: 8,
+        backgroundColor: '#00A859',
+        borderRadius: 24,
+        paddingHorizontal: 24,
+        paddingVertical: 13,
     },
-    otpLabel: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 11,
-        color: '#00A859',
-        letterSpacing: 0.8,
-    },
-    otpSub: {
-        fontFamily: 'PlusJakartaSans_500Medium',
-        fontSize: 10.5,
-        color: '#64748B',
-    },
-    otpPill: {
-        backgroundColor: '#00C96B',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 10,
-    },
-    otpDigitText: {
-        fontFamily: 'PlusJakartaSans_800ExtraBold',
-        fontSize: 15,
-        color: '#FFFFFF',
-        letterSpacing: 3,
-    },
+    primaryBtnText: { fontFamily: 'PlusJakartaSans_800ExtraBold', fontSize: 14, color: '#FFFFFF' },
 });

@@ -1,6 +1,12 @@
 {
   "name": "dropp-monorepo",
   "private": true,
+  "workspaces": [
+    "backend",
+    "frontend",
+    "frontend/driver",
+    "frontend/seller"
+  ],
   "type": "module",
   "scripts": {
     "dev": "turbo run dev",

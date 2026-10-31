@@ -6,7 +6,6 @@ import {
     Image,
     ScrollView,
     StyleSheet,
-    ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -16,143 +15,47 @@ const AVATAR_COLORS = [
     '#166534', '#44337A', '#7B341E', '#1A365D',
 ];
 
-const FALLBACK_RESTAURANTS = [
-    {
-        id: 'bawarchee-biryani',
-        name: 'Bawarchee Biryani House',
-        cuisine: ['Mughlai', 'Biryani', 'North Indian'],
-        rating: '4.5',
-        reviews: '1.2K',
-        time: '30–40 min',
-        deliveryTimeMins: 35,
-        minOrder: 149,
-        image: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=700&auto=format&fit=crop&q=85',
-    },
-    {
-        id: 'the-brew-room',
-        name: 'The Brew Room',
-        cuisine: ['GenZ Drinks', 'Coffee', 'Desserts'],
-        rating: '4.8',
-        reviews: '950',
-        time: '20–30 min',
-        deliveryTimeMins: 25,
-        minOrder: 99,
-        image: 'https://images.unsplash.com/photo-1442512595331-e89e73853f31?w=700&auto=format&fit=crop&q=85',
-    },
-    {
-        id: 'maa-ka-dhaba',
-        name: 'Maa ka Dhaba',
-        cuisine: ['Thali', 'North Indian', 'Homestyle'],
-        rating: '4.6',
-        reviews: '2.4K',
-        time: '25–35 min',
-        deliveryTimeMins: 30,
-        minOrder: 120,
-        image: 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=700&auto=format&fit=crop&q=85',
-    },
-    {
-        id: 'pizza-palace',
-        name: 'Pizza Palace',
-        cuisine: ['Pizza', 'Italian', 'Fast Food'],
-        rating: '4.4',
-        reviews: '810',
-        time: '25–35 min',
-        deliveryTimeMins: 30,
-        minOrder: 199,
-        image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=700&auto=format&fit=crop&q=85',
-    },
-    {
-        id: 'dosa-king',
-        name: 'Dosa King',
-        cuisine: ['South Indian', 'Tiffin', 'Breakfast'],
-        rating: '4.7',
-        reviews: '1.8K',
-        time: '20–30 min',
-        deliveryTimeMins: 25,
-        minOrder: 99,
-        image: 'https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=700&auto=format&fit=crop&q=85',
-    },
-    {
-        id: 'dragon-wok',
-        name: 'Dragon Wok Express',
-        cuisine: ['Chinese', 'Momos', 'Asian'],
-        rating: '4.3',
-        reviews: '640',
-        time: '30–40 min',
-        deliveryTimeMins: 35,
-        minOrder: 149,
-        image: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=700&auto=format&fit=crop&q=85',
-    },
-    {
-        id: 'truffles-bengaluru',
-        name: 'Truffles — Bengaluru Burgers',
-        cuisine: ['Burgers', 'Sandwiches', 'Milkshakes'],
-        rating: '4.7',
-        reviews: '3.1K',
-        time: '25–35 min',
-        deliveryTimeMins: 28,
-        minOrder: 149,
-        image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=700&auto=format&fit=crop&q=85',
-    },
-    {
-        id: 'ctr-bengaluru',
-        name: 'CTR — Central Tiffin Room',
-        cuisine: ['South Indian', 'Breakfast', 'Filter Coffee'],
-        rating: '4.8',
-        reviews: '5.2K',
-        time: '20–30 min',
-        deliveryTimeMins: 22,
-        minOrder: 79,
-        image: 'https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=700&auto=format&fit=crop&q=85',
-    },
-    {
-        id: 'empire-bengaluru',
-        name: 'Empire Restaurant',
-        cuisine: ['Biryani', 'Kebabs', 'Rolls', 'Mughlai'],
-        rating: '4.5',
-        reviews: '4.8K',
-        time: '28–38 min',
-        deliveryTimeMins: 30,
-        minOrder: 149,
-        image: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=700&auto=format&fit=crop&q=85',
-    },
-    {
-        id: 'toit-bengaluru',
-        name: 'Toit Taproom',
-        cuisine: ['Brewery', 'Burgers', 'Bar Food', 'Craft Drinks'],
-        rating: '4.6',
-        reviews: '2.9K',
-        time: '30–45 min',
-        deliveryTimeMins: 35,
-        minOrder: 299,
-        image: 'https://images.unsplash.com/photo-1535958636474-b021ee887b13?w=700&auto=format&fit=crop&q=85',
-    },
-];
+const FALLBACK_COVER = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=700&auto=format&fit=crop&q=80';
 
+const initialsOf = (name) =>
+    (name || 'R')
+        .replace(/[^A-Za-z0-9 ]/g, ' ')
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((w) => w[0])
+        .join('')
+        .toUpperCase();
 
 export default function TrendingRestaurants({
-    restaurants,
+    restaurants = [],
     loading = false,
+    error = null,
+    onRetry,
     onSelect,
+    title = 'Trending Near You',
+    subtitle = 'Popular cafes, restaurants and more around you',
+    emptyText = 'No restaurants are open right now. Pull down to refresh.',
 }) {
     const [favorites, setFavorites] = useState({});
 
     const toggleFavorite = (id) => {
-        setFavorites((prev) => ({
-            ...prev,
-            [id]: !prev[id],
-        }));
+        setFavorites((prev) => ({ ...prev, [id]: !prev[id] }));
     };
+
+    const header = (
+        <View style={styles.sectionHeader}>
+            <View style={styles.titleCol}>
+                <Text style={styles.sectionTitle}>{title}</Text>
+                {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
+            </View>
+        </View>
+    );
 
     if (loading) {
         return (
             <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                    <View style={styles.titleCol}>
-                        <Text style={styles.sectionTitle}>Trending Near You</Text>
-                        <Text style={styles.sectionSubtitle}>Popular cafes, restaurants and more around you</Text>
-                    </View>
-                </View>
+                {header}
                 <View style={styles.loadingRow}>
                     {[1, 2, 3].map((i) => (
                         <View key={i} style={styles.skeletonCard}>
@@ -166,72 +69,71 @@ export default function TrendingRestaurants({
         );
     }
 
-    const displayedRestaurants = (restaurants && restaurants.length > 0)
-        ? restaurants
-        : FALLBACK_RESTAURANTS;
+    if (error) {
+        return (
+            <View style={styles.section}>
+                {header}
+                <View style={styles.stateBox}>
+                    <Ionicons name="cloud-offline-outline" size={30} color="#94A3B8" />
+                    <Text style={styles.stateTitle}>Couldn't load restaurants</Text>
+                    <Text style={styles.stateText}>{error}</Text>
+                    {onRetry ? (
+                        <TouchableOpacity style={styles.retryBtn} onPress={onRetry} activeOpacity={0.85}>
+                            <Ionicons name="refresh" size={15} color="#FFFFFF" />
+                            <Text style={styles.retryText}>Try again</Text>
+                        </TouchableOpacity>
+                    ) : null}
+                </View>
+            </View>
+        );
+    }
+
+    if (!restaurants || restaurants.length === 0) {
+        return (
+            <View style={styles.section}>
+                {header}
+                <View style={styles.stateBox}>
+                    <Ionicons name="restaurant-outline" size={30} color="#94A3B8" />
+                    <Text style={styles.stateText}>{emptyText}</Text>
+                </View>
+            </View>
+        );
+    }
 
     return (
         <View style={styles.section}>
-            {/* 1. Header */}
-            <View style={styles.sectionHeader}>
-                <View style={styles.titleCol}>
-                    <Text style={styles.sectionTitle}>Trending Near You</Text>
-                    <Text style={styles.sectionSubtitle}>
-                        Popular cafes, restaurants and more around you
-                    </Text>
-                </View>
-                <TouchableOpacity activeOpacity={0.7} style={styles.seeAllBtn}>
-                    <Text style={styles.seeAll}>See all</Text>
-                    <Ionicons name="chevron-forward" size={15} color="#00C26F" />
-                </TouchableOpacity>
-            </View>
-
-            {/* 2. Horizontal Cards */}
+            {header}
             <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.row}
                 decelerationRate="fast"
             >
-                {displayedRestaurants.map((r, idx) => {
+                {restaurants.map((r, idx) => {
                     const rId = r.id || r._id;
                     const isFav = !!favorites[rId];
-                    const initials = (r.name || 'R')
-                        .split(' ')
-                        .slice(0, 2)
-                        .map((w) => w[0] || '')
-                        .join('')
-                        .toUpperCase();
                     const avatarBg = AVATAR_COLORS[idx % AVATAR_COLORS.length];
-                    const cuisineStr = Array.isArray(r.cuisine)
-                        ? r.cuisine.join(' • ')
-                        : r.cuisines || r.cuisine || '';
-                    const coverImg = r.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=700&auto=format&fit=crop&q=85';
+                    const cuisineStr = Array.isArray(r.cuisine) ? r.cuisine.join(' • ') : r.cuisines || '';
 
                     return (
                         <TouchableOpacity
-                            key={r.id || r._id}
+                            key={rId}
                             style={styles.card}
                             onPress={() => onSelect && onSelect(r)}
                             activeOpacity={0.9}
                         >
-                            {/* Cover Image */}
                             <View style={styles.coverBox}>
-                                <Image
-                                    source={{ uri: coverImg }}
-                                    style={styles.cover}
-                                    resizeMode="cover"
-                                />
-
-                                {/* Top: Rating pill + Heart */}
+                                <Image source={{ uri: r.image || FALLBACK_COVER }} style={styles.cover} resizeMode="cover" />
                                 <View style={styles.topRow}>
-                                    <View style={styles.rankPill}>
-                                        <Ionicons name="star" size={11} color="#F59E0B" />
-                                        <Text style={styles.rankText}>{r.rating}</Text>
-                                    </View>
+                                    {r.rating ? (
+                                        <View style={styles.rankPill}>
+                                            <Ionicons name="star" size={11} color="#F59E0B" />
+                                            <Text style={styles.rankText}>{r.rating}</Text>
+                                        </View>
+                                    ) : <View />}
                                     <TouchableOpacity
                                         style={styles.heartBtn}
-                                        onPress={() => toggleFavorite(r.id || r._id)}
+                                        onPress={() => toggleFavorite(rId)}
                                         activeOpacity={0.8}
                                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                                     >
@@ -242,51 +144,44 @@ export default function TrendingRestaurants({
                                         />
                                     </TouchableOpacity>
                                 </View>
-
-                                {/* Bottom: ETA */}
-                                <View style={styles.etaBadge}>
-                                    <Ionicons name="time-outline" size={12} color="#0F172A" />
-                                    <Text style={styles.etaText}>
-                                        {r.time || r.eta || `${r.deliveryTimeMins} min`}
-                                    </Text>
-                                </View>
+                                {r.time ? (
+                                    <View style={styles.etaBadge}>
+                                        <Ionicons name="time-outline" size={12} color="#0F172A" />
+                                        <Text style={styles.etaText}>{r.time}</Text>
+                                    </View>
+                                ) : null}
                             </View>
 
-                            {/* Card Body */}
                             <View style={styles.info}>
                                 <View style={styles.nameRow}>
                                     <View style={[styles.avatar, { backgroundColor: avatarBg }]}>
-                                        <Text style={styles.avatarText}>{initials}</Text>
+                                        <Text style={styles.avatarText}>{initialsOf(r.name)}</Text>
                                     </View>
                                     <View style={styles.nameCol}>
                                         <Text style={styles.name} numberOfLines={1}>{r.name}</Text>
-                                        <View style={styles.ratingRow}>
-                                            <Ionicons name="star" size={12} color="#F59E0B" />
-                                            <Text style={styles.rating}>{r.rating}</Text>
-                                            <Text style={styles.reviews}>
-                                                {r.reviews ? `(${r.reviews})` : ''}
-                                            </Text>
-                                        </View>
+                                        {r.address?.city ? (
+                                            <Text style={styles.reviews} numberOfLines={1}>{r.address.city}</Text>
+                                        ) : null}
                                     </View>
                                 </View>
 
-                                <Text style={styles.cuisine} numberOfLines={1}>{cuisineStr}</Text>
+                                {cuisineStr ? <Text style={styles.cuisine} numberOfLines={1}>{cuisineStr}</Text> : null}
 
-                                {/* Min Order tag */}
                                 <View style={styles.tagRow}>
-                                    <View style={styles.discountTag}>
-                                        <Ionicons name="bag-outline" size={10} color="#047857" />
-                                        <Text style={styles.discountText}>
-                                            Min ₹{r.minOrder || r.pricing?.minOrder || 99}
-                                        </Text>
-                                    </View>
-                                    <View style={styles.promoTag}>
-                                        <Ionicons name="bicycle-outline" size={11} color="#047857" />
-                                        <Text style={[styles.promoText, styles.promoGreenText]}
-                                            numberOfLines={1}>
-                                            Free above ₹299
-                                        </Text>
-                                    </View>
+                                    {r.minOrder ? (
+                                        <View style={styles.discountTag}>
+                                            <Ionicons name="bag-outline" size={10} color="#047857" />
+                                            <Text style={styles.discountText}>Min ₹{r.minOrder}</Text>
+                                        </View>
+                                    ) : null}
+                                    {r.pricing?.costForTwo ? (
+                                        <View style={[styles.promoTag, styles.promoGreenBg]}>
+                                            <Ionicons name="people-outline" size={11} color="#047857" />
+                                            <Text style={[styles.promoText, styles.promoGreenText]} numberOfLines={1}>
+                                                ₹{r.pricing.costForTwo} for two
+                                            </Text>
+                                        </View>
+                                    ) : null}
                                 </View>
                             </View>
                         </TouchableOpacity>
@@ -556,6 +451,43 @@ const styles = StyleSheet.create({
         fontSize: 8.5,
     },
 
+    stateBox: {
+        marginHorizontal: 16,
+        paddingVertical: 28,
+        paddingHorizontal: 20,
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: '#E8EEE9',
+    },
+    stateTitle: {
+        fontFamily: 'PlusJakartaSans_800ExtraBold',
+        fontSize: 14,
+        color: '#0F172A',
+    },
+    stateText: {
+        fontFamily: 'PlusJakartaSans_500Medium',
+        fontSize: 12.5,
+        color: '#64748B',
+        textAlign: 'center',
+    },
+    retryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#00A859',
+        paddingHorizontal: 16,
+        paddingVertical: 9,
+        borderRadius: 18,
+        marginTop: 6,
+    },
+    retryText: {
+        fontFamily: 'PlusJakartaSans_700Bold',
+        fontSize: 12.5,
+        color: '#FFFFFF',
+    },
     loadingRow: {
         flexDirection: 'row',
         paddingHorizontal: 16,

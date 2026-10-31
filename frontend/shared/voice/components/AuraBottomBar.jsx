@@ -13,10 +13,10 @@ export default function AuraBottomBar({
   onSuggestionPress,
 }) {
   const suggestions = [
-    { id: '1', icon: 'cafe', text: 'Coffee & Cafes', color: '#D97706', query: 'Coffee aur snacks order karne hain' },
-    { id: '2', icon: 'restaurant', text: 'Find restaurants', color: '#FF7A00', query: 'Show restaurants near me' },
-    { id: '3', icon: 'car-sport', text: 'Book a ride', color: '#00A859', query: 'Book a cab to Railway Station' },
-    { id: '4', icon: 'basket', text: 'Groceries', color: '#10B981', query: 'Order groceries' },
+    { id: '1', icon: 'flash', text: 'Demo Combo (Cab + Coffee)', color: '#8B5CF6', query: 'Cyber Hub se Airport cab book kar do aur 2 cold coffee order kar do' },
+    { id: '2', icon: 'cafe', text: '2 Cold Coffee', color: '#D97706', query: '2 cold coffee order kar do' },
+    { id: '3', icon: 'car-sport', text: 'Cab to Airport', color: '#00A859', query: 'Cyber Hub se Airport cab book kar do' },
+    { id: '4', icon: 'basket', text: 'Fresh Groceries', color: '#10B981', query: 'FreshMart se Amul Butter aur bread order kar do' },
   ];
 
   return (

@@ -27,15 +27,16 @@ import React, {
   useRef,
   useCallback,
 } from 'react';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import * as Speech from 'expo-speech';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
+import { getApiBase, getWsBase } from '../utils/apiConfig';
+import { useRideStore } from '../store/rideStore';
 
 const AuraContext = createContext(null);
 
-const BACKEND_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
+const getBackendUrl = () => getApiBase();
 
 const REQUEST_TIMEOUT_MS = 45_000;
 const TRACKING_SCREEN = 'FoodTracking';
@@ -79,6 +80,7 @@ export function AuraProvider({ children, onNavigate }) {
   const [restaurants, setRestaurants] = useState([]);
   const [rideEstimate, setRideEstimate] = useState(null);
   const [bookedRide,   setBookedRide]   = useState(null);
+  const [rideComparison, setRideComparison] = useState(null);
   const [draftOrder,  setDraftOrder]  = useState(null);
   const [placedOrder, setPlacedOrder] = useState(null);
   const [voiceCredits, setVoiceCredits] = useState(70);
@@ -161,7 +163,7 @@ export function AuraProvider({ children, onNavigate }) {
     if (audioUrl) {
       try {
         setIsSpeaking(true);
-        const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${BACKEND_URL}${audioUrl}`;
+        const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${getBackendUrl()}${audioUrl}`;
         
         let playUri = fullUrl;
         if (Platform.OS !== 'web') {
@@ -221,7 +223,7 @@ export function AuraProvider({ children, onNavigate }) {
     let ws = null;
     let reconnectTimeout = null;
 
-    const wsUrl = BACKEND_URL.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+    const wsUrl = getWsBase();
     const custId = sessionIdRef.current || 'cust_live_001';
 
     function connectWs() {
@@ -238,6 +240,20 @@ export function AuraProvider({ children, onNavigate }) {
                 playAudio(message);
               }
               setPlacedOrder((prev) => (prev ? { ...prev, status } : { _id: orderId, status }));
+            }
+            // Keep the booked-ride card live: driver accepted, arrived, trip started / completed
+            const RIDE_EVENTS = ['ride.driver_confirmed', 'ride.driver_arrived', 'ride.trip_started', 'ride.completed', 'ride.cancelled'];
+            if (RIDE_EVENTS.includes(msg.type) && msg.data?.rideId) {
+              const d = msg.data;
+              setBookedRide((prev) => {
+                if (!prev || String(prev._id) !== String(d.rideId)) return prev;
+                if (msg.type === 'ride.driver_confirmed' && d.driver?.name && !prev.driver?.name) {
+                  const line = `${d.driver.name} aa rahe hain. OTP driver ko batayein.`;
+                  addMessage('aura', line);
+                  playAudio(line);
+                }
+                return { ...prev, status: d.status || prev.status, driver: d.driver || prev.driver };
+              });
             }
           } catch (_) {}
         };
@@ -263,7 +279,7 @@ export function AuraProvider({ children, onNavigate }) {
   const openAura = useCallback(() => {
     setIsOpen(true);
     // Sync latest credit balance from backend
-    fetch(`${BACKEND_URL}/api/aura/credits`)
+    fetch(`${getBackendUrl()}/api/aura/credits`)
       .then((res) => res.json())
       .then((data) => {
         if (typeof data?.credits === 'number') {
@@ -288,6 +304,7 @@ export function AuraProvider({ children, onNavigate }) {
     setBookedRide(null);
     setRestaurants(null);
     setRideEstimate(null);
+    setRideComparison(null);
     setDraftOrder(null);
     setIsThinking(true);
 
@@ -295,7 +312,7 @@ export function AuraProvider({ children, onNavigate }) {
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const res = await fetch(`${BACKEND_URL}/api/aura/voice-turn`, {
+      const res = await fetch(`${getBackendUrl()}/api/aura/voice-turn`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -314,9 +331,7 @@ export function AuraProvider({ children, onNavigate }) {
           ? 'Thoda ruk kar dobara bolein.'
           : 'Samajh nahi aaya, dobara bolein.';
         addMessage('aura', fallbackMsg);
-        if (mode === 'voice') {
-          playAudio(fallbackMsg, null);
-        }
+        playAudio(fallbackMsg, null);
         return;
       }
 
@@ -325,9 +340,8 @@ export function AuraProvider({ children, onNavigate }) {
         setVoiceCredits(creditsLeft);
       }
       addMessage('aura', reply);
-      if (mode === 'voice') {
-        playAudio(reply, audioUrl);
-      }
+      // Play audio response so demo video has natural voice on both voice and 1-tap pills
+      playAudio(reply, audioUrl);
 
       const lowerText = (text || '').toLowerCase();
       const isRideIntent = /\b(cab|ride|auto|taxi|bike|gaadi|car|cyber|airport)\b/i.test(lowerText);
@@ -390,6 +404,20 @@ export function AuraProvider({ children, onNavigate }) {
           setBookedRide(null);
           setPlacedOrder(screenAction.data);
           break;
+        case 'RIDE_COMPARISON': {
+          // Aura compared Dropp with Uber / Ola / Rapido. It may already have booked Dropp,
+          // or (when the user said "book") hand off to a cheaper app with the trip pre-filled.
+          const comparison = screenAction.data;
+          setRestaurants(null);
+          setDraftOrder(null);
+          setRideEstimate(null);
+          setRideComparison(comparison);
+          setBookedRide(comparison?.bookedRide || null);
+          if (comparison?.handoff?.autoOpen && comparison.handoff.url) {
+            Linking.openURL(comparison.handoff.url).catch(() => {});
+          }
+          break;
+        }
         case 'SHOW_RIDE_ESTIMATE':
           setRestaurants(null);
           setDraftOrder(null);
@@ -493,16 +521,34 @@ export function AuraProvider({ children, onNavigate }) {
     const typeLabel = chosenType === 'bike' ? 'Bike' : chosenType === 'auto' ? 'Auto' : chosenType === 'cab_premium' ? 'Premier' : 'Cab';
     sendVoiceTurn(`haan ${typeLabel} book kar do`, 'voice', { rideType: chosenType });
   }, [sendVoiceTurn]);
+  const openProvider = useCallback((url) => {
+    if (url) Linking.openURL(url).catch(() => {});
+  }, []);
   const cancelRideAction = useCallback(() => {
     setRideEstimate(null);
+    setRideComparison(null);
     setBookedRide(null);
     sendVoiceTurn('nahi');
   }, [sendVoiceTurn]);
   const trackRide = useCallback(() => {
+    // Hand the real ride to the tracking screen so it never falls back to placeholder data
+    const ride = bookedRide;
+    if (ride) {
+      const store = useRideStore.getState();
+      store.setRideId?.(ride._id);
+      store.setServiceType?.(ride.serviceType || 'RIDE');
+      store.setPickupLocation?.(ride.pickupLocation);
+      store.setDestination?.(ride.dropLocation);
+      store.setRoute?.(ride.routeGeometry, ride.distanceKm, ride.estimatedMins, [{ id: ride.rideType, fare: ride.fare }]);
+      store.selectVehicle?.(ride.rideType, ride.fare);
+      if (ride.otp) store.setDeliveryOtp?.(ride.otp);
+      if (ride.driver?.name) store.setDriver?.(ride.driver);
+      if (ride.customerId) store.setCustomerId?.(ride.customerId);
+    }
     closeAura();
     setBookedRide(null);
-    onNavigate?.('TripTracking');
-  }, [closeAura, onNavigate]);
+    onNavigate?.(ride?.driver?.name ? 'TripTracking' : 'FindingDriver');
+  }, [bookedRide, closeAura, onNavigate]);
 
   return (
     <AuraContext.Provider
@@ -512,6 +558,7 @@ export function AuraProvider({ children, onNavigate }) {
         voiceCredits, setVoiceCredits,
         messages,  restaurants, draftOrder, placedOrder,
         rideEstimate, bookedRide, confirmRide, cancelRideAction, trackRide,
+        rideComparison, openProvider,
         sendVoiceTurn, confirmOrder, cancelDraft, trackOrder,
         playAudio,
       }}

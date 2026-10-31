@@ -77,3 +77,8 @@ echo ""
 # Keep script alive so you can Ctrl+C to kill all 3 processes cleanly
 wait $CUSTOMER_PID $CAB_PID $DELIVERY_PID
 
+
+
+
+
+

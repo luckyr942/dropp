@@ -31,6 +31,12 @@ import { notFound, errorHandler } from './middleware/errorHandler.js';
 //Map 
 import geocodeRoutes from './modules/geoCode/geoRoutes.js';
 
+// MCP layer: lets AI agents drive customer, merchant and driver flows
+import mcpRouter from './mcp/mcpRoutes.js';
+
+// Seller voice assistant (Bolna AI)
+import sellerVoiceRouter from './modules/sellerVoice/sellerVoiceRoutes.js';
+
 
 const app = express();
 if (!process.env.JWT_ACCESS_SECRET) {
@@ -118,6 +124,7 @@ const voiceLimiter = rateLimit({
 
 app.use('/api', apiLimiter);
 app.use('/api/aura/voice-turn', voiceLimiter);
+app.use('/api/voice/seller/turn', voiceLimiter);
 
 
 // -------------------------------------------------------------
@@ -133,6 +140,7 @@ app.get('/', (req, res) => {
       orders: '/api/orders',
       rides: '/api/rides',
       aura: '/api/aura',
+      mcp: '/mcp',
     },
   });
 });
@@ -158,6 +166,8 @@ app.use('/api/rides', rideRouter);
 app.use('/api/drivers', driverRouter);
 app.use('/api/aura', auraRouter);
 app.use('/api/geocode', geocodeRoutes);
+app.use('/mcp', mcpRouter);
+app.use('/api/voice/seller', sellerVoiceRouter);
 
 
 // Central 404 and Error Handlers
@@ -192,6 +202,9 @@ let shuttingDown = false;
 
 async function start() {
   await connectMongo();
+  // Re-arm driver auto-assign for rides that were searching when the server last stopped
+  const { resumeSearchingRides } = await import('./modules/rides/rideService.js');
+  resumeSearchingRides().catch((err) => console.warn('[rides] Resume failed:', err.message));
   await connectRabbitMQ();
   setupWebSockets(server);
 

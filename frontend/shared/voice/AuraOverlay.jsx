@@ -14,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { useAuraContext } from './AuraContext';
+import { getApiBase } from '../utils/apiConfig';
 
 // Import the 6 modular components
 import AuraHeader from './components/AuraHeader';
@@ -21,6 +22,7 @@ import AuraHero from './components/AuraHero';
 import AuraChatThread from './components/AuraChatThread';
 import AuraTimeLineCards from './components/AuraTimeLineCards';
 import AuraBottomCard from './components/AuraBottomCard';
+import AuraRideCompareCard from './components/AuraRideCompareCard';
 import AuraBottomBar from './components/AuraBottomBar';
 
 export default function AuraOverlay() {
@@ -38,6 +40,8 @@ export default function AuraOverlay() {
     placedOrder,
     rideEstimate,
     bookedRide,
+    rideComparison,
+    openProvider,
     confirmRide,
     cancelRideAction,
     trackRide,
@@ -65,18 +69,52 @@ export default function AuraOverlay() {
 
   // Auto-scroll as new messages or cards arrive
   useEffect(() => {
-    if (messages?.length > 0 || rideEstimate || draftOrder || bookedRide || placedOrder) {
+    if (messages?.length > 0 || rideEstimate || rideComparison || draftOrder || bookedRide || placedOrder) {
       setTimeout(() => {
         scrollRef.current?.scrollToEnd({ animated: true });
       }, 120);
     }
-  }, [messages, rideEstimate, draftOrder, bookedRide, placedOrder]);
+  }, [messages, rideEstimate, rideComparison, draftOrder, bookedRide, placedOrder]);
 
   // Audio Recording References for Sarvam AI STT
   const recordingRef = useRef(null);
   const silenceTimerRef = useRef(null);
   const hasSpokenRef = useRef(false);
   const isTranscribingRef = useRef(false);
+  const isStartingRef = useRef(false);
+
+  // Safe reset & cleanup of any active audio recording instance
+  const cleanupRecording = async () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (recordingRef.current) {
+      const rec = recordingRef.current;
+      recordingRef.current = null;
+      try {
+        const status = await rec.getStatusAsync().catch(() => null);
+        if (status?.canRecord || status?.isRecording) {
+          await rec.stopAndUnloadAsync().catch(() => {});
+        }
+      } catch (_) {}
+    }
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+    }).catch(() => {});
+  };
+
+  // Ensure recording is stopped if modal is closed
+  useEffect(() => {
+    if (!isOpen) {
+      cleanupRecording();
+      setIsListening(false);
+    }
+    return () => {
+      cleanupRecording();
+    };
+  }, [isOpen]);
 
   const stopAndTranscribe = async () => {
     if (isTranscribingRef.current) return;
@@ -87,14 +125,16 @@ export default function AuraOverlay() {
       silenceTimerRef.current = null;
     }
     setIsListening(false);
-    if (!recordingRef.current) {
+
+    const rec = recordingRef.current;
+    recordingRef.current = null;
+
+    if (!rec) {
       isTranscribingRef.current = false;
       return;
     }
 
     try {
-      const rec = recordingRef.current;
-      recordingRef.current = null;
       await rec.stopAndUnloadAsync().catch(() => {});
       const uri = rec.getURI();
 
@@ -113,7 +153,7 @@ export default function AuraOverlay() {
         return;
       }
 
-      const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
+      const BACKEND_URL = getApiBase();
       const res = await fetch(`${BACKEND_URL}/api/aura/transcribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -130,14 +170,22 @@ export default function AuraOverlay() {
       console.warn('[Aura] Mic transcription error:', err.message);
     } finally {
       isTranscribingRef.current = false;
+      await cleanupRecording();
     }
   };
 
   const handleMicPress = async () => {
-    if (isListening) {
-      await stopAndTranscribe();
-    } else {
-      try {
+    if (isStartingRef.current) return;
+    isStartingRef.current = true;
+
+    try {
+      if (isListening || recordingRef.current) {
+        await stopAndTranscribe();
+      } else {
+        // Clean up any lingering recording in the native bridge first
+        await cleanupRecording();
+        await new Promise((resolve) => setTimeout(resolve, 80));
+
         const perm = await Audio.requestPermissionsAsync();
         if (!perm.granted) {
           alert('Microphone permission is required');
@@ -181,10 +229,13 @@ export default function AuraOverlay() {
 
         recordingRef.current = recording;
         setIsListening(true);
-      } catch (err) {
-        console.warn('[Aura] Mic start failed:', err.message);
-        setIsListening(false);
       }
+    } catch (err) {
+      console.log('[Aura] Mic start notice:', err.message);
+      await cleanupRecording();
+      setIsListening(false);
+    } finally {
+      isStartingRef.current = false;
     }
   };
 
@@ -243,11 +294,18 @@ export default function AuraOverlay() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* 2. Hero Mascot with soft ethereal orb */}
-            <AuraHero isThinking={isThinking} isListening={isListening} />
+            {/* 2. Hero Mascot with soft ethereal orb (shrinks once the chat starts) */}
+            <AuraHero isThinking={isThinking} isListening={isListening} compact={messages.length > 0} />
 
             {/* 3. Live Chat Speech Bubbles */}
             <AuraChatThread messages={messages} isThinking={isThinking} />
+
+            {/* 3B. Cheapest-ride comparison across Dropp, Uber, Ola, Rapido */}
+            <AuraRideCompareCard
+              comparison={rideComparison}
+              onBookDropp={(rideType) => confirmRide(rideType)}
+              onOpenProvider={openProvider}
+            />
 
             {/* 4. Connected Interactive Timeline Cards (Ride, Food, Cafes, OTP) */}
             <AuraTimeLineCards

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import BottomNavBar from '../components/bottomNavBar';
 import { useAuraContext } from '../voice/AuraContext';
+import { loadDeliveryAddress, getDeviceAreaLabel } from '../../food/src/utils/deliveryAddress';
 
 const { width } = Dimensions.get('window');
 
@@ -27,12 +28,28 @@ const Images = {
     delivery: require('../../assets/delivery-tile.png'),
     shop: require('../../assets/shop-tile.png'),
     offerBanner: require('../../assets/hero_food_banner-clean.png'), // Exact image uploaded by user
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
 };
 
 export default function MainHomeScreen({ onNavigate }) {
     const [activeTab, setActiveTab] = useState('Home');
     const { openAura } = useAuraContext();
+    const [locationLabel, setLocationLabel] = useState(null);
+
+    // Header location: saved delivery address, else the device's current area
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            const saved = await loadDeliveryAddress();
+            if (!alive) return;
+            if (saved) {
+                setLocationLabel([saved.street, saved.city].filter(Boolean).join(', '));
+                return;
+            }
+            const area = await getDeviceAreaLabel();
+            if (alive && area) setLocationLabel(area);
+        })();
+        return () => { alive = false; };
+    }, []);
 
     const dispatchTo = (route, params = {}) => {
         if (typeof onNavigate === 'function') {
@@ -76,7 +93,7 @@ export default function MainHomeScreen({ onNavigate }) {
                         >
                             <Ionicons name="location-sharp" size={14} color="#00C96B" />
                             <Text style={styles.locationText} numberOfLines={1}>
-                                Gurugram, Sector 28
+                                {locationLabel || 'Set your location'}
                             </Text>
                             <Ionicons name="chevron-down" size={12} color="#606670" />
                         </TouchableOpacity>
@@ -91,17 +108,16 @@ export default function MainHomeScreen({ onNavigate }) {
                             onPress={() => dispatchTo('Wallet')}
                         >
                             <Ionicons name="wallet-outline" size={15} color="#1A1D20" />
-                            <Text style={styles.walletAmount}>₹450</Text>
+                            <Text style={styles.walletAmount}>Pay</Text>
                         </TouchableOpacity>
 
-                        {/* Notification Bell */}
+                        {/* Orders */}
                         <TouchableOpacity
                             style={styles.iconCircleButton}
                             activeOpacity={0.8}
-                            onPress={() => alert('No new notifications')}
+                            onPress={() => dispatchTo('Activity')}
                         >
-                            <Ionicons name="notifications-outline" size={17} color="#1A1D20" />
-                            <View style={styles.notificationBadge} />
+                            <Ionicons name="receipt-outline" size={17} color="#1A1D20" />
                         </TouchableOpacity>
 
                         {/* User Avatar */}
@@ -110,11 +126,9 @@ export default function MainHomeScreen({ onNavigate }) {
                             activeOpacity={0.8}
                             onPress={() => dispatchTo('Profile')}
                         >
-                            <Image
-                                source={{ uri: Images.avatar }}
-                                style={styles.avatarImage}
-                            />
-                            <View style={styles.onlineBadge} />
+                            <View style={[styles.avatarImage, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#E5F8EE' }]}>
+                                <Ionicons name="person" size={17} color="#00A859" />
+                            </View>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -367,6 +381,7 @@ const styles = StyleSheet.create({
         color: '#1A1D20',
         marginHorizontal: 4,
         fontFamily: 'PlusJakartaSans_700Bold',
+        maxWidth: 160,
     },
     headerRight: {
         flexDirection: 'row',

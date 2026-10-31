@@ -3,7 +3,28 @@ import { View, Text, StyleSheet, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function AuraHero({ isThinking, isListening }) {
+export default function AuraHero({ isThinking, isListening, compact = false }) {
+  // Once the conversation starts, give the chat the space: small mascot + status line
+  if (compact) {
+    return (
+      <View style={styles.compactRow}>
+        <Image
+          source={require('../../../assets/aura/image copy.png')}
+          style={styles.compactMascot}
+          resizeMode="contain"
+        />
+        <View>
+          <Text style={styles.compactTitle}>
+            <Text style={styles.headlineAura}>Aura</Text>
+          </Text>
+          <Text style={styles.compactStatus}>
+            {isThinking ? 'Thinking...' : isListening ? 'Listening...' : 'Ready for your next request'}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.glowContainer} pointerEvents="none">
@@ -115,6 +136,28 @@ const styles = StyleSheet.create({
   },
   headlineAura: {
     color: '#00A859',
+  },
+  compactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingTop: 4,
+    paddingBottom: 12,
+  },
+  compactMascot: {
+    width: 48,
+    height: 48,
+  },
+  compactTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  compactStatus: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748B',
   },
   subheadline: {
     fontSize: 15,

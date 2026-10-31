@@ -15,8 +15,8 @@ import {
     Image,
     Alert,
     Animated,
-    Dimensions,
     ActivityIndicator,
+    Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 let Speech = null;
@@ -27,13 +27,38 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { useTheme } from '../theme/themeContext';
 import { useRideStore } from '../../../shared/store/rideStore';
-import { MAPBOX_TOKEN, extractLocationDetails } from '../../../shared/utils/mapboxHelper';
-import { API_BASE } from '../../../shared/utils/apiConfig';
+import { extractLocationDetails } from '../../../shared/utils/mapboxHelper';
+import { API_BASE, WS_BASE } from '../../../shared/utils/apiConfig';
+import LiveMap from '../../../shared/components/LiveMap';
 
-const { width: SCREEN_W } = Dimensions.get('window');
 const DRIVER_ID_KEY = '@dropp_driver_id';
-const DRIVER_PROFILE_KEY = '@dropp_driver_profile';
-const STEPS = ['PICKUP', 'EN_ROUTE', 'VERIFY_OTP'];
+
+// Each step maps to exactly one backend status. `otp` steps need the customer's code, which the
+// server checks — the driver app never knows the OTP.
+const RIDE_STEPS = [
+    { key: 'TO_PICKUP', label: 'Pickup', icon: 'car', status: 'arrived', cta: 'Arrived at Pickup', target: 'pickup' },
+    { key: 'VERIFY', label: 'OTP', icon: 'key', status: 'in_progress', otp: true, cta: 'Start Trip', target: 'pickup' },
+    { key: 'TO_DROP', label: 'Drop', icon: 'flag', status: 'completed', cta: 'Complete Ride', target: 'drop' },
+];
+const DELIVERY_STEPS = [
+    { key: 'TO_PICKUP', label: 'Pickup', icon: 'storefront', status: 'arrived', cta: 'Arrived at Pickup', target: 'pickup' },
+    { key: 'COLLECT', label: 'Collect', icon: 'bag-check', status: 'picked_up', cta: 'Order Picked Up', target: 'pickup' },
+    { key: 'TO_DROP', label: 'Deliver', icon: 'navigate', status: null, cta: 'Arrived at Customer', target: 'drop' },
+    { key: 'VERIFY', label: 'OTP', icon: 'key', status: 'completed', otp: true, cta: 'Complete Delivery', target: 'drop' },
+];
+
+const isInServiceArea = (c) => c && c.lat > 6 && c.lat < 37.5 && c.lng > 68 && c.lng < 97.5;
+
+function distanceKm(a, b) {
+    if (!a || !b || a.lat == null || b.lat == null) return null;
+    const R = 6371;
+    const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+    const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+const formatDistance = (km) => (km == null ? '' : km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`);
 
 function calcBearing(lat1, lon1, lat2, lon2) {
     const toRad = d => (d * Math.PI) / 180;
@@ -45,90 +70,9 @@ function calcBearing(lat1, lon1, lat2, lon2) {
     return Math.round((toDeg(Math.atan2(y, x)) + 360) % 360);
 }
 
-function buildLiveMapUrl(driverCoords, puDetails, dropDetails, routeGeometry, step) {
-    if (!MAPBOX_TOKEN) return null;
-    const W = Math.min(800, Math.round(SCREEN_W * 2));
-    const H = 600;
-    const PADDING = '60,60,260,60';
-
-    // Normalize coordinates - intelligently fallback to Amritsar/Punjab or Delhi
-    const isAmritsar = (puDetails?.full || dropDetails?.full || '').toLowerCase().includes('amritsar');
-    const isPunjab = isAmritsar || (puDetails?.full || dropDetails?.full || '').toLowerCase().includes('lpu') || (puDetails?.full || dropDetails?.full || '').toLowerCase().includes('phagwara');
-
-    const defaultPuLng = isPunjab ? 75.7037 : 77.0492;
-    const defaultPuLat = isPunjab ? 31.2536 : 28.5427;
-    const defaultDropLng = isPunjab ? 74.8723 : 77.2199;
-    const defaultDropLat = isPunjab ? 31.6340 : 28.6338;
-
-    const pLng = Number(puDetails?.lng) || defaultPuLng;
-    const pLat = Number(puDetails?.lat) || defaultPuLat;
-    const dropLng = Number(dropDetails?.lng) || defaultDropLng;
-    const dropLat = Number(dropDetails?.lat) || defaultDropLat;
-
-    // Guard: Check if live device GPS is within India bounds (lon 65-98, lat 8-38)
-    // If simulator reports California (-122°), snap driver along route so map NEVER centers in the Pacific Ocean!
-    const isGpsInIndia = driverCoords?.lng && driverCoords.lng > 65 && driverCoords.lng < 98 && driverCoords.lat > 8 && driverCoords.lat < 38;
-    const dLng = isGpsInIndia ? driverCoords.lng : (step === 'PICKUP' ? pLng - 0.004 : pLng + (dropLng - pLng) * 0.35);
-    const dLat = isGpsInIndia ? driverCoords.lat : (step === 'PICKUP' ? pLat - 0.004 : pLat + (dropLat - pLat) * 0.35);
-
-    const features = [];
-
-    let coords = routeGeometry?.coordinates;
-    if (!coords || !Array.isArray(coords) || coords.length < 2) {
-        coords = [
-            [pLng, pLat],
-            [pLng + (dropLng - pLng) * 0.3, pLat + (dropLat - pLat) * 0.35],
-            [pLng + (dropLng - pLng) * 0.7, pLat + (dropLat - pLat) * 0.65],
-            [dropLng, dropLat],
-        ];
-    }
-
-    if (Array.isArray(coords) && coords.length > 1) {
-        const step2 = Math.max(1, Math.floor(coords.length / 40));
-        const sampled = [];
-        for (let i = 0; i < coords.length; i += step2) {
-            sampled.push([+coords[i][0].toFixed(5), +coords[i][1].toFixed(5)]);
-        }
-        const last = coords[coords.length - 1];
-        if (sampled[sampled.length - 1]?.[0] !== +last[0].toFixed(5)) {
-            sampled.push([+last[0].toFixed(5), +last[1].toFixed(5)]);
-        }
-        features.push({
-            type: 'Feature',
-            properties: { stroke: '#00C96B', 'stroke-width': 5, 'stroke-opacity': 0.9 },
-            geometry: { type: 'LineString', coordinates: sampled },
-        });
-    }
-
-    if (step === 'PICKUP') {
-        features.push({
-            type: 'Feature',
-            properties: { 'marker-color': '00C96B', 'marker-size': 'medium' },
-            geometry: { type: 'Point', coordinates: [pLng, pLat] },
-        });
-    }
-
-    features.push({
-        type: 'Feature',
-        properties: { 'marker-color': 'FF3B30', 'marker-size': 'large' },
-        geometry: { type: 'Point', coordinates: [dropLng, dropLat] },
-    });
-
-    features.push({
-        type: 'Feature',
-        properties: { 'marker-color': 'F59E0B', 'marker-size': 'medium' },
-        geometry: { type: 'Point', coordinates: [dLng, dLat] },
-    });
-
-    const geojson = { type: 'FeatureCollection', features };
-    const enc = encodeURIComponent(JSON.stringify(geojson));
-    return `https://api.mapbox.com/styles/v1/mapbox/navigation-night-v1/static/geojson(${enc})/auto/${W}x${H}@2x?padding=${PADDING}&access_token=${MAPBOX_TOKEN}`;
-}
-
 export default function DriverNavigationScreen({ onNavigate }) {
     const { theme } = useTheme();
     const {
-        deliveryOtp,
         pickupLocation,
         destination,
         routeGeometry,
@@ -138,14 +82,12 @@ export default function DriverNavigationScreen({ onNavigate }) {
         resetTripState,
     } = useRideStore();
 
-    const [step, setStep] = useState('PICKUP');
+    const [stepIdx, setStepIdx] = useState(0);
     const [enteredOtp, setEnteredOtp] = useState('');
-    const [otpError, setOtpError] = useState(false);
+    const [otpError, setOtpError] = useState(null);
     const [driverId, setDriverId] = useState(null);
     const [isSimulatingDrive, setIsSimulatingDrive] = useState(false);
     const [currentCoords, setCurrentCoords] = useState(null);
-    const [mapUrl, setMapUrl] = useState(null);
-    const [mapLoading, setMapLoading] = useState(true);
     const [isBusy, setIsBusy] = useState(false);
     const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -166,8 +108,12 @@ export default function DriverNavigationScreen({ onNavigate }) {
         isFood ? 'Customer Location' : isParcel ? 'Recipient Address' : isShop ? 'Customer Location' : 'Destination'
     );
 
-    const stepIndex = STEPS.indexOf(step);
-    const cleanFare = String(fare || '').replace('₹', '').trim() || (isFood ? '65' : isParcel ? '90' : isShop ? '80' : '180');
+    // Food/shop orders are Order documents; rides and parcels are Ride documents with the ride flow
+    const steps = isFood || isShop ? DELIVERY_STEPS : RIDE_STEPS;
+    const step = steps[stepIdx] || steps[steps.length - 1];
+    const targetPt = step.target === 'pickup' ? puDetails : dropDetails;
+    const distToTarget = distanceKm(currentCoords, targetPt);
+    const cleanFare = String(fare ?? '').replace('₹', '').trim();
 
     // Pulse animation
     useEffect(() => {
@@ -183,25 +129,7 @@ export default function DriverNavigationScreen({ onNavigate }) {
     useEffect(() => {
         async function loadDriver() {
             try {
-                let id = await AsyncStorage.getItem(DRIVER_ID_KEY);
-                if (id) {
-                    try {
-                        const r = await fetch(`${API_BASE}/api/drivers/${id}`);
-                        if (r.status === 404) id = null;
-                    } catch (_) {}
-                }
-                if (!id) {
-                    const r = await fetch(`${API_BASE}/api/drivers`);
-                    const j = await r.json();
-                    if (j.success && j.data?.length > 0) {
-                        const picked = j.data.find(d => d.name === 'Lucky' || d.name === 'Rome') || j.data[0];
-                        id = picked._id;
-                        await Promise.all([
-                            AsyncStorage.setItem(DRIVER_ID_KEY, id),
-                            AsyncStorage.setItem(DRIVER_PROFILE_KEY, JSON.stringify(picked)),
-                        ]);
-                    }
-                }
+                const id = await AsyncStorage.getItem(DRIVER_ID_KEY);
                 if (id) setDriverId(id);
             } catch (err) {
                 console.warn('[DriverNav] Failed to load driverId:', err.message);
@@ -210,35 +138,39 @@ export default function DriverNavigationScreen({ onNavigate }) {
         loadDriver();
     }, []);
 
-    // Build live map URL when coords or step changes
-    useEffect(() => {
-        const url = buildLiveMapUrl(currentCoords, puDetails, dropDetails, routeGeometry, step);
-        if (url) {
-            setMapUrl(url);
-        }
-    }, [currentCoords, step]);
+    const guidance =
+        step.otp ? 'Ask the customer for their 4-digit OTP'
+        : step.key === 'COLLECT' ? `Collect the order at ${puDetails.label || 'the pickup'}`
+        : `Head to ${targetPt.label || (step.target === 'pickup' ? 'pickup' : 'destination')}`;
 
-    // Spoken turn-by-turn guidance when navigation step changes
+    // Spoken guidance when the step changes
     useEffect(() => {
-        let text = '';
-        if (step === 'PICKUP') {
-            text = `Heading to pickup at ${puDetails.label || 'customer location'}.`;
-        } else if (step === 'EN_ROUTE') {
-            text = `En route to ${dropDetails.label || 'destination'}. Continue on Grand Trunk Road.`;
-        } else if (step === 'VERIFY_OTP') {
-            text = 'Arrived at dropoff point. Please collect customer OTP.';
-        }
-        if (text && Speech?.speak) {
-            Speech.speak(text, { language: 'en-IN', rate: 0.95 });
-        }
-    }, [step]);
+        if (Speech?.speak) Speech.speak(guidance, { language: 'en-IN', rate: 0.95 });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [stepIdx]);
 
-    // Initial map on mount
+    // If the customer cancels mid-trip, stop and go home
     useEffect(() => {
-        const url = buildLiveMapUrl(null, puDetails, dropDetails, routeGeometry, 'PICKUP');
-        setMapUrl(url);
-        setMapLoading(true);
-    }, []);
+        if (!rideId) return;
+        let ws;
+        try {
+            ws = new WebSocket(`${WS_BASE}?role=driver`);
+            ws.onmessage = (e) => {
+                try {
+                    const msg = JSON.parse(e.data);
+                    const d = msg.data || {};
+                    const id = String(d.rideId || d.orderId || d.offerId || '');
+                    if ((msg.type === 'ride.cancelled' || msg.type === 'ORDER_CANCELLED') && id === String(rideId)) {
+                        Alert.alert('Trip Cancelled', 'The customer cancelled this trip.');
+                        resetTripState();
+                        onNavigate?.('DriverHome');
+                    }
+                } catch (_) {}
+            };
+        } catch (_) {}
+        return () => { try { ws?.close(); } catch (_) {} };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rideId]);
 
     // Real GPS push every 3.5s
     useEffect(() => {
@@ -253,14 +185,15 @@ export default function DriverNavigationScreen({ onNavigate }) {
                 const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
                 if (cancelled || !loc?.coords) return;
                 const { latitude: lat, longitude: lng, heading } = loc.coords;
-                setCurrentCoords({ lat, lng });
+                if (!isInServiceArea({ lat, lng })) return; // simulator default (California) — use the Sim drive instead
+                setCurrentCoords({ lat, lng, bearing: heading ?? 0 });
                 await fetch(`${API_BASE}/api/drivers/${driverId}/location`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ lat, lng, bearing: heading ?? 0 }),
                 });
-            } catch (err) {
-                console.warn('[DriverNav] GPS push error:', err.message);
+            } catch (_) {
+                // Network blips are expected; the next tick retries
             }
         };
 
@@ -276,12 +209,11 @@ export default function DriverNavigationScreen({ onNavigate }) {
         const coords = routeGeometry?.coordinates;
         const pathPoints = (Array.isArray(coords) && coords.length > 1)
             ? coords
-            : [
-                [puDetails.lng || 77.0492, puDetails.lat || 28.5427],
-                [(((puDetails.lng || 77.0492) + (dropDetails.lng || 77.2199)) / 2),
-                 (((puDetails.lat || 28.5427) + (dropDetails.lat || 28.6338)) / 2)],
-                [dropDetails.lng || 77.2199, dropDetails.lat || 28.6338],
-            ];
+            : [[puDetails.lng, puDetails.lat], [dropDetails.lng, dropDetails.lat]].filter(([x, y]) => x != null && y != null);
+        if (pathPoints.length < 2) {
+            setIsSimulatingDrive(false);
+            return;
+        }
 
         let index = 0;
         const intervalId = setInterval(async () => {
@@ -292,7 +224,7 @@ export default function DriverNavigationScreen({ onNavigate }) {
             const [lng, lat] = pathPoints[index];
             const [nextLng, nextLat] = pathPoints[Math.min(index + 1, pathPoints.length - 1)];
             const bearing = calcBearing(lat, lng, nextLat, nextLng);
-            setCurrentCoords({ lat, lng });
+            setCurrentCoords({ lat, lng, bearing });
             try {
                 await fetch(`${API_BASE}/api/drivers/${driverId}/location`, {
                     method: 'PATCH',
@@ -306,80 +238,67 @@ export default function DriverNavigationScreen({ onNavigate }) {
         return () => clearInterval(intervalId);
     }, [isSimulatingDrive, driverId, routeGeometry]);
 
+    const postStatus = async (status, otp) => {
+        const res = await fetch(`${API_BASE}/api/drivers/${driverId}/task/${rideId}/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(otp ? { status, otp } : { status }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json.success) {
+            throw Object.assign(new Error(json.error || `Request failed (${res.status})`), { status: res.status });
+        }
+        return json.data;
+    };
+
+    // Advance only after the server accepts the change, so driver and customer never disagree
     const handleNextStep = async () => {
         if (isBusy) return;
+        if (!driverId || !rideId) {
+            Alert.alert('No Active Trip', 'This trip is no longer available.');
+            onNavigate?.('DriverHome');
+            return;
+        }
+        if (step.otp && !/^\d{4}$/.test(enteredOtp.trim())) {
+            setOtpError('Enter the 4-digit code from the customer');
+            return;
+        }
         setIsBusy(true);
         try {
-            if (step === 'PICKUP') {
-                setStep('EN_ROUTE');
-                if (driverId && rideId) {
-                    fetch(`${API_BASE}/api/drivers/${driverId}/task/${rideId}/status`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ status: 'in_progress' }),
-                    }).catch(() => {});
-                }
+            if (step.status) await postStatus(step.status, step.otp ? enteredOtp.trim() : null);
+            setOtpError(null);
+            setEnteredOtp('');
+            if (stepIdx < steps.length - 1) {
+                setStepIdx(stepIdx + 1);
+            } else {
                 Alert.alert(
-                    isFood ? 'Order Picked Up' : isParcel ? 'Parcel Collected' : isShop ? 'Items Collected' : 'Passenger Onboard',
-                    isFood ? 'Proceed to customer location.' : isParcel ? 'Proceed to recipient.' : isShop ? 'Proceed to customer.' : 'Proceed to destination.',
-                );
-            } else if (step === 'EN_ROUTE') {
-                setStep('VERIFY_OTP');
-                if (driverId && rideId) {
-                    fetch(`${API_BASE}/api/drivers/${driverId}/task/${rideId}/status`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ status: 'arrived' }),
-                    }).catch(() => {});
-                }
-            } else if (step === 'VERIFY_OTP') {
-                const correctOtp = String(deliveryOtp || '4821').trim();
-                const entered = enteredOtp.trim();
-                if (entered !== correctOtp) {
-                    setOtpError(true);
-                    setIsBusy(false);
-                    return;
-                }
-                if (driverId && rideId) {
-                    fetch(`${API_BASE}/api/drivers/${driverId}/task/${rideId}/status`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ status: 'completed', otp: entered }),
-                    }).catch(() => {});
-                }
-                Alert.alert(
-                    'Task Completed!',
-                    isFood ? `Food delivered! Fare: Rs.${cleanFare}` : isParcel ? `Parcel delivered! Fare: Rs.${cleanFare}` : isShop ? `Delivery done! Fare: Rs.${cleanFare}` : `Ride complete! Fare: Rs.${cleanFare}`,
+                    isFood || isShop ? 'Delivered!' : isParcel ? 'Parcel Delivered!' : 'Ride Complete!',
+                    cleanFare ? `₹${cleanFare} has been added to today's earnings.` : 'Trip completed.'
                 );
                 resetTripState();
-                if (onNavigate) onNavigate('DriverHome');
+                onNavigate?.('DriverHome');
             }
         } catch (err) {
-            console.error('[DriverNav] Step error:', err.message);
+            if (step.otp && err.status === 400) setOtpError(err.message);
+            else if (err.status === 410) {
+                Alert.alert('Trip Cancelled', err.message);
+                resetTripState();
+                onNavigate?.('DriverHome');
+            } else Alert.alert('Could not update trip', err.message || 'Check your connection and try again.');
         } finally {
             setIsBusy(false);
         }
     };
 
     const headerTitle =
-        step === 'PICKUP'
+        step.otp ? 'Verify Customer OTP'
+        : step.key === 'COLLECT' ? 'Collect the Order'
+        : step.target === 'pickup'
             ? (isFood ? 'Heading to Restaurant' : isParcel ? 'Heading to Sender' : isShop ? 'Heading to Store' : 'Heading to Pickup')
-        : step === 'EN_ROUTE'
-            ? (isFood ? 'Delivering to Customer' : isParcel ? 'Delivering to Recipient' : isShop ? 'Delivering to Customer' : 'En Route to Drop')
-        : (isFood ? 'Verify & Handover Food' : isParcel ? 'Verify & Handover Parcel' : isShop ? 'Verify & Handover Items' : 'Verify Arrival');
-
-    const buttonLabel =
-        step === 'PICKUP'
-            ? (isFood ? 'Arrived at Restaurant' : isParcel ? 'Arrived at Sender' : isShop ? 'Arrived at Store' : 'Arrived at Pickup')
-        : step === 'EN_ROUTE'
-            ? (isFood ? 'Arrived at Customer' : isParcel ? 'Arrived at Recipient' : isShop ? 'Arrived at Customer' : 'Arrived at Dropoff')
-        : (isFood ? 'Complete Food Delivery' : isParcel ? 'Complete Parcel Delivery' : isShop ? 'Complete Store Delivery' : 'Complete Ride');
-
-    const stepDefs = [
-        { key: 'PICKUP', icon: pillarIcon, label: isFood ? 'Restaurant' : isParcel ? 'Sender' : isShop ? 'Store' : 'Pickup' },
-        { key: 'EN_ROUTE', icon: 'navigate', label: 'En Route' },
-        { key: 'VERIFY_OTP', icon: 'checkmark-done-circle', label: 'Verify' },
-    ];
+            : (isFood || isShop ? 'Delivering to Customer' : isParcel ? 'Delivering to Recipient' : 'En Route to Drop');
+    const buttonLabel = step.cta;
+    const stepDefs = steps;
+    const stepIndex = stepIdx;
 
     return (
         <SafeAreaView style={styles.container}>
@@ -402,19 +321,21 @@ export default function DriverNavigationScreen({ onNavigate }) {
                     </View>
                     <Text style={styles.headerTitle} numberOfLines={1}>{headerTitle}</Text>
                     <Text style={styles.headerSub} numberOfLines={1}>
-                        {step === 'PICKUP' ? (puDetails.label || 'Pickup') : (dropDetails.label || 'Destination')}
+                        {targetPt.label || (step.target === 'pickup' ? 'Pickup' : 'Destination')}
                     </Text>
                 </View>
 
+                {__DEV__ ? (
                 <TouchableOpacity
                     style={[styles.simBtn, isSimulatingDrive && { backgroundColor: '#00C96B', borderColor: '#00C96B' }]}
                     onPress={() => setIsSimulatingDrive(prev => !prev)}
                 >
                     <Ionicons name={isSimulatingDrive ? 'pause' : 'play'} size={12} color={isSimulatingDrive ? '#000' : '#FFF'} />
                     <Text style={[styles.simBtnText, isSimulatingDrive && { color: '#000' }]}>
-                        {isSimulatingDrive ? 'Stop' : 'Sim'}
+                        {isSimulatingDrive ? 'Stop' : 'Sim drive'}
                     </Text>
                 </TouchableOpacity>
+                ) : <View style={{ width: 36 }} />}
             </View>
 
             {/* Progress Stepper */}
@@ -439,7 +360,7 @@ export default function DriverNavigationScreen({ onNavigate }) {
                                 </View>
                                 <Text style={[styles.stepLabel, (done || active) && { color: '#CBD5E1' }]}>{s.label}</Text>
                             </View>
-                            {i < 2 && (
+                            {i < stepDefs.length - 1 && (
                                 <View style={[styles.stepLine, done && { backgroundColor: '#00C96B' }]} />
                             )}
                         </React.Fragment>
@@ -453,107 +374,70 @@ export default function DriverNavigationScreen({ onNavigate }) {
                 <View style={styles.maneuverBanner}>
                     <View style={styles.maneuverIconBox}>
                         <Ionicons
-                            name={step === 'PICKUP' ? 'arrow-up-circle' : step === 'EN_ROUTE' ? 'navigate-circle' : 'checkmark-circle'}
+                            name={step.otp ? 'key' : step.target === 'pickup' ? 'arrow-up-circle' : 'navigate-circle'}
                             size={26}
                             color="#00C96B"
                         />
                     </View>
                     <View style={{ flex: 1 }}>
                         <Text style={styles.maneuverDistance}>
-                            {step === 'PICKUP' ? 'In 350 m' : step === 'EN_ROUTE' ? 'In 900 m' : 'Arrived'}
+                            {step.otp || step.key === 'COLLECT' ? 'At location' : distToTarget != null ? formatDistance(distToTarget) : 'Locating…'}
                         </Text>
                         <Text style={styles.maneuverInstruction} numberOfLines={1}>
-                            {step === 'PICKUP'
-                                ? `Head to ${puDetails.label || 'Pickup Point'}`
-                                : step === 'EN_ROUTE'
-                                ? `Continue on Grand Trunk Rd to ${dropDetails.label || 'Destination'}`
-                                : 'Collect 4-digit code from customer'}
+                            {guidance}
                         </Text>
                     </View>
                     <TouchableOpacity
                         style={styles.voiceMuteBtn}
                         onPress={() => {
-                            const spoken = step === 'PICKUP'
-                                ? `Heading to pickup at ${puDetails.label}`
-                                : step === 'EN_ROUTE'
-                                ? `Continue on Grand Trunk Road towards ${dropDetails.label}`
-                                : 'Arrived at dropoff point';
-                            if (Speech?.speak) {
-                                Speech.speak(spoken, { language: 'en-IN', rate: 0.95 });
-                            }
+                            if (Speech?.speak) Speech.speak(guidance, { language: 'en-IN', rate: 0.95 });
                         }}
                     >
                         <Ionicons name="volume-high" size={20} color="#00C96B" />
                     </TouchableOpacity>
                 </View>
 
-                {mapUrl ? (
-                    <>
-                        <Image
-                            source={{ uri: mapUrl }}
-                            style={StyleSheet.absoluteFillObject}
-                            resizeMode="cover"
-                            onLoad={() => setMapLoading(false)}
-                            onError={() => setMapLoading(false)}
-                        />
-                        {mapLoading && (
-                            <View style={styles.mapLoadingOverlay}>
-                                <ActivityIndicator size="large" color="#00C96B" />
-                                <Text style={styles.mapLoadingText}>Loading map...</Text>
-                            </View>
-                        )}
-                    </>
-                ) : (
-                    <View style={styles.mapPlaceholder}>
-                        <Ionicons name="map" size={48} color="#334155" />
-                        <Text style={styles.mapPlaceholderText}>Set EXPO_PUBLIC_MAPBOX_TOKEN to enable map</Text>
-                    </View>
-                )}
-
-                {/* Animated Driver Blip */}
-                <View style={styles.driverBlipContainer} pointerEvents="none">
-                    <Animated.View style={[
-                        styles.driverBlipRing,
-                        { transform: [{ scale: pulseAnim }], borderColor: pillarColor }
-                    ]} />
-                    <View style={[styles.driverBlip, { backgroundColor: pillarColor }]}>
-                        <Ionicons name="navigate" size={16} color="#000" />
-                    </View>
-                </View>
+                <LiveMap
+                    style={StyleSheet.absoluteFillObject}
+                    pickup={puDetails.lat != null ? puDetails : null}
+                    drop={dropDetails.lat != null ? dropDetails : null}
+                    route={routeGeometry}
+                    driver={currentCoords}
+                    pickupLabel={puDetails.label}
+                    dropLabel={dropDetails.label}
+                    driverIcon={isFood ? 'bicycle' : 'navigate'}
+                    followDriver={isSimulatingDrive}
+                    edgePadding={{ top: 120, right: 50, bottom: 60, left: 50 }}
+                />
 
                 {/* GPS Badge */}
                 <View style={styles.gpsBadge}>
                     <View style={[styles.gpsLiveDot, isSimulatingDrive && { backgroundColor: '#F59E0B' }]} />
                     <Text style={styles.gpsBadgeText}>
-                        {isSimulatingDrive ? 'SIMULATING' : currentCoords ? 'LIVE GPS' : 'GPS...'}
+                        {isSimulatingDrive ? 'SIM DRIVE' : currentCoords ? 'LIVE GPS' : 'GPS…'}
                     </Text>
                 </View>
 
                 {/* Fare Badge */}
-                <View style={[styles.fareBadge, { backgroundColor: pillarColor }]}>
-                    <Text style={styles.fareBadgeText}>Rs.{cleanFare}</Text>
-                </View>
+                {!!cleanFare && (
+                    <View style={[styles.fareBadge, { backgroundColor: pillarColor }]}>
+                        <Text style={styles.fareBadgeText}>₹{cleanFare}</Text>
+                    </View>
+                )}
             </View>
 
             {/* Bottom Sheet */}
             <View style={styles.bottomSheet}>
                 <View style={styles.locationPill}>
-                    <View style={[styles.locationDot, { backgroundColor: step === 'PICKUP' ? '#00C96B' : '#FF3B30' }]} />
+                    <View style={[styles.locationDot, { backgroundColor: step.target === 'pickup' ? '#00C96B' : '#FF3B30' }]} />
                     <Text style={styles.locationPillText} numberOfLines={1}>
-                        {step === 'PICKUP'
-                            ? (puDetails.full || puDetails.label || 'Pickup')
-                            : (dropDetails.full || dropDetails.label || 'Drop')}
+                        {targetPt.full || targetPt.label || (step.target === 'pickup' ? 'Pickup' : 'Drop')}
                     </Text>
                 </View>
 
-                {step === 'VERIFY_OTP' && (
+                {step.otp && (
                     <View style={styles.otpContainer}>
-                        <View style={[styles.otpHintBanner, { borderColor: pillarColor + '55' }]}>
-                            <Ionicons name="key" size={15} color={pillarColor} />
-                            <Text style={styles.otpHintLabel}>Customer Code: </Text>
-                            <Text style={[styles.otpHintCode, { color: pillarColor }]}>{deliveryOtp || '4821'}</Text>
-                        </View>
-                        <Text style={styles.otpInputLabel}>Enter the 4-digit code from customer</Text>
+                        <Text style={styles.otpInputLabel}>Enter the 4-digit OTP the customer shares with you</Text>
                         <TextInput
                             style={[styles.otpInput, { borderColor: otpError ? '#EF4444' : pillarColor }]}
                             placeholder="· · · ·"
@@ -561,13 +445,13 @@ export default function DriverNavigationScreen({ onNavigate }) {
                             keyboardType="number-pad"
                             maxLength={4}
                             value={enteredOtp}
-                            onChangeText={t => { setEnteredOtp(t); setOtpError(false); }}
+                            onChangeText={t => { setEnteredOtp(t.replace(/\D/g, '')); setOtpError(null); }}
                             autoFocus
                         />
-                        {otpError && (
+                        {!!otpError && (
                             <View style={styles.otpErrorRow}>
                                 <Ionicons name="close-circle" size={13} color="#EF4444" />
-                                <Text style={styles.otpErrorText}>Wrong code. Code: {deliveryOtp || '4821'}</Text>
+                                <Text style={styles.otpErrorText}>{otpError}</Text>
                             </View>
                         )}
                     </View>
@@ -576,9 +460,11 @@ export default function DriverNavigationScreen({ onNavigate }) {
                 <View style={styles.ctaRow}>
                     <TouchableOpacity
                         style={styles.callBtn}
-                        onPress={() => Alert.alert('Calling Customer', 'Connecting via secure masked line...')}
+                        disabled={targetPt.lat == null}
+                        onPress={() => Linking.openURL(`http://maps.apple.com/?daddr=${targetPt.lat},${targetPt.lng}&dirflg=d`).catch(() => {})}
+                        accessibilityLabel="Open turn-by-turn navigation"
                     >
-                        <Ionicons name="call" size={22} color="#00C96B" />
+                        <Ionicons name="navigate" size={22} color="#00C96B" />
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -714,7 +600,7 @@ const styles = StyleSheet.create({
 
     gpsBadge: {
         position: 'absolute',
-        top: 12,
+        top: 92, // below the maneuver banner
         left: 12,
         flexDirection: 'row',
         alignItems: 'center',
@@ -736,7 +622,7 @@ const styles = StyleSheet.create({
 
     fareBadge: {
         position: 'absolute',
-        top: 12,
+        top: 92, // below the maneuver banner
         right: 12,
         paddingHorizontal: 12,
         paddingVertical: 5,

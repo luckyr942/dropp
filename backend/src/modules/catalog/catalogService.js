@@ -4,8 +4,58 @@ export async function listRestaurants() {
   return Restaurant.find({ isOpen: true }).sort({ rating: -1 }).lean();
 }
 
+// In-memory cache of geocoded restaurant coordinates (never written back to the DB)
+const locationCache = new Map();
+
+const hasCoords = (loc) =>
+  loc && Number.isFinite(Number(loc.lat)) && Number.isFinite(Number(loc.lng));
+
+/**
+ * Best-effort coordinates for a restaurant. Uses stored `location` when the
+ * document has one; otherwise geocodes its street/pincode/city via Mapbox and
+ * marks the result as approximate. Returns null when nothing can be resolved.
+ */
+export async function resolveRestaurantLocation(restaurant) {
+  if (!restaurant) return null;
+  if (hasCoords(restaurant.location)) {
+    return { lat: Number(restaurant.location.lat), lng: Number(restaurant.location.lng), approximate: false };
+  }
+
+  const { street = '', pincode = '', city = '' } = restaurant.address || {};
+  const query = [street, pincode, city].filter(Boolean).join(' ').trim();
+  const token = process.env.MAPBOX_ACCESS_TOKEN;
+  if (!query || !token) return null;
+
+  const key = String(restaurant._id);
+  if (locationCache.has(key)) return locationCache.get(key);
+
+  let result = null;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?country=in&limit=1&types=postcode,address,neighborhood,locality,place&access_token=${token}`;
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (response.ok) {
+      const data = await response.json();
+      const center = data?.features?.[0]?.center;
+      if (Array.isArray(center) && center.length === 2) {
+        result = { lat: center[1], lng: center[0], approximate: true };
+      }
+    }
+  } catch (_) {
+    result = null;
+  }
+  // Only cache successes so a transient network failure can be retried later
+  if (result) locationCache.set(key, result);
+  return result;
+}
+
 export async function getRestaurantById(restaurantId) {
-  return Restaurant.findById(restaurantId).lean();
+  const restaurant = await Restaurant.findById(restaurantId).lean();
+  if (!restaurant) return null;
+  const location = await resolveRestaurantLocation(restaurant);
+  return { ...restaurant, location };
 }
 
 export async function getMenuByRestaurant(restaurantId) {

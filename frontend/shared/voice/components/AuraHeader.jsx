@@ -1,6 +1,6 @@
 // frontend/shared/voice/components/AuraHeader.jsx
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -19,9 +19,9 @@ export default function AuraHeader({ onClose, onBack, credits = 50, isThinking, 
 
         {/* Brand Title */}
         <View style={styles.brandContainer}>
-          <Text style={styles.brandDropp}>Dropp</Text>
-          <Text style={styles.brandAura}> Aura</Text>
-          <Ionicons name="sparkles" size={16} color="#00C868" style={{ marginLeft: 3 }} />
+          <Text style={styles.brandDropp} numberOfLines={1}>
+            Dropp<Text style={styles.brandAura}> Aura</Text>
+          </Text>
         </View>
 
         {/* Right Actions */}
@@ -42,15 +42,6 @@ export default function AuraHeader({ onClose, onBack, credits = 50, isThinking, 
               <Ionicons name="close" size={20} color="#0F172A" />
             </TouchableOpacity>
           )}
-
-          {/* Profile Avatar */}
-          <View style={styles.avatarWrapper}>
-            <Image
-              source={{ uri: 'https://i.pinimg.com/736x/0b/97/6f/0b976f0a7aa1aa43870e1812eee5a55d.jpg' }}
-              style={styles.avatar}
-            />
-            <View style={styles.activeDot} />
-          </View>
         </View>
       </View>
 
@@ -109,8 +100,10 @@ const styles = StyleSheet.create({
   brandContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 8,
+    marginLeft: 10,
+    marginRight: 8,
     flex: 1,
+    minWidth: 0,
   },
   brandDropp: {
     fontSize: 22,
@@ -144,25 +137,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#00A859',
-  },
-  avatarWrapper: {
-    position: 'relative',
-  },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-  },
-  activeDot: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#00C868',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
   },
   statusPillRow: {
     alignItems: 'center',

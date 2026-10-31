@@ -48,7 +48,7 @@
 //     }
 // ];
 
-// const CategoryItem = memo(({ item, onPress }) => (
+// const CategoryItem = memo(({ item, onPress, active }) => (
 //     <TouchableOpacity
 //         style={styles.item}
 //         onPress={() => onPress && onPress(item.id)}
@@ -56,7 +56,7 @@
 //         accessibilityRole="button"
 //         accessibilityLabel={`${item.label} category`}
 //     >
-//         <View style={[styles.circle, { backgroundColor: item.bgColor }]}>
+//         <View style={[styles.circle, { backgroundColor: item.bgColor }, active && styles.circleActive]}>
 //             <Image
 //                 source={item.image}
 //                 style={styles.img}
@@ -67,7 +67,7 @@
 //     </TouchableOpacity>
 // ));
 
-// export default function CategoriesRow({ onSelectCategory, onMorePress }) {
+// export default function CategoriesRow({ onSelectCategory, onMorePress, selected = null }) {
 //     const handlePress = (id) => {
 //         if (id === 'more') {
 //             if (onMorePress) onMorePress();
@@ -192,7 +192,7 @@ const CATEGORIES = [
     }
 ];
 
-const CategoryItem = memo(({ item, onPress }) => (
+const CategoryItem = memo(({ item, onPress, active }) => (
     <TouchableOpacity
         style={styles.item}
         onPress={() => onPress && onPress(item.id)}
@@ -200,18 +200,18 @@ const CategoryItem = memo(({ item, onPress }) => (
         accessibilityRole="button"
         accessibilityLabel={`${item.label} category`}
     >
-        <View style={[styles.circle, { backgroundColor: item.bgColor }]}>
+        <View style={[styles.circle, { backgroundColor: item.bgColor }, active && styles.circleActive]}>
             <Image
                 source={item.image}
                 style={styles.img}
                 resizeMode='contain'
             />
         </View>
-        <Text style={styles.label} numberOfLines={1}>{item.label}</Text>
+        <Text style={[styles.label, active && styles.labelActive]} numberOfLines={1}>{item.label}</Text>
     </TouchableOpacity>
 ));
 
-export default function CategoriesRow({ onSelectCategory, onMorePress }) {
+export default function CategoriesRow({ onSelectCategory, onMorePress, selected = null }) {
     const handlePress = (id) => {
         if (id === 'more') {
             if (onMorePress) onMorePress();
@@ -228,6 +228,7 @@ export default function CategoriesRow({ onSelectCategory, onMorePress }) {
                     key={cat.id}
                     item={cat}
                     onPress={handlePress}
+                    active={selected === cat.id}
                 />
             ))}
         </View>
@@ -272,6 +273,14 @@ const styles = StyleSheet.create({
     img: {
         width: '100%',
         height: '100%',
+    },
+    circleActive: {
+        borderWidth: 2,
+        borderColor: '#00A859',
+    },
+    labelActive: {
+        color: '#00A859',
+        fontFamily: 'PlusJakartaSans_800ExtraBold',
     },
     label: {
         fontFamily: 'PlusJakartaSans_600SemiBold',

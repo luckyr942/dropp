@@ -6,6 +6,8 @@ import {
   resolveItemsByName 
 } from './catalogService.js';
 
+const isObjectId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+
 export async function handleListRestaurants(req, res, next) {
   try {
     const restaurants = await listRestaurants();
@@ -17,6 +19,9 @@ export async function handleListRestaurants(req, res, next) {
 
 export async function handleGetRestaurant(req, res, next) {
   try {
+    if (!isObjectId(req.params.id)) {
+      return res.status(404).json({ success: false, error: 'Restaurant not found' });
+    }
     const restaurant = await getRestaurantById(req.params.id);
     if (!restaurant) {
       return res.status(404).json({ success: false, error: 'Restaurant not found' });
@@ -31,6 +36,9 @@ export async function handleGetMenu(req, res, next) {
   try {
     const { id } = req.params;
     const { q } = req.query;
+    if (!isObjectId(id)) {
+      return res.status(404).json({ success: false, error: 'Restaurant not found' });
+    }
     const items = q ? await searchMenuItems(id, q) : await getMenuByRestaurant(id);
 
     res.json({ success: true, data: items });
